@@ -53,7 +53,7 @@ make down      # reverse-order stop (never removes data volumes)
 | `up` | Inference → state → apps, each `compose up -d --no-build`, health-gated. |
 | `down` | Apps → state → inference, via each repo's `make down`. Never `-v`. |
 | `ps` / `logs` | Fan out across all tiers. |
-| `bundle` | Delegates `make bundle` to every tier (build the airgap tarballs). |
+| `bundle` | Runs `make bundle` in every image-bearing member — `APP_DIRS` apps + vllm-service + data-plane (active profile) + open-webui-service (`OPENWEBUI_DIR`). |
 | `load` | `docker load` every `*.tar.gz` found under the member repos. |
 
 ## Airgap flow
@@ -85,8 +85,10 @@ detached production `up`, this can switch back to delegating.
 **open-webui-service is not in `APP_DIRS`.** It kept a bespoke Makefile (it
 skipped the `common.mk` rollout): `volume` is singular, it `pull`s a single
 upstream image instead of building, and its `up -d` already self-creates its
-network + volume. So it doesn't fit the uniform `setup`/`up` loop. It also
-self-manages, which makes it easy to run on its own:
+network + volume. So it doesn't fit the uniform `setup`/`up` loop — but it *is*
+in `OPENWEBUI_DIR`, so `bundle`/`load` still cover it (they only need a working
+`make bundle` + a tarball). It also self-manages, which makes it easy to run on
+its own:
 
 ```bash
 make -C ../open-webui-service network volume   # one-time

@@ -39,9 +39,11 @@ The Makefile does **two different things** to member repos, and conflating them 
    foreground `up`, so this layer invokes compose **directly** via the helper:
    `compose = docker compose --env-file $(INFRA_ROOT)/$(1)/.env -f $(INFRA_ROOT)/$(1)/docker/compose.yaml`
    then `up -d --no-build`.
-2. **Uniform targets (`setup`/`down`/`bundle`): delegate via `$(MAKE) -C`.** `network`, `volumes`,
-   `down`, `bundle` ARE uniform across members (they share `common.mk`), so those are delegated to
-   each repo's own Makefile, never reimplemented here.
+2. **Uniform targets (`setup`/`down`/`bundle`/`load`): delegate via `$(MAKE) -C`.** `network`,
+   `volumes`, `down`, `bundle` are delegated to each member's own Makefile, never reimplemented
+   here. `bundle`/`load` cover every image-bearing member — the `APP_DIRS` apps + `vllm-service` +
+   `data-plane` (which `bundle` runs at `PROFILE=$(DATA_PROFILE)`) + `open-webui-service` (via
+   `OPENWEBUI_DIR`; its bundle is bespoke but yields the same kind of tarball).
 
 Rule of thumb: anything that must be detached / ordered / health-gated → drive compose directly;
 anything uniform and order-independent → delegate to the member's Make target. If the members later
@@ -58,14 +60,17 @@ The Makefile assumes every member listed in `VLLM_DIR` / `DATA_DIR` / `APP_DIRS`
 `open-webui-service` is **deliberately excluded** from `APP_DIRS`: it kept a bespoke Makefile
 (`volume` singular, pulls an image instead of building, self-creates its network/volume on `up -d`).
 It self-manages — run `make -C ../open-webui-service up` separately. **Do not add it to `APP_DIRS`**
-without also special-casing its `volume`/`pull` interface here.
+without also special-casing its `volume`/`pull` interface here. It *is* listed in `OPENWEBUI_DIR`,
+so `bundle`/`load` (which only need a working `make bundle` + a `*.tar.gz`, not the uniform
+lifecycle) cover it; set `OPENWEBUI_DIR` empty to drop it from those too.
 
 ## Configuration
 
 All host-specific knobs live in `federation.env` (gitignored; copy from `federation.env.example`).
 The Makefile `-include`s it. To change which apps run, where member repos live, or the data-plane
 profile, **edit `federation.env`, not the Makefile**: `INFRA_ROOT`, `VLLM_DIR`, `DATA_DIR`,
-`APP_DIRS`, `DATA_PROFILE` (`cpu`|`cuda`), and optional `WAIT_TIMEOUT` / `WAIT_PROBE_IMAGE`.
+`APP_DIRS`, `OPENWEBUI_DIR` (image-bearing; for `bundle`/`load` only), `DATA_PROFILE` (`cpu`|`cuda`),
+and optional `WAIT_TIMEOUT` / `WAIT_PROBE_IMAGE`.
 
 ## Commands
 
@@ -75,7 +80,7 @@ make setup     # one-time: external networks + volumes for every tier (idempoten
 make up        # ordered, health-gated bring-up, detached
 make ps        # status across all tiers       make logs  # tail across all tiers
 make down      # reverse-order stop (never removes data volumes)
-make bundle    # build every tier's airgap image tarball(s)        (online build host)
+make bundle    # build every image-bearing member's airgap tarball(s) (online build host)
 make load      # docker load every *.tar.gz under the member repos (offline host)
 ```
 
