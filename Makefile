@@ -22,11 +22,14 @@
 INFRA_ROOT   ?= ..
 VLLM_DIR     ?= vllm-service
 DATA_DIR     ?= data-plane
-# The uniform (common.mk) apps. open-webui-service is intentionally NOT here: it
-# kept a bespoke Makefile (`volume` singular, pulled image, self-creating
-# `up -d`), so it self-manages — run `make -C $(INFRA_ROOT)/open-webui-service up`
-# separately, or add it with its own handling. See README.
+# The uniform (common.mk) apps. open-webui-service is intentionally NOT here for
+# setup/up: it kept a bespoke Makefile (`volume` singular, pulled image,
+# self-creating `up -d`), so it self-manages — run
+# `make -C $(INFRA_ROOT)/open-webui-service up` separately. See README.
 APP_DIRS     ?= chorus docint Nextext translator
+# open-webui IS bundle-able (its `make bundle` works like the rest), so it joins
+# the bundle/load fan-out below. Set empty to exclude it. (deploy has no images.)
+OPENWEBUI_DIR ?= open-webui-service
 DATA_PROFILE ?= cpu
 
 # Production-shape compose invocation for a member repo. $(1) = repo dir.
@@ -42,7 +45,7 @@ help:
 	@echo "  make down     stop the stack in reverse order (never removes data volumes)"
 	@echo "  make ps       service status across all tiers"
 	@echo "  make logs     tail logs across all tiers"
-	@echo "  make bundle   build every tier's airgap image tarball(s)"
+	@echo "  make bundle   run 'make bundle' in every image-bearing member repo"
 	@echo "  make load     docker load every *.tar.gz found under the member repos"
 	@echo
 	@echo "Apps on this host: $(APP_DIRS)   data-plane profile: $(DATA_PROFILE)"
@@ -81,11 +84,11 @@ logs:
 
 bundle:
 	$(MAKE) -C $(INFRA_ROOT)/$(VLLM_DIR) bundle
-	$(MAKE) -C $(INFRA_ROOT)/$(DATA_DIR) bundle
-	@for a in $(APP_DIRS); do $(MAKE) -C $(INFRA_ROOT)/$$a bundle; done
+	$(MAKE) -C $(INFRA_ROOT)/$(DATA_DIR) bundle PROFILE=$(DATA_PROFILE)
+	@for a in $(APP_DIRS) $(OPENWEBUI_DIR); do echo ">> $$a"; $(MAKE) -C $(INFRA_ROOT)/$$a bundle; done
 
 # Airgapped host: load every image tarball produced by `make bundle`.
 load:
-	@found=0; for f in $(INFRA_ROOT)/$(VLLM_DIR)/*.tar.gz $(INFRA_ROOT)/$(DATA_DIR)/*.tar.gz $(foreach a,$(APP_DIRS),$(INFRA_ROOT)/$(a)/*.tar.gz); do \
+	@found=0; for f in $(INFRA_ROOT)/$(VLLM_DIR)/*.tar.gz $(INFRA_ROOT)/$(DATA_DIR)/*.tar.gz $(foreach a,$(APP_DIRS) $(OPENWEBUI_DIR),$(INFRA_ROOT)/$(a)/*.tar.gz); do \
 	  [ -e "$$f" ] || continue; found=1; echo ">> docker load -i $$f"; docker load -i "$$f"; \
 	done; [ $$found -eq 1 ] || echo "no *.tar.gz found under the member repos — run 'make bundle' on the build host first."
