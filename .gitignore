@@ -1,0 +1,5 @@
+# Host-specific profile (copy from federation.env.example).
+federation.env
+
+# Airgap image tarballs, if produced/copied here.
+*.tar.gz
