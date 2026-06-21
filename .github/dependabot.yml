@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    # actions/checkout is the only GitHub Action this repo pins. deploy's CI is
+    # hand-rolled (it does not call the nos-tromo/.github reusable workflows),
+    # but checkout is kept on the same major the rest of the org standardizes on
+    # (the canonical reusable workflows pin @v6) rather than drifting via an
+    # automated bump here. The ecosystem stays enabled so any *other* action
+    # added later is still managed.
+    ignore:
+      - dependency-name: "actions/checkout"
