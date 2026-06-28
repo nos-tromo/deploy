@@ -50,8 +50,8 @@ make down      # reverse-order stop (never removes data volumes)
 | Target | What it does |
 |---|---|
 | `setup` | Delegates `make network volumes` to every tier (idempotent). |
-| `up` | Inference → state → apps, each `compose up -d --no-build`, health-gated. |
-| `down` | Apps → state → inference, via each repo's `make down`. Never `-v`. |
+| `up` | Inference → state → apps (incl. `open-webui-service`), each `compose up -d --no-build`, health-gated. |
+| `down` | Apps (incl. `open-webui-service`) → state → inference, via each repo's `make down`. Never `-v`. |
 | `ps` / `logs` | Fan out across all tiers. |
 | `bundle` | Runs `make bundle` in every image-bearing member — `APP_DIRS` apps + vllm-service + data-plane (active profile) + open-webui-service (`OPENWEBUI_DIR`). |
 | `load` | `docker load` every `*.tar.gz` found under the member repos. |
@@ -82,21 +82,24 @@ sharing `scripts/bundle-lib.sh`); `make bundle` here just fans that out, and
 targets (`network`/`volumes`/`down`/`bundle`). If the members later grow a
 detached production `up`, this can switch back to delegating.
 
-**open-webui-service is not in `APP_DIRS`.** It kept a bespoke Makefile (it
-skipped the `common.mk` rollout): `volume` is singular, it `pull`s a single
-upstream image instead of building, and its `up -d` already self-creates its
-network + volume. So it doesn't fit the uniform `setup`/`up` loop — but it *is*
-in `OPENWEBUI_DIR`, so `bundle`/`load` still cover it (they only need a working
-`make bundle` + a tarball). It also self-manages, which makes it easy to run on
-its own:
+**open-webui-service is folded in via `OPENWEBUI_DIR`, not `APP_DIRS`.** It is the
+upstream chat UI — a pulled image with a bespoke Makefile (it skipped the
+`common.mk` rollout) — so it is kept in its own variable rather than mixed into
+the first-party `APP_DIRS`. But it is a full lifecycle member: `setup`, `up`,
+`down`, `ps`, `logs`, and `bundle`/`load` all iterate `$(APP_DIRS) $(OPENWEBUI_DIR)`.
+This works because it honors the same target contract as the apps — `.env`,
+`docker/compose.yaml`, and the `network` / `volumes` / `down` / `bundle` targets
+(its volume target was renamed from the singular `volume` to `volumes` to match).
+It comes up in the app tier, attaching only to `inference-net` (like Nextext and
+translator).
+
+Set `OPENWEBUI_DIR` empty in `federation.env` to drop it from the federation
+entirely. It still self-manages, so you can also run it standalone:
 
 ```bash
-make -C ../open-webui-service network volume   # one-time
-make -C ../open-webui-service up               # detached, self-contained
+make -C ../open-webui-service network volumes   # one-time
+make -C ../open-webui-service up                # detached, self-contained
 ```
-
-Fold it into the federation only if you also special-case its `volume`/`pull`
-interface here.
 
 ## Not included (deliberately)
 

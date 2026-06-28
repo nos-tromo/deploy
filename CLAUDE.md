@@ -43,7 +43,9 @@ The Makefile does **two different things** to member repos, and conflating them 
    `volumes`, `down`, `bundle` are delegated to each member's own Makefile, never reimplemented
    here. `bundle`/`load` cover every image-bearing member — the `APP_DIRS` apps + `vllm-service` +
    `data-plane` (which `bundle` runs at `PROFILE=$(DATA_PROFILE)`) + `open-webui-service` (via
-   `OPENWEBUI_DIR`; its bundle is bespoke but yields the same kind of tarball).
+   `OPENWEBUI_DIR`; its bundle is bespoke but yields the same kind of tarball). Every app-tier loop
+   (`setup`/`up`/`down`/`ps`/`logs`) iterates `$(APP_DIRS) $(OPENWEBUI_DIR)`, so `open-webui-service`
+   is a full lifecycle member, not bundle/load-only.
 
 Rule of thumb: anything that must be detached / ordered / health-gated → drive compose directly;
 anything uniform and order-independent → delegate to the member's Make target. If the members later
@@ -51,25 +53,28 @@ grow a detached production `up`, the `up` target can switch back to delegating.
 
 ## Cross-repo contract (not visible from this repo alone)
 
-The Makefile assumes every member listed in `VLLM_DIR` / `DATA_DIR` / `APP_DIRS`:
+The Makefile assumes every member listed in `VLLM_DIR` / `DATA_DIR` / `APP_DIRS` / `OPENWEBUI_DIR`:
 
 - lives at `$(INFRA_ROOT)/<dir>/`,
 - has `.env` and `docker/compose.yaml` (used by the `compose` helper above),
 - exposes the `common.mk` targets `network`, `volumes`, `down`, `bundle`.
 
-`open-webui-service` is **deliberately excluded** from `APP_DIRS`: it kept a bespoke Makefile
-(`volume` singular, pulls an image instead of building, self-creates its network/volume on `up -d`).
-It self-manages — run `make -C ../open-webui-service up` separately. **Do not add it to `APP_DIRS`**
-without also special-casing its `volume`/`pull` interface here. It *is* listed in `OPENWEBUI_DIR`,
-so `bundle`/`load` (which only need a working `make bundle` + a `*.tar.gz`, not the uniform
-lifecycle) cover it; set `OPENWEBUI_DIR` empty to drop it from those too.
+`open-webui-service` is kept in its **own variable** (`OPENWEBUI_DIR`) rather than `APP_DIRS`
+because it is a distinct member — the upstream chat UI, a pulled image with a bespoke Makefile.
+But it *is* a full lifecycle member: every app-tier loop (`setup`/`up`/`down`/`ps`/`logs`) plus
+`bundle`/`load` iterates `$(APP_DIRS) $(OPENWEBUI_DIR)`. This became possible once its volume target
+was renamed from the singular `volume` to the plural `volumes`, so it now satisfies the contract
+above; keep that name aligned on the open-webui side or `setup` (`make network volumes`) breaks. It
+comes up in the app tier (it attaches only to `inference-net`). Set `OPENWEBUI_DIR` empty to drop it
+from the federation entirely.
 
 ## Configuration
 
 All host-specific knobs live in `federation.env` (gitignored; copy from `federation.env.example`).
 The Makefile `-include`s it. To change which apps run, where member repos live, or the data-plane
 profile, **edit `federation.env`, not the Makefile**: `INFRA_ROOT`, `VLLM_DIR`, `DATA_DIR`,
-`APP_DIRS`, `OPENWEBUI_DIR` (image-bearing; for `bundle`/`load` only), `DATA_PROFILE` (`cpu`|`cuda`),
+`APP_DIRS`, `OPENWEBUI_DIR` (the upstream UI — a full lifecycle member, appended to every app-tier
+loop + `bundle`/`load`), `DATA_PROFILE` (`cpu`|`cuda`),
 and optional `WAIT_TIMEOUT` / `WAIT_PROBE_IMAGE`.
 
 ## Commands

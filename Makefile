@@ -22,13 +22,15 @@
 INFRA_ROOT   ?= ..
 VLLM_DIR     ?= vllm-service
 DATA_DIR     ?= data-plane
-# The uniform (common.mk) apps. open-webui-service is intentionally NOT here for
-# setup/up: it kept a bespoke Makefile (`volume` singular, pulled image,
-# self-creating `up -d`), so it self-manages — run
-# `make -C $(INFRA_ROOT)/open-webui-service up` separately. See README.
+# The first-party (common.mk) apps — built locally, brought up in the app tier.
 APP_DIRS     ?= chorus docint Nextext translator
-# open-webui IS bundle-able (its `make bundle` works like the rest), so it joins
-# the bundle/load fan-out below. Set empty to exclude it. (deploy has no images.)
+# open-webui-service is the upstream chat UI (pulled image, bespoke Makefile),
+# kept in its own variable rather than folded into APP_DIRS because it is a
+# distinct pulled-image member. It still participates in every app-tier loop
+# below (setup/up/down/ps/logs) and the bundle/load fan-out — it honors the same
+# network/volumes/down/bundle contract as the apps (its volume target was renamed
+# from the singular `volume` to `volumes` to match). Set empty to drop it from the
+# federation entirely. (deploy itself has no images.)
 OPENWEBUI_DIR ?= open-webui-service
 DATA_PROFILE ?= cpu
 
@@ -48,13 +50,13 @@ help:
 	@echo "  make bundle   run 'make bundle' in every image-bearing member repo"
 	@echo "  make load     docker load every *.tar.gz found under the member repos"
 	@echo
-	@echo "Apps on this host: $(APP_DIRS)   data-plane profile: $(DATA_PROFILE)"
+	@echo "Apps on this host: $(APP_DIRS) $(OPENWEBUI_DIR)   data-plane profile: $(DATA_PROFILE)"
 
 # One-time host setup. Each repo knows its own networks/volumes (common.mk).
 setup:
 	$(MAKE) -C $(INFRA_ROOT)/$(VLLM_DIR) network volumes
 	$(MAKE) -C $(INFRA_ROOT)/$(DATA_DIR) network volumes
-	@for a in $(APP_DIRS); do $(MAKE) -C $(INFRA_ROOT)/$$a network volumes; done
+	@for a in $(APP_DIRS) $(OPENWEBUI_DIR); do $(MAKE) -C $(INFRA_ROOT)/$$a network volumes; done
 
 up: setup
 	@echo "== inference tier (vllm-service) =="
@@ -64,23 +66,23 @@ up: setup
 	$(call compose,$(DATA_DIR)) --profile $(DATA_PROFILE) up -d --no-build
 	./scripts/wait-healthy.sh data-net neo4j:7687 qdrant:6333
 	@echo "== app tier =="
-	@for a in $(APP_DIRS); do echo ">> $$a"; $(call compose,$$a) up -d --no-build; done
+	@for a in $(APP_DIRS) $(OPENWEBUI_DIR); do echo ">> $$a"; $(call compose,$$a) up -d --no-build; done
 	@echo "federation up."
 
 # Reverse order; delegates to each repo's `down` (never touches data volumes —
 # only data-plane's `make nuke` can, per the workspace invariant).
 down:
-	@for a in $(APP_DIRS); do $(MAKE) -C $(INFRA_ROOT)/$$a down; done
+	@for a in $(APP_DIRS) $(OPENWEBUI_DIR); do $(MAKE) -C $(INFRA_ROOT)/$$a down; done
 	$(MAKE) -C $(INFRA_ROOT)/$(DATA_DIR) down
 	$(MAKE) -C $(INFRA_ROOT)/$(VLLM_DIR) down
 
 ps:
 	@echo "== $(VLLM_DIR) =="; $(call compose,$(VLLM_DIR)) ps
 	@echo "== $(DATA_DIR) =="; $(call compose,$(DATA_DIR)) ps
-	@for a in $(APP_DIRS); do echo "== $$a =="; $(call compose,$$a) ps; done
+	@for a in $(APP_DIRS) $(OPENWEBUI_DIR); do echo "== $$a =="; $(call compose,$$a) ps; done
 
 logs:
-	@for a in $(VLLM_DIR) $(DATA_DIR) $(APP_DIRS); do echo "== $$a =="; $(call compose,$$a) logs --tail=50; done
+	@for a in $(VLLM_DIR) $(DATA_DIR) $(APP_DIRS) $(OPENWEBUI_DIR); do echo "== $$a =="; $(call compose,$$a) logs --tail=50; done
 
 bundle:
 	$(MAKE) -C $(INFRA_ROOT)/$(VLLM_DIR) bundle
