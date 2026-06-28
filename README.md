@@ -50,7 +50,7 @@ make down      # reverse-order stop (never removes data volumes)
 | Target | What it does |
 |---|---|
 | `setup` | Delegates `make network volumes` to every tier (idempotent). |
-| `up` | Inference → state → apps (incl. `open-webui-service`), each `compose up -d --no-build`, health-gated. |
+| `up` | Inference → state → apps (incl. `open-webui-service`), each via the member's own `make up` (detached, `--no-build`), health-gated. |
 | `down` | Apps (incl. `open-webui-service`) → state → inference, via each repo's `make down`. Never `-v`. |
 | `ps` / `logs` | Fan out across all tiers. |
 | `bundle` | Runs `make bundle` in every image-bearing member — `APP_DIRS` apps + vllm-service + data-plane (active profile) + open-webui-service (`OPENWEBUI_DIR`). |
@@ -74,13 +74,13 @@ sharing `scripts/bundle-lib.sh`); `make bundle` here just fans that out, and
 
 ## Known integration points
 
-**Foreground vs detached `up`.** Several member `make up` targets are
-**dev-foreground** (`docint`, `Nextext`, `translator`, `vllm-service` run
-`compose up` without `-d`); others detach. A sequencer can't chain a foreground
-`up`, so this layer **bypasses each repo's `make up`** and runs
-`compose up -d --no-build` directly per tier, while still delegating the uniform
-targets (`network`/`volumes`/`down`/`bundle`). If the members later grow a
-detached production `up`, this can switch back to delegating.
+**Delegated `up`** (was: foreground vs detached). Every member's `make up` is now
+detached and `--no-build` — the apps via `common.mk` v3.2, `data-plane` /
+`open-webui-service` via their bespoke Makefiles. So this layer **delegates
+`make up`** per tier (with `PROFILE=$(DATA_PROFILE)` for `data-plane`), exactly as
+it delegates `network`/`volumes`/`down`/`bundle`. Only `ps`/`logs` still use the
+compose helper directly — there is no uniform `ps` target, and `make logs`
+follows with `-f`, which a sequencer can't chain.
 
 **open-webui-service is folded in via `OPENWEBUI_DIR`, not `APP_DIRS`.** It is the
 upstream chat UI — a pulled image with a bespoke Makefile (it skipped the
