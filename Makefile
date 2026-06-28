@@ -8,11 +8,12 @@
 # Assumes the member repos sit as siblings of this one (the infra/ workspace
 # layout). Override INFRA_ROOT / the dir + app lists in federation.env.
 #
-# NOTE: several member `make up` targets are DEV-FOREGROUND (docint, Nextext,
-# translator, vllm-service run `compose up` without -d). Production bring-up must
-# be detached, so this layer runs `compose up -d --no-build` directly per tier
-# rather than calling each repo's `make up`. It still delegates the uniform
-# targets (network/volumes/down/bundle) to each repo's Makefile.
+# NOTE: every member's `make up` is now detached + `--no-build` (the apps via
+# common.mk v3.2; data-plane/open-webui via their bespoke Makefiles), so this
+# layer delegates `make up` per tier — like it already does for
+# network/volumes/down/bundle — instead of driving compose directly. Only
+# `ps`/`logs` still use the compose helper below (there is no uniform `ps`
+# target, and `make logs` follows with -f, which a sequencer can't chain).
 
 .DEFAULT_GOAL := help
 
@@ -60,13 +61,13 @@ setup:
 
 up: setup
 	@echo "== inference tier (vllm-service) =="
-	$(call compose,$(VLLM_DIR)) up -d --no-build
+	$(MAKE) -C $(INFRA_ROOT)/$(VLLM_DIR) up
 	./scripts/wait-healthy.sh inference-net vllm-router:4000
 	@echo "== state tier (data-plane, profile=$(DATA_PROFILE)) =="
-	$(call compose,$(DATA_DIR)) --profile $(DATA_PROFILE) up -d --no-build
+	$(MAKE) -C $(INFRA_ROOT)/$(DATA_DIR) up PROFILE=$(DATA_PROFILE)
 	./scripts/wait-healthy.sh data-net neo4j:7687 qdrant:6333
 	@echo "== app tier =="
-	@for a in $(APP_DIRS) $(OPENWEBUI_DIR); do echo ">> $$a"; $(call compose,$$a) up -d --no-build; done
+	@for a in $(APP_DIRS) $(OPENWEBUI_DIR); do echo ">> $$a"; $(MAKE) -C $(INFRA_ROOT)/$$a up; done
 	@echo "federation up."
 
 # Reverse order; delegates to each repo's `down` (never touches data volumes —

@@ -32,24 +32,26 @@ destroy state. Preserve this in any teardown edit.
 
 ## The central design split (read before editing the Makefile)
 
-The Makefile does **two different things** to member repos, and conflating them will break bring-up:
+Almost every target **delegates to each member's own Makefile** via `$(MAKE) -C`; only `ps`/`logs`
+drive compose directly. Keep this split:
 
-1. **Lifecycle (`up`): bypass each repo's `make up`.** Several members' `make up` are dev-foreground
-   (`compose up` without `-d`: docint, Nextext, translator, vllm-service). A sequencer can't chain a
-   foreground `up`, so this layer invokes compose **directly** via the helper:
-   `compose = docker compose --env-file $(INFRA_ROOT)/$(1)/.env -f $(INFRA_ROOT)/$(1)/docker/compose.yaml`
-   then `up -d --no-build`.
-2. **Uniform targets (`setup`/`down`/`bundle`/`load`): delegate via `$(MAKE) -C`.** `network`,
-   `volumes`, `down`, `bundle` are delegated to each member's own Makefile, never reimplemented
-   here. `bundle`/`load` cover every image-bearing member — the `APP_DIRS` apps + `vllm-service` +
-   `data-plane` (which `bundle` runs at `PROFILE=$(DATA_PROFILE)`) + `open-webui-service` (via
-   `OPENWEBUI_DIR`; its bundle is bespoke but yields the same kind of tarball). Every app-tier loop
-   (`setup`/`up`/`down`/`ps`/`logs`) iterates `$(APP_DIRS) $(OPENWEBUI_DIR)`, so `open-webui-service`
-   is a full lifecycle member, not bundle/load-only.
+1. **Lifecycle + uniform targets: delegate via `$(MAKE) -C`.** `setup` (`network` + `volumes`), `up`,
+   `down`, `bundle` are delegated to each member, never reimplemented here. `up` can be delegated
+   because every member's `make up` is now detached + `--no-build` (apps via `common.mk` v3.2;
+   `data-plane` / `open-webui-service` bespoke), so a sequencer can chain them; `data-plane` gets
+   `PROFILE=$(DATA_PROFILE)`. `bundle`/`load` cover every image-bearing member — the `APP_DIRS` apps +
+   `vllm-service` + `data-plane` (which `bundle` runs at `PROFILE=$(DATA_PROFILE)`) +
+   `open-webui-service` (via `OPENWEBUI_DIR`; its bundle is bespoke but yields the same kind of
+   tarball). Every app-tier loop (`setup`/`up`/`down`/`ps`/`logs`) iterates
+   `$(APP_DIRS) $(OPENWEBUI_DIR)`, so `open-webui-service` is a full lifecycle member, not
+   bundle/load-only.
+2. **`ps`/`logs`: drive compose directly** via the helper
+   `compose = docker compose --env-file $(INFRA_ROOT)/$(1)/.env -f $(INFRA_ROOT)/$(1)/docker/compose.yaml`.
+   There is no uniform `ps` target, and `make logs` follows with `-f` (can't be chained by a
+   sequencer), so these aggregate read-only views are assembled here rather than delegated.
 
-Rule of thumb: anything that must be detached / ordered / health-gated → drive compose directly;
-anything uniform and order-independent → delegate to the member's Make target. If the members later
-grow a detached production `up`, the `up` target can switch back to delegating.
+Rule of thumb: ordered/health-gated bring-up and every uniform target → delegate to the member's Make
+target; only the aggregate read-only views (`ps`/`logs`) are driven directly.
 
 ## Cross-repo contract (not visible from this repo alone)
 
