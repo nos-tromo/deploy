@@ -41,6 +41,7 @@ on `data-net`, then brings up the apps.
 cp federation.env.example federation.env   # then edit (apps on this host, profile)
 make setup     # one-time: external networks + volumes for every tier
 make up        # ordered, health-gated bring-up (detached)
+make up-dev    # dev bring-up: state + app tiers publish host ports (inference stays production)
 make ps        # status across all tiers
 make down      # reverse-order stop (never removes data volumes)
 ```
@@ -51,6 +52,7 @@ make down      # reverse-order stop (never removes data volumes)
 |---|---|
 | `setup` | Delegates `make network volumes` to every tier (idempotent). |
 | `up` | Inference → state → apps (incl. `open-webui-service`), each via the member's own `make up` (detached, `--no-build`), health-gated. |
+| `up-dev` | Same order + health gates as `up`, but the state + app tiers come up via their own `make up-dev` (publishing host ports for local dev); inference stays on production `up`. |
 | `down` | Apps (incl. `open-webui-service`) → state → inference, via each repo's `make down`. Never `-v`. |
 | `ps` / `logs` | Fan out across all tiers. |
 | `bundle` | Runs `make bundle` in every image-bearing member — `APP_DIRS` apps + vllm-service + data-plane (active profile) + open-webui-service (`OPENWEBUI_DIR`). |
@@ -78,7 +80,9 @@ sharing `scripts/bundle-lib.sh`); `make bundle` here just fans that out, and
 detached and `--no-build` — the apps via `common.mk` v3.2, `data-plane` /
 `open-webui-service` via their bespoke Makefiles. So this layer **delegates
 `make up`** per tier (with `PROFILE=$(DATA_PROFILE)` for `data-plane`), exactly as
-it delegates `network`/`volumes`/`down`/`bundle`. Only `ps`/`logs` still use the
+it delegates `network`/`volumes`/`down`/`bundle`. `make up-dev` rides the same
+delegation: the state + app tiers come up via their detached `make up-dev` (host
+ports published), while inference stays pinned to production `up`. Only `ps`/`logs` still use the
 compose helper directly — there is no uniform `ps` target, and `make logs`
 follows with `-f`, which a sequencer can't chain.
 
