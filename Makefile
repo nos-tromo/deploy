@@ -11,9 +11,12 @@
 # NOTE: every member's `make up` is now detached + `--no-build` (the apps via
 # common.mk v3.2; data-plane/open-webui via their bespoke Makefiles), so this
 # layer delegates `make up` per tier — like it already does for
-# network/volumes/down/bundle — instead of driving compose directly. Only
-# `ps`/`logs` still use the compose helper below (there is no uniform `ps`
-# target, and `make logs` follows with -f, which a sequencer can't chain).
+# network/volumes/down/bundle — instead of driving compose directly. Each
+# member's `make up-dev` is detached too, so `make up-dev` sequences a dev-shape
+# bring-up the same way (state + app tiers via `up-dev` to publish host ports;
+# inference stays on production `up`). Only `ps`/`logs` still use the compose
+# helper below (there is no uniform `ps` target, and `make logs` follows with
+# -f, which a sequencer can't chain).
 
 .DEFAULT_GOAL := help
 
@@ -38,13 +41,14 @@ DATA_PROFILE ?= cpu
 # Production-shape compose invocation for a member repo. $(1) = repo dir.
 compose = docker compose --env-file $(INFRA_ROOT)/$(1)/.env -f $(INFRA_ROOT)/$(1)/docker/compose.yaml
 
-.PHONY: help setup up down ps logs bundle load
+.PHONY: help setup up up-dev down ps logs bundle load
 
 help:
 	@echo "Federation lifecycle (single host). Member repos under INFRA_ROOT=$(INFRA_ROOT)."
 	@echo
 	@echo "  make setup    create external networks + volumes for every tier (idempotent)"
 	@echo "  make up       bring the stack up in order (inference -> data -> apps), health-gated"
+	@echo "  make up-dev   like 'up', but state + app tiers publish host ports (inference stays production)"
 	@echo "  make down     stop the stack in reverse order (never removes data volumes)"
 	@echo "  make ps       service status across all tiers"
 	@echo "  make logs     tail logs across all tiers"
@@ -59,15 +63,22 @@ setup:
 	$(MAKE) -C $(INFRA_ROOT)/$(DATA_DIR) network volumes
 	@for a in $(APP_DIRS) $(OPENWEBUI_DIR); do $(MAKE) -C $(INFRA_ROOT)/$$a network volumes; done
 
-up: setup
+# `up` and `up-dev` share one recipe so the bring-up order + health gates can't
+# drift between them. $(MODE_UP) selects `up` vs `up-dev` for the mode-sensitive
+# tiers (state + apps); inference (vllm-service) is pinned to production `up`
+# regardless — the apps reach the router over inference-net, so its host port is
+# never published, even in dev.
+up:     MODE_UP := up
+up-dev: MODE_UP := up-dev
+up up-dev: setup
 	@echo "== inference tier (vllm-service) =="
 	$(MAKE) -C $(INFRA_ROOT)/$(VLLM_DIR) up
 	./scripts/wait-healthy.sh inference-net vllm-router:4000
-	@echo "== state tier (data-plane, profile=$(DATA_PROFILE)) =="
-	$(MAKE) -C $(INFRA_ROOT)/$(DATA_DIR) up PROFILE=$(DATA_PROFILE)
+	@echo "== state tier (data-plane $(MODE_UP), profile=$(DATA_PROFILE)) =="
+	$(MAKE) -C $(INFRA_ROOT)/$(DATA_DIR) $(MODE_UP) PROFILE=$(DATA_PROFILE)
 	./scripts/wait-healthy.sh data-net neo4j:7687 qdrant:6333
-	@echo "== app tier =="
-	@for a in $(APP_DIRS) $(OPENWEBUI_DIR); do echo ">> $$a"; $(MAKE) -C $(INFRA_ROOT)/$$a up; done
+	@echo "== app tier ($(MODE_UP)) =="
+	@for a in $(APP_DIRS) $(OPENWEBUI_DIR); do echo ">> $$a"; $(MAKE) -C $(INFRA_ROOT)/$$a $(MODE_UP); done
 	@echo "federation up."
 
 # Reverse order; delegates to each repo's `down` (never touches data volumes —
