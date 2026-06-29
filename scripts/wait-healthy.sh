@@ -30,6 +30,12 @@ for target in "$@"; do
       sh -c "nc -z -w 2 ${svc} ${port}" >/dev/null 2>&1; do
     if (( $(date +%s) - start > TIMEOUT )); then
       echo "timed out waiting for ${svc}:${port} on ${NETWORK}" >&2
+      # Surface WHY on timeout: distinguishes a DNS-resolution failure ("bad
+      # address" -> service not attached to this network / wrong alias) from a
+      # TCP failure ("refused" / no route -> nothing listening on that port yet).
+      echo "  last probe (nslookup + verbose nc):" >&2
+      docker run --rm --network "$NETWORK" "$PROBE_IMAGE" sh -c \
+        "nslookup ${svc} 2>&1 | tail -n +3; echo '---'; nc -v -w 2 ${svc} ${port}" >&2 || true
       exit 1
     fi
     sleep 2

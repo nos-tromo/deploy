@@ -38,6 +38,12 @@ APP_DIRS     ?= chorus docint Nextext translator
 OPENWEBUI_DIR ?= open-webui-service
 DATA_PROFILE ?= cpu
 
+# Health-probe knobs consumed by wait-healthy.sh, which runs as a child process
+# (not a sub-make). Export them so values set in federation.env actually reach
+# the script; without this they stay make-only variables and the script falls
+# back to its built-ins (180s timeout / busybox probe image).
+export WAIT_TIMEOUT WAIT_PROBE_IMAGE
+
 # Production-shape compose invocation for a member repo. $(1) = repo dir.
 compose = docker compose --env-file $(INFRA_ROOT)/$(1)/.env -f $(INFRA_ROOT)/$(1)/docker/compose.yaml
 
