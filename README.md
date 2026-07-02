@@ -58,6 +58,22 @@ make down      # reverse-order stop (never removes data volumes)
 | `bundle` | Runs `make bundle` in every image-bearing member — `APP_DIRS` apps + vllm-service + data-plane (active profile) + open-webui-service (`OPENWEBUI_DIR`). |
 | `load` | `docker load` every `*.tar.gz` found under the member repos. |
 
+## Releasing
+
+Releases are cut from an **annotated Git tag** on `main`. `main` is the
+always-green integration trunk (GitHub Flow: short-lived `feature/*` / `fix/*`
+branches → PR → CI → `main`); there is no long-lived staging branch.
+
+1. Ensure `main` is green and carries the changes to ship.
+2. Tag the release: `git tag -a vX.Y.Z -m "vX.Y.Z"` and push the tag.
+3. Build from the tag: `make bundle` — each member stamps its image with the tag
+   (`vX.Y.Z`) rather than a dev `date+sha`, via the shared `bundle_version`.
+4. Bring the tagged artifact up on a staging environment isolated from other
+   workloads and exercise it end to end.
+5. On success, promote the **same** artifact onward (see **Airgap flow** below).
+   On failure, fix forward on `main`, tag the next patch (`vX.Y.Z+1`), and
+   repeat — the failed candidate is never promoted.
+
 ## Airgap flow
 
 ```
