@@ -66,8 +66,12 @@ branches → PR → CI → `main`); there is no long-lived staging branch.
 
 1. Ensure `main` is green and carries the changes to ship.
 2. Tag the release: `git tag -a vX.Y.Z -m "vX.Y.Z"` and push the tag.
-3. Build from the tag: `make bundle` — each member stamps its image with the tag
-   (`vX.Y.Z`) rather than a dev `date+sha`, via the shared `bundle_version`.
+3. Bundle the tag: `make bundle` — each member builds from the latest annotated
+   tag reachable from HEAD (it checks the tag out and restores your branch after),
+   stamping its image `vX.Y.Z`. It refuses on a dirty tree or with no reachable
+   tag, so a release artifact is always tag-versioned, never a dev `date+sha`. For
+   pre-tag soak iteration, per-member `make bundle-dev` bundles the current working
+   tree instead (never promoted).
 4. Bring the tagged artifact up on a staging environment isolated from other
    workloads and exercise it end to end.
 5. On success, promote the **same** artifact onward (see **Airgap flow** below).
