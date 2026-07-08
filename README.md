@@ -60,12 +60,20 @@ make down      # reverse-order stop (never removes data volumes)
 
 ## Releasing
 
-Releases are cut from an **annotated Git tag** on `main`. `main` is the
-always-green integration trunk (GitHub Flow: short-lived `feature/*` / `fix/*`
-branches → PR → CI → `main`); there is no long-lived staging branch.
+Releases are identified by an **annotated Git tag** on `main`, minted
+automatically on merge. `main` is the always-green integration trunk (GitHub
+Flow: short-lived `feature/*` / `fix/*` branches → PR → CI → `main`); there is no
+long-lived staging branch.
 
-1. Ensure `main` is green and carries the changes to ship.
-2. Tag the release: `git tag -a vX.Y.Z -m "vX.Y.Z"` and push the tag.
+1. In a `release/vX.Y.Z` branch, bump the member's declared version — `pyproject.toml`
+   `[project].version` (the Python apps + `vllm-service`) or the one-line `VERSION`
+   file (`data-plane`, `open-webui-service`) — and, for the Python repos, run
+   `uv lock` to sync the lockfile. PR → CI → merge to `main`.
+2. On merge, the shared `release-tag` workflow (`nos-tromo/.github@v3`) reads the
+   declared version and mints the annotated `vX.Y.Z` tag **automatically** — no
+   manual `git tag`. It is idempotent (an unchanged version is a no-op) and refuses
+   a version that decreased. Bumping the version in the release PR is the whole
+   release action.
 3. Bundle the tag: `make bundle` — each member builds from the latest annotated
    tag reachable from HEAD (it checks the tag out and restores your branch after),
    stamping its image `vX.Y.Z`. It refuses on a dirty tree or with no reachable
