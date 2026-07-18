@@ -55,6 +55,7 @@ make down      # reverse-order stop (never removes data volumes)
 | `up-dev` | Same order + health gates as `up`, but the state + app tiers come up via their own `make up-dev` (publishing host ports for local dev); inference stays on production `up`. |
 | `down` | Apps (incl. `open-webui-service`) → state → inference, via each repo's `make down`. Never `-v`. |
 | `ps` / `logs` | Fan out across all tiers. |
+| `pull` | Switches every federation repo (deploy itself + all members) to `main` and pulls from GitHub (`--ff-only`; a dirty/diverged repo is skipped with a warning, and the target exits non-zero at the end if any repo was skipped). `infra-ui` is not a member and is not pulled. |
 | `bundle` | Runs `make bundle` in every image-bearing member — `APP_DIRS` apps + vllm-service + data-plane (active profile) + open-webui-service (`OPENWEBUI_DIR`). |
 | `load` | `docker load` every `*.tar.gz` found under the member repos. |
 

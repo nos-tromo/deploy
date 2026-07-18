@@ -47,7 +47,7 @@ export WAIT_TIMEOUT WAIT_PROBE_IMAGE
 # Production-shape compose invocation for a member repo. $(1) = repo dir.
 compose = docker compose --env-file $(INFRA_ROOT)/$(1)/.env -f $(INFRA_ROOT)/$(1)/docker/compose.yaml
 
-.PHONY: help setup up up-dev down ps logs bundle load
+.PHONY: help setup up up-dev down ps logs pull bundle load
 
 help:
 	@echo "Federation lifecycle (single host). Member repos under INFRA_ROOT=$(INFRA_ROOT)."
@@ -58,6 +58,7 @@ help:
 	@echo "  make down     stop the stack in reverse order (never removes data volumes)"
 	@echo "  make ps       service status across all tiers"
 	@echo "  make logs     tail logs across all tiers"
+	@echo "  make pull     switch every federation repo (deploy + members) to main and pull from GitHub"
 	@echo "  make bundle   run 'make bundle' in every image-bearing member repo"
 	@echo "  make load     docker load every *.tar.gz found under the member repos"
 	@echo
@@ -101,6 +102,21 @@ ps:
 
 logs:
 	@for a in $(VLLM_DIR) $(DATA_DIR) $(APP_DIRS) $(OPENWEBUI_DIR); do echo "== $$a =="; $(call compose,$$a) logs --tail=50; done
+
+# Refresh every federation repo from GitHub: deploy itself (.) plus all members.
+# `switch main` + `--ff-only` fail loudly on a conflicting dirty tree or
+# diverged history instead of merging; a refused repo gets a WARNING and the
+# loop continues, exiting non-zero at the end if any repo was skipped.
+# (infra-ui is a build-time library, not a federation member, so it is not
+# pulled here.)
+pull:
+	@failed=""; \
+	for r in . $(addprefix $(INFRA_ROOT)/,$(VLLM_DIR) $(DATA_DIR) $(APP_DIRS) $(OPENWEBUI_DIR)); do \
+	  echo ">> $$r"; \
+	  git -C "$$r" switch main && git -C "$$r" pull --ff-only \
+	    || { echo "WARNING: $$r not updated (dirty tree or diverged history?) — skipping."; failed="$$failed $$r"; }; \
+	done; \
+	[ -z "$$failed" ] || { echo "WARNING: not updated:$$failed"; exit 1; }
 
 bundle:
 	$(MAKE) -C $(INFRA_ROOT)/$(VLLM_DIR) bundle

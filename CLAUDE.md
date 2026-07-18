@@ -100,6 +100,7 @@ make up        # ordered, health-gated bring-up, detached
 make up-dev    # like up, but state + app tiers publish host ports; inference stays production
 make ps        # status across all tiers       make logs  # tail across all tiers
 make down      # reverse-order stop (never removes data volumes)
+make pull      # switch every federation repo (deploy + members) to main, git pull --ff-only
 make bundle    # build every image-bearing member's airgap tarball(s) (online build host)
 make load      # docker load every *.tar.gz under the member repos (offline host)
 ```
