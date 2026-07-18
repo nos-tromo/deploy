@@ -3,3 +3,6 @@ federation.env
 
 # Airgap image tarballs, if produced/copied here.
 *.tar.gz
+
+# VS Code workspace files
+*.code-workspace
