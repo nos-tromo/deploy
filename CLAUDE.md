@@ -37,11 +37,12 @@ blast radius is cross-repo: editing anything here changes how the entire federat
 
 ## The load-bearing invariant: bring-up order
 
-`inference (vllm-service) → state (data-plane) → apps`, each tier **healthy before the next
-starts**. `down` is the exact reverse. This is not a preference — the apps assume the router
-(`inference-net`) and the databases (`data-net`) are already reachable when they start. `make up`
-enforces it by health-gating each tier with `wait-healthy.sh` before starting the next. **Never
-reorder these tiers.**
+`inference (vllm-service) → state (data-plane) → obs (obs-plane) → apps`, each tier **healthy
+before the next starts**. `down` is the exact reverse. This is not a preference — the apps assume
+the router (`inference-net`) and the databases (`data-net`) are already reachable when they start.
+`make up` enforces it by health-gating each tier with `wait-healthy.sh` before starting the next.
+The obs tier is gated on `prometheus:9090` over `data-net`; it is optional (`OBS_DIR` empty skips
+it) but when present its position is fixed. **Never reorder these tiers.**
 
 `down` **never** passes `-v` / removes data volumes. Only `data-plane`'s own `make nuke` may
 destroy state. Preserve this in any teardown edit.
@@ -56,11 +57,11 @@ drive compose directly. Keep this split:
    because every member's `make up` is now detached + `--no-build` (apps via `common.mk` v3.2;
    `data-plane` / `open-webui-service` bespoke), so a sequencer can chain them; `data-plane` gets
    `PROFILE=$(DATA_PROFILE)`. `up-dev` reuses that same sequencer (one shared recipe selected by
-   `$(MODE_UP)`): the state + app tiers come up via their detached `up-dev` to publish host ports,
+   `$(MODE_UP)`): the state + obs + app tiers come up via their detached `up-dev` to publish host ports,
    while inference stays pinned to production `up`. `bundle`/`load` cover every image-bearing member — the `APP_DIRS` apps +
    `vllm-service` + `data-plane` (which `bundle` runs at `PROFILE=$(DATA_PROFILE)`) +
    `open-webui-service` (via `OPENWEBUI_DIR`; its bundle is bespoke but yields the same kind of
-   tarball). Every app-tier loop (`setup`/`up`/`down`/`ps`/`logs`) iterates
+   tarball) + `obs-plane` (via `OBS_DIR`; bespoke, data-plane pattern). Every app-tier loop (`setup`/`up`/`down`/`ps`/`logs`) iterates
    `$(APP_DIRS) $(OPENWEBUI_DIR)`, so `open-webui-service` is a full lifecycle member, not
    bundle/load-only.
 2. **`ps`/`logs`: drive compose directly** via the helper
@@ -73,11 +74,15 @@ target; only the aggregate read-only views (`ps`/`logs`) are driven directly.
 
 ## Cross-repo contract (not visible from this repo alone)
 
-The Makefile assumes every member listed in `VLLM_DIR` / `DATA_DIR` / `APP_DIRS` / `OPENWEBUI_DIR`:
+The Makefile assumes every member listed in
+`VLLM_DIR` / `DATA_DIR` / `OBS_DIR` / `APP_DIRS` / `OPENWEBUI_DIR`:
 
 - lives at `$(INFRA_ROOT)/<dir>/`,
 - has `.env` and `docker/compose.yaml` (used by the `compose` helper above),
 - exposes the `common.mk` targets `network`, `volumes`, `down`, `bundle`.
+
+`obs-plane` honors this same `network`/`volumes`/`down`/`bundle` contract with a bespoke Makefile
+(the data-plane / open-webui-service pattern), not `common.mk`.
 
 `open-webui-service` is kept in its **own variable** (`OPENWEBUI_DIR`) rather than `APP_DIRS`
 because it is a distinct member — the upstream chat UI, a pulled image with a bespoke Makefile.
@@ -94,16 +99,16 @@ All host-specific knobs live in `federation.env` (gitignored; copy from `federat
 The Makefile `-include`s it. To change which apps run, where member repos live, or the data-plane
 profile, **edit `federation.env`, not the Makefile**: `INFRA_ROOT`, `VLLM_DIR`, `DATA_DIR`,
 `APP_DIRS`, `OPENWEBUI_DIR` (the upstream UI — a full lifecycle member, appended to every app-tier
-loop + `bundle`/`load`), `DATA_PROFILE` (`cpu`|`cuda`),
-and optional `WAIT_TIMEOUT` / `WAIT_PROBE_IMAGE`.
+loop + `bundle`/`load`), `OBS_DIR` (the observability plane; set empty to disable),
+`DATA_PROFILE` (`cpu`|`cuda`), and optional `WAIT_TIMEOUT` / `WAIT_PROBE_IMAGE`.
 
 ## Commands
 
 ```bash
 # Operate the federation (needs the member repos present under INFRA_ROOT):
 make setup     # one-time: external networks + volumes for every tier (idempotent)
-make up        # ordered, health-gated bring-up, detached
-make up-dev    # like up, but state + app tiers publish host ports; inference stays production
+make up        # ordered, health-gated bring-up, detached (inference -> state -> obs -> apps)
+make up-dev    # like up, but state + obs + app tiers publish host ports; inference stays production
 make ps        # status across all tiers       make logs  # tail across all tiers
 make down      # reverse-order stop (never removes data volumes)
 make pull      # switch every federation repo (deploy + members) to main, git pull --ff-only
