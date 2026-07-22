@@ -57,7 +57,7 @@ drive compose directly. Keep this split:
    because every member's `make up` is now detached + `--no-build` (apps via `common.mk` v3.2;
    `data-plane` / `open-webui-service` bespoke), so a sequencer can chain them; `data-plane` gets
    `PROFILE=$(DATA_PROFILE)`. `up-dev` reuses that same sequencer (one shared recipe selected by
-   `$(MODE_UP)`): the state + app tiers come up via their detached `up-dev` to publish host ports,
+   `$(MODE_UP)`): the state + obs + app tiers come up via their detached `up-dev` to publish host ports,
    while inference stays pinned to production `up`. `bundle`/`load` cover every image-bearing member — the `APP_DIRS` apps +
    `vllm-service` + `data-plane` (which `bundle` runs at `PROFILE=$(DATA_PROFILE)`) +
    `open-webui-service` (via `OPENWEBUI_DIR`; its bundle is bespoke but yields the same kind of
@@ -108,7 +108,7 @@ loop + `bundle`/`load`), `OBS_DIR` (the observability plane; set empty to disabl
 # Operate the federation (needs the member repos present under INFRA_ROOT):
 make setup     # one-time: external networks + volumes for every tier (idempotent)
 make up        # ordered, health-gated bring-up, detached (inference -> state -> obs -> apps)
-make up-dev    # like up, but state + app tiers publish host ports; inference stays production
+make up-dev    # like up, but state + obs + app tiers publish host ports; inference stays production
 make ps        # status across all tiers       make logs  # tail across all tiers
 make down      # reverse-order stop (never removes data volumes)
 make pull      # switch every federation repo (deploy + members) to main, git pull --ff-only

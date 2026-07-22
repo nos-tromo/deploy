@@ -44,7 +44,7 @@ then brings up the apps.
 cp federation.env.example federation.env   # then edit (apps on this host, profile)
 make setup     # one-time: external networks + volumes for every tier
 make up        # ordered, health-gated bring-up (detached)
-make up-dev    # dev bring-up: state + app tiers publish host ports (inference stays production)
+make up-dev    # dev bring-up: state + obs + app tiers publish host ports (inference stays production)
 make ps        # status across all tiers
 make down      # reverse-order stop (never removes data volumes)
 ```
@@ -55,7 +55,7 @@ make down      # reverse-order stop (never removes data volumes)
 |---|---|
 | `setup` | Delegates `make network volumes` to every tier (idempotent). |
 | `up` | Inference → state → obs → apps (incl. `open-webui-service`), each via the member's own `make up` (detached, `--no-build`), health-gated. |
-| `up-dev` | Same order + health gates as `up`, but the state + app tiers come up via their own `make up-dev` (publishing host ports for local dev); inference stays on production `up`. |
+| `up-dev` | Same order + health gates as `up`, but the state + obs + app tiers come up via their own `make up-dev` (publishing host ports for local dev); inference stays on production `up`. |
 | `down` | Apps (incl. `open-webui-service`) → obs → state → inference, via each repo's `make down`. Never `-v`. |
 | `ps` / `logs` | Fan out across all tiers. |
 | `pull` | Switches every federation repo (deploy itself + all members) to `main` and pulls from GitHub (`--ff-only`; a dirty/diverged repo is skipped with a warning, and the target exits non-zero at the end if any repo was skipped). `infra-ui` is not a member and is not pulled. |
@@ -114,7 +114,7 @@ detached and `--no-build` — the apps via `common.mk` v3.2, `data-plane` /
 `open-webui-service` via their bespoke Makefiles. So this layer **delegates
 `make up`** per tier (with `PROFILE=$(DATA_PROFILE)` for `data-plane`), exactly as
 it delegates `network`/`volumes`/`down`/`bundle`. `make up-dev` rides the same
-delegation: the state + app tiers come up via their detached `make up-dev` (host
+delegation: the state + obs + app tiers come up via their detached `make up-dev` (host
 ports published), while inference stays pinned to production `up`. Only `ps`/`logs` still use the
 compose helper directly — there is no uniform `ps` target, and `make logs`
 follows with `-f`, which a sequencer can't chain.
