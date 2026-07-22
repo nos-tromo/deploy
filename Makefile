@@ -80,7 +80,7 @@ setup:
 
 # `up` and `up-dev` share one recipe so the bring-up order + health gates can't
 # drift between them. $(MODE_UP) selects `up` vs `up-dev` for the mode-sensitive
-# tiers (state + apps); inference (vllm-service) is pinned to production `up`
+# tiers (state + obs + apps); inference (vllm-service) is pinned to production `up`
 # regardless — the apps reach the router over inference-net, so its host port is
 # never published, even in dev.
 up:     MODE_UP := up
