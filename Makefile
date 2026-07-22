@@ -14,7 +14,7 @@
 # layer delegates `make up` per tier — like it already does for
 # network/volumes/down/bundle — instead of driving compose directly. Each
 # member's `make up-dev` is detached too, so `make up-dev` sequences a dev-shape
-# bring-up the same way (state + app tiers via `up-dev` to publish host ports;
+# bring-up the same way (state + obs + app tiers via `up-dev` to publish host ports;
 # inference stays on production `up`). Only `ps`/`logs` still use the compose
 # helper below (there is no uniform `ps` target, and `make logs` follows with
 # -f, which a sequencer can't chain).
@@ -61,7 +61,7 @@ help:
 	@echo
 	@echo "  make setup    create external networks + volumes for every tier (idempotent)"
 	@echo "  make up       bring the stack up in order (inference -> data -> obs -> apps), health-gated"
-	@echo "  make up-dev   like 'up', but state + app tiers publish host ports (inference stays production)"
+	@echo "  make up-dev   like 'up', but state + obs + app tiers publish host ports (inference stays production)"
 	@echo "  make down     stop the stack in reverse order (never removes data volumes)"
 	@echo "  make ps       service status across all tiers"
 	@echo "  make logs     tail logs across all tiers"
