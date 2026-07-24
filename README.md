@@ -164,6 +164,17 @@ production shape it publishes no host ports; `make up-dev` publishes
 Grafana (see obs-plane's README). Set `OBS_DIR` empty in `federation.env`
 to run without observability.
 
+**edge-plane is the edge tier, via `EDGE_DIR`.** The gateway (Caddy +
+Authelia; pulled image, bespoke Makefile) is the only tier pinned to
+production `up` in both modes — its production shape already publishes
+the entry ports, so the dev overlay only adds a repo-local echo container
+rather than changing what's exposed. It comes up last (gated on
+`caddy:443` over `edge-net`) and goes down first, since it is the
+federation's public entry point fronting everything behind it. Set
+`EDGE_DIR` empty in `federation.env` to run without the gateway. Client
+prerequisites — `EDGE_HOST` resolution and CA trust — are documented in
+`../edge-plane/README.md`.
+
 ## Not included (deliberately)
 
 - **A federation `compose.yaml` with `include:`** — Compose can merge the member
