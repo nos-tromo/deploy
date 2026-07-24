@@ -67,8 +67,8 @@ help:
 	@echo "Federation lifecycle (single host). Member repos under INFRA_ROOT=$(INFRA_ROOT)."
 	@echo
 	@echo "  make setup    create external networks + volumes for every tier (idempotent)"
-	@echo "  make up       bring the stack up in order (inference -> data -> obs -> apps), health-gated"
-	@echo "  make up-dev   like 'up', but state + obs + app tiers publish host ports (inference stays production)"
+	@echo "  make up       bring the stack up in order (inference -> data -> obs -> apps -> edge), health-gated"
+	@echo "  make up-dev   like 'up', but state + obs + app tiers publish host ports (inference & edge stay production)"
 	@echo "  make down     stop the stack in reverse order (never removes data volumes)"
 	@echo "  make ps       service status across all tiers"
 	@echo "  make logs     tail logs across all tiers"

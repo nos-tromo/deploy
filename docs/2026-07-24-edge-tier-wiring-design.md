@@ -81,3 +81,9 @@ no-ops against running containers; edge probe passes), `make ps` (edge
 tier listed), then a full `make down && make up` cycle ending healthy,
 with the edge probe observed gating after the app tier. CI: the repo's
 existing shellcheck/yamllint/Makefile-parse validation must stay green.
+
+[Status: the live verification on the dev host substituted a partial cycle
+(state/obs/edge) for the full `make down && make up`, after discovering the
+app tier's date-based dev image tags strand containers across day
+boundaries with `--no-build`; full-cycle sequencing was instead verified via
+`make -n` dry-run ordering. The tag fragility is tracked upstream.]

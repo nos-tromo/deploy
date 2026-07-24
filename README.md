@@ -121,6 +121,10 @@ Once the federation is up, browsers reach it at `https://<EDGE_HOST>/` — the
 client-side hosts-entry/DNS setup and CA trust needed to reach that URL are
 documented in edge-plane's own README (see `../edge-plane/README.md`).
 
+On a brand-new host, the edge tier aborts `make up` with a clear message
+until `edge-plane/authelia/users.yml` has been provisioned from its
+template (see edge-plane's README quickstart).
+
 ## Known integration points
 
 **Delegated `up`** (was: foreground vs detached). Every member's `make up` is now
