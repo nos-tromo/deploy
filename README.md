@@ -165,7 +165,7 @@ Grafana (see obs-plane's README). Set `OBS_DIR` empty in `federation.env`
 to run without observability.
 
 **edge-plane is the edge tier, via `EDGE_DIR`.** The gateway (Caddy +
-Authelia; pulled image, bespoke Makefile) is the only tier pinned to
+Authelia; pulled image, bespoke Makefile), like inference, is pinned to
 production `up` in both modes — its production shape already publishes
 the entry ports, so the dev overlay only adds a repo-local echo container
 rather than changing what's exposed. It comes up last (gated on
