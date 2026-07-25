@@ -43,6 +43,13 @@ OPENWEBUI_DIR ?= open-webui-service
 # (logs land in Loki, first scrapes catch a crash-looping app). Set empty
 # to run this host without observability.
 OBS_DIR      ?= obs-plane
+# edge-plane is the federation's entry point (Caddy + Authelia) — a
+# pulled-image member with a bespoke Makefile. Its tier comes up LAST
+# (inference -> state -> obs -> apps -> edge): Caddy answers 502 for a
+# still-warming upstream, so the position is operator ergonomics, not a
+# correctness gate. Set empty to run this host without the gateway
+# (LAN access then requires each member's own dev override).
+EDGE_DIR     ?= edge-plane
 DATA_PROFILE ?= cpu
 
 # Health-probe knobs consumed by wait-healthy.sh, which runs as a child process
@@ -60,8 +67,8 @@ help:
 	@echo "Federation lifecycle (single host). Member repos under INFRA_ROOT=$(INFRA_ROOT)."
 	@echo
 	@echo "  make setup    create external networks + volumes for every tier (idempotent)"
-	@echo "  make up       bring the stack up in order (inference -> data -> obs -> apps), health-gated"
-	@echo "  make up-dev   like 'up', but state + obs + app tiers publish host ports (inference stays production)"
+	@echo "  make up       bring the stack up in order (inference -> data -> obs -> apps -> edge), health-gated"
+	@echo "  make up-dev   like 'up', but state + obs + app tiers publish host ports (inference & edge stay production)"
 	@echo "  make down     stop the stack in reverse order (never removes data volumes)"
 	@echo "  make ps       service status across all tiers"
 	@echo "  make logs     tail logs across all tiers"
@@ -69,20 +76,23 @@ help:
 	@echo "  make bundle   run 'make bundle' in every image-bearing member repo"
 	@echo "  make load     docker load every *.tar.gz found under the member repos"
 	@echo
-	@echo "Apps on this host: $(APP_DIRS) $(OPENWEBUI_DIR)   obs: $(if $(OBS_DIR),$(OBS_DIR),disabled)   data-plane profile: $(DATA_PROFILE)"
+	@echo "Apps on this host: $(APP_DIRS) $(OPENWEBUI_DIR)   obs: $(if $(OBS_DIR),$(OBS_DIR),disabled)   edge: $(if $(EDGE_DIR),$(EDGE_DIR),disabled)   data-plane profile: $(DATA_PROFILE)"
 
 # One-time host setup. Each repo knows its own networks/volumes (common.mk).
 setup:
 	$(MAKE) -C $(INFRA_ROOT)/$(VLLM_DIR) network volumes
 	$(MAKE) -C $(INFRA_ROOT)/$(DATA_DIR) network volumes
 	[ -z "$(OBS_DIR)" ] || $(MAKE) -C $(INFRA_ROOT)/$(OBS_DIR) network volumes
+	[ -z "$(EDGE_DIR)" ] || $(MAKE) -C $(INFRA_ROOT)/$(EDGE_DIR) network volumes
 	@for a in $(APP_DIRS) $(OPENWEBUI_DIR); do $(MAKE) -C $(INFRA_ROOT)/$$a network volumes; done
 
 # `up` and `up-dev` share one recipe so the bring-up order + health gates can't
 # drift between them. $(MODE_UP) selects `up` vs `up-dev` for the mode-sensitive
 # tiers (state + obs + apps); inference (vllm-service) is pinned to production `up`
 # regardless — the apps reach the router over inference-net, so its host port is
-# never published, even in dev.
+# never published, even in dev. The edge tier is pinned to production `up` like inference
+# — its production shape already publishes the entry ports, and its `up-dev` overlay only
+# adds a repo-local test container.
 up:     MODE_UP := up
 up-dev: MODE_UP := up-dev
 up up-dev: setup
@@ -97,11 +107,15 @@ up up-dev: setup
 	[ -z "$(OBS_DIR)" ] || ./scripts/wait-healthy.sh data-net prometheus:9090
 	@echo "== app tier ($(MODE_UP)) =="
 	@for a in $(APP_DIRS) $(OPENWEBUI_DIR); do echo ">> $$a"; $(MAKE) -C $(INFRA_ROOT)/$$a $(MODE_UP); done
+	@[ -z "$(EDGE_DIR)" ] || echo "== edge tier ($(EDGE_DIR), production up) =="
+	[ -z "$(EDGE_DIR)" ] || $(MAKE) -C $(INFRA_ROOT)/$(EDGE_DIR) up
+	[ -z "$(EDGE_DIR)" ] || ./scripts/wait-healthy.sh edge-net caddy:443
 	@echo "federation up."
 
 # Reverse order; delegates to each repo's `down` (never touches data volumes —
 # only data-plane's `make nuke` can, per the workspace invariant).
 down:
+	[ -z "$(EDGE_DIR)" ] || $(MAKE) -C $(INFRA_ROOT)/$(EDGE_DIR) down
 	@for a in $(APP_DIRS) $(OPENWEBUI_DIR); do $(MAKE) -C $(INFRA_ROOT)/$$a down; done
 	[ -z "$(OBS_DIR)" ] || $(MAKE) -C $(INFRA_ROOT)/$(OBS_DIR) down
 	$(MAKE) -C $(INFRA_ROOT)/$(DATA_DIR) down
@@ -111,10 +125,11 @@ ps:
 	@echo "== $(VLLM_DIR) =="; $(call compose,$(VLLM_DIR)) ps
 	@echo "== $(DATA_DIR) =="; $(call compose,$(DATA_DIR)) ps
 	@[ -z "$(OBS_DIR)" ] || { echo "== $(OBS_DIR) =="; $(call compose,$(OBS_DIR)) ps; }
+	@[ -z "$(EDGE_DIR)" ] || { echo "== $(EDGE_DIR) =="; $(call compose,$(EDGE_DIR)) ps; }
 	@for a in $(APP_DIRS) $(OPENWEBUI_DIR); do echo "== $$a =="; $(call compose,$$a) ps; done
 
 logs:
-	@for a in $(VLLM_DIR) $(DATA_DIR) $(OBS_DIR) $(APP_DIRS) $(OPENWEBUI_DIR); do echo "== $$a =="; $(call compose,$$a) logs --tail=50; done
+	@for a in $(VLLM_DIR) $(DATA_DIR) $(OBS_DIR) $(EDGE_DIR) $(APP_DIRS) $(OPENWEBUI_DIR); do echo "== $$a =="; $(call compose,$$a) logs --tail=50; done
 
 # Refresh every federation repo from GitHub: deploy itself (.) plus all members.
 # `switch main` + `--ff-only` fail loudly on a conflicting dirty tree or
@@ -124,7 +139,7 @@ logs:
 # pulled here.)
 pull:
 	@failed=""; \
-	for r in . $(addprefix $(INFRA_ROOT)/,$(VLLM_DIR) $(DATA_DIR) $(OBS_DIR) $(APP_DIRS) $(OPENWEBUI_DIR)); do \
+	for r in . $(addprefix $(INFRA_ROOT)/,$(VLLM_DIR) $(DATA_DIR) $(OBS_DIR) $(EDGE_DIR) $(APP_DIRS) $(OPENWEBUI_DIR)); do \
 	  echo ">> $$r"; \
 	  git -C "$$r" switch main && git -C "$$r" pull --ff-only \
 	    || { echo "WARNING: $$r not updated (dirty tree or diverged history?) — skipping."; failed="$$failed $$r"; }; \
@@ -135,10 +150,11 @@ bundle:
 	$(MAKE) -C $(INFRA_ROOT)/$(VLLM_DIR) bundle
 	$(MAKE) -C $(INFRA_ROOT)/$(DATA_DIR) bundle PROFILE=$(DATA_PROFILE)
 	[ -z "$(OBS_DIR)" ] || $(MAKE) -C $(INFRA_ROOT)/$(OBS_DIR) bundle
+	[ -z "$(EDGE_DIR)" ] || $(MAKE) -C $(INFRA_ROOT)/$(EDGE_DIR) bundle
 	@for a in $(APP_DIRS) $(OPENWEBUI_DIR); do echo ">> $$a"; $(MAKE) -C $(INFRA_ROOT)/$$a bundle; done
 
 # Airgapped host: load every image tarball produced by `make bundle`.
 load:
-	@found=0; for f in $(INFRA_ROOT)/$(VLLM_DIR)/*.tar.gz $(INFRA_ROOT)/$(DATA_DIR)/*.tar.gz $(foreach a,$(OBS_DIR) $(APP_DIRS) $(OPENWEBUI_DIR),$(INFRA_ROOT)/$(a)/*.tar.gz); do \
+	@found=0; for f in $(INFRA_ROOT)/$(VLLM_DIR)/*.tar.gz $(INFRA_ROOT)/$(DATA_DIR)/*.tar.gz $(foreach a,$(OBS_DIR) $(EDGE_DIR) $(APP_DIRS) $(OPENWEBUI_DIR),$(INFRA_ROOT)/$(a)/*.tar.gz); do \
 	  [ -e "$$f" ] || continue; found=1; echo ">> docker load -i $$f"; docker load -i "$$f"; \
 	done; [ $$found -eq 1 ] || echo "no *.tar.gz found under the member repos — run 'make bundle' on the build host first."
