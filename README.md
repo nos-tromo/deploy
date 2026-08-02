@@ -54,8 +54,8 @@ on a missing `edge-net` even though the edge tier itself comes up last.
 ## Quick start
 
 ```bash
+cp federation.env.example federation.env   # then edit (GIT_REMOTE, INFRA_ROOT, apps, profile)
 make clone     # bare host: clone every missing member repo under INFRA_ROOT
-cp federation.env.example federation.env   # then edit (apps on this host, profile)
 make setup     # one-time: external networks + volumes for every tier
 make up        # ordered, health-gated bring-up (detached)
 make up-dev    # dev bring-up: state + obs + app tiers publish host ports (inference & edge stay production)

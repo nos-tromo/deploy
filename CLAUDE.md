@@ -94,7 +94,9 @@ The Makefile assumes every member listed in
 
 - lives at `$(INFRA_ROOT)/<dir>/`,
 - has `.env` and `docker/compose.yaml` (used by the `compose` helper above),
-- exposes the `common.mk` targets `network`, `volumes`, `down`, `bundle`.
+- exposes the `common.mk` targets `network`, `volumes`, `down`, `bundle`,
+- has an upstream repo at `GIT_REMOTE` named identically to its directory —
+  `clone` derives the clone URL from the directory name.
 
 `obs-plane` honors this same `network`/`volumes`/`down`/`bundle` contract with a bespoke Makefile
 (the data-plane / open-webui-service pattern), not `common.mk`.

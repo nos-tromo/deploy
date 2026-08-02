@@ -156,7 +156,7 @@ clone:
 	    echo ">> $$d already present — skipping"; skipped=$$((skipped+1)); continue; \
 	  fi; \
 	  echo ">> $$d cloning"; \
-	  git clone "$(GIT_REMOTE)/$$d.git" "$(INFRA_ROOT)/$$d" \
+	  git clone "$(GIT_REMOTE:%/=%)/$$d.git" "$(INFRA_ROOT)/$$d" \
 	    && cloned=$$((cloned+1)) \
 	    || { echo "WARNING: $$d not cloned."; failed="$$failed $$d"; }; \
 	done; \
