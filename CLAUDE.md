@@ -75,10 +75,13 @@ drive compose directly. Keep this split:
 3. **`clone`/`pull`: drive `git` directly.** These two act on the member *repos*,
    not their services, so there is nothing to delegate — a member's Makefile
    cannot clone the repo that contains it. They share one contract: iterate the
-   member list, run one git command per repo, warn-and-continue on refusal, and
-   exit non-zero at the end if any repo was skipped. `clone` fills in what is
-   missing (`$(GIT_REMOTE)/<dir>.git`, never shallow — members' `bundle` needs
-   reachable tags); `pull` refreshes what is present. Keep them symmetrical.
+   member list, run git per repo (`clone` a single `git clone`; `pull` chains
+   `switch main && pull --ff-only`), warn and continue when a repo is refused,
+   and exit non-zero at the end if any repo was refused. `clone` fills in what
+   is missing (`$(GIT_REMOTE)/<dir>.git`, never shallow — members' `bundle`
+   needs reachable tags); a pre-existing directory is skipped, not refused, so
+   it never triggers the non-zero exit. `pull` refreshes what is present. Keep
+   them symmetrical.
 
 Rule of thumb: ordered/health-gated bring-up and every uniform target → delegate to the member's Make
 target; only the aggregate read-only views (`ps`/`logs`) and the repo-level git targets
@@ -121,8 +124,10 @@ whole federation at SSH or an internal mirror.
 ## Commands
 
 ```bash
+# Bootstrap a bare host:
+make clone     # clone every missing member repo under INFRA_ROOT (never shallow)
+
 # Operate the federation (needs the member repos present under INFRA_ROOT):
-make clone     # bare host: clone every missing member repo under INFRA_ROOT (never shallow)
 make setup     # one-time: external networks + volumes for every tier (idempotent)
 make up        # ordered, health-gated bring-up, detached (inference -> state -> obs -> apps -> edge)
 make up-dev    # like up, but state + obs + app tiers publish host ports; inference & edge stay production
