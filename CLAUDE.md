@@ -72,9 +72,17 @@ drive compose directly. Keep this split:
    `compose = docker compose --env-file $(INFRA_ROOT)/$(1)/.env -f $(INFRA_ROOT)/$(1)/docker/compose.yaml`.
    There is no uniform `ps` target, and `make logs` follows with `-f` (can't be chained by a
    sequencer), so these aggregate read-only views are assembled here rather than delegated.
+3. **`clone`/`pull`: drive `git` directly.** These two act on the member *repos*,
+   not their services, so there is nothing to delegate — a member's Makefile
+   cannot clone the repo that contains it. They share one contract: iterate the
+   member list, run one git command per repo, warn-and-continue on refusal, and
+   exit non-zero at the end if any repo was skipped. `clone` fills in what is
+   missing (`$(GIT_REMOTE)/<dir>.git`, never shallow — members' `bundle` needs
+   reachable tags); `pull` refreshes what is present. Keep them symmetrical.
 
 Rule of thumb: ordered/health-gated bring-up and every uniform target → delegate to the member's Make
-target; only the aggregate read-only views (`ps`/`logs`) are driven directly.
+target; only the aggregate read-only views (`ps`/`logs`) and the repo-level git targets
+(`clone`/`pull`) are driven directly.
 
 ## Cross-repo contract (not visible from this repo alone)
 
@@ -101,16 +109,20 @@ from the federation entirely.
 
 All host-specific knobs live in `federation.env` (gitignored; copy from `federation.env.example`).
 The Makefile `-include`s it. To change which apps run, where member repos live, or the data-plane
-profile, **edit `federation.env`, not the Makefile**: `INFRA_ROOT`, `VLLM_DIR`, `DATA_DIR`,
+profile, **edit `federation.env`, not the Makefile**: `INFRA_ROOT`, `GIT_REMOTE`, `VLLM_DIR`, `DATA_DIR`,
 `APP_DIRS`, `OPENWEBUI_DIR` (the upstream UI — a full lifecycle member, appended to every app-tier
 loop + `bundle`/`load`), `OBS_DIR` (the observability plane; set empty to disable),
 `EDGE_DIR` (the edge gateway — Caddy + Authelia, `edge-plane`; set empty to disable),
 `DATA_PROFILE` (`cpu`|`cuda`), and optional `WAIT_TIMEOUT` / `WAIT_PROBE_IMAGE`.
+`GIT_REMOTE` is an account/namespace **prefix**, not a full URL — `make clone`
+derives each member's URL as `$(GIT_REMOTE)/<dir>.git`, so one edit repoints the
+whole federation at SSH or an internal mirror.
 
 ## Commands
 
 ```bash
 # Operate the federation (needs the member repos present under INFRA_ROOT):
+make clone     # bare host: clone every missing member repo under INFRA_ROOT (never shallow)
 make setup     # one-time: external networks + volumes for every tier (idempotent)
 make up        # ordered, health-gated bring-up, detached (inference -> state -> obs -> apps -> edge)
 make up-dev    # like up, but state + obs + app tiers publish host ports; inference & edge stay production
