@@ -27,6 +27,10 @@ your host differs.
   deploy/            # this repo
 ```
 
+On a bare host you do not have to create that layout by hand — clone `deploy`
+first, then `make clone` fills in every member repo beside it (see **Quick
+start**).
+
 ## Bring-up order (load-bearing)
 
 `inference (vllm-service) → state (data-plane) → obs (obs-plane) → apps → edge (edge-plane)`.
@@ -50,7 +54,8 @@ on a missing `edge-net` even though the edge tier itself comes up last.
 ## Quick start
 
 ```bash
-cp federation.env.example federation.env   # then edit (apps on this host, profile)
+cp federation.env.example federation.env   # then edit (GIT_REMOTE, INFRA_ROOT, apps, profile)
+make clone     # bare host: clone every missing member repo under INFRA_ROOT
 make setup     # one-time: external networks + volumes for every tier
 make up        # ordered, health-gated bring-up (detached)
 make up-dev    # dev bring-up: state + obs + app tiers publish host ports (inference & edge stay production)
@@ -67,6 +72,7 @@ make down      # reverse-order stop (never removes data volumes)
 | `up-dev` | Same order + health gates as `up`, but the state + obs + app tiers come up via their own `make up-dev` (publishing host ports for local dev); inference and edge stay on production `up`. |
 | `down` | Edge → apps (incl. `open-webui-service`) → obs → state → inference, via each repo's `make down`. Never `-v`. |
 | `ps` / `logs` | Fan out across all tiers. |
+| `clone` | Clones every federation member missing under `INFRA_ROOT`, from `$(GIT_REMOTE)/<dir>.git` (`GIT_REMOTE` defaults to the nos-tromo GitHub account; set it to an SSH prefix or an internal mirror in `federation.env`). Existing directories are skipped untouched — refreshing is `pull`'s job — so the target is idempotent. A failed clone warns and the loop continues, exiting non-zero at the end. Clones are never shallow, because members' `make bundle` needs reachable tags. `deploy` itself, `infra-ui`, and `pr-notify` are not cloned. |
 | `pull` | Switches every federation repo (deploy itself + all members) to `main` and pulls from GitHub (`--ff-only`; a dirty/diverged repo is skipped with a warning, and the target exits non-zero at the end if any repo was skipped). `infra-ui` is not a member and is not pulled. |
 | `bundle` | Runs `make bundle` in every image-bearing member — `APP_DIRS` apps + vllm-service + data-plane (active profile) + open-webui-service (`OPENWEBUI_DIR`) + obs-plane (`OBS_DIR`) + edge-plane (`EDGE_DIR`). |
 | `load` | `docker load` every `*.tar.gz` found under the member repos. |

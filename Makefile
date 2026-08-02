@@ -52,6 +52,13 @@ OBS_DIR      ?= obs-plane
 EDGE_DIR     ?= edge-plane
 DATA_PROFILE ?= cpu
 
+# Account/namespace prefix the federation members are cloned from (see `clone`).
+# Deliberately a PREFIX, not a full URL, so one edit switches transport for the
+# whole federation: https://github.com/nos-tromo, git@github.com:nos-tromo, or an
+# internal mirror. Each member's URL is $(GIT_REMOTE)/<dir>.git — repo name and
+# directory name are identical for every member.
+GIT_REMOTE   ?= https://github.com/nos-tromo
+
 # Health-probe knobs consumed by wait-healthy.sh, which runs as a child process
 # (not a sub-make). Export them so values set in federation.env actually reach
 # the script; without this they stay make-only variables and the script falls
@@ -61,11 +68,12 @@ export WAIT_TIMEOUT WAIT_PROBE_IMAGE
 # Production-shape compose invocation for a member repo. $(1) = repo dir.
 compose = docker compose --env-file $(INFRA_ROOT)/$(1)/.env -f $(INFRA_ROOT)/$(1)/docker/compose.yaml
 
-.PHONY: help setup up up-dev down ps logs pull bundle load
+.PHONY: help setup up up-dev down ps logs clone pull bundle load
 
 help:
 	@echo "Federation lifecycle (single host). Member repos under INFRA_ROOT=$(INFRA_ROOT)."
 	@echo
+	@echo "  make clone    clone every missing federation member repo under INFRA_ROOT"
 	@echo "  make setup    create external networks + volumes for every tier (idempotent)"
 	@echo "  make up       bring the stack up in order (inference -> data -> obs -> apps -> edge), health-gated"
 	@echo "  make up-dev   like 'up', but state + obs + app tiers publish host ports (inference & edge stay production)"
@@ -130,6 +138,30 @@ ps:
 
 logs:
 	@for a in $(VLLM_DIR) $(DATA_DIR) $(OBS_DIR) $(EDGE_DIR) $(APP_DIRS) $(OPENWEBUI_DIR); do echo "== $$a =="; $(call compose,$$a) logs --tail=50; done
+
+# Populate a bare host: clone every federation member missing under INFRA_ROOT.
+# Fills in gaps only — an existing directory is left untouched (refreshing is
+# `pull`'s job), so the target is idempotent and safe to re-run after a partial
+# network failure. A failed clone warns and the loop continues, exiting non-zero
+# at the end. Never shallow: every member's `make bundle` builds the latest
+# annotated tag reachable from HEAD, and a --depth clone carries no tags.
+# (deploy itself is already on disk. infra-ui is a build-time pnpm git dependency
+# and pr-notify is CI tooling — neither is a federation member, so neither is
+# cloned.)
+clone:
+	@failed=""; cloned=0; skipped=0; \
+	mkdir -p "$(INFRA_ROOT)"; \
+	for d in $(VLLM_DIR) $(DATA_DIR) $(OBS_DIR) $(EDGE_DIR) $(APP_DIRS) $(OPENWEBUI_DIR); do \
+	  if [ -d "$(INFRA_ROOT)/$$d" ]; then \
+	    echo ">> $$d already present — skipping"; skipped=$$((skipped+1)); continue; \
+	  fi; \
+	  echo ">> $$d cloning"; \
+	  git clone "$(GIT_REMOTE:%/=%)/$$d.git" "$(INFRA_ROOT)/$$d" \
+	    && cloned=$$((cloned+1)) \
+	    || { echo "WARNING: $$d not cloned."; failed="$$failed $$d"; }; \
+	done; \
+	echo "cloned $$cloned, skipped $$skipped. run 'make pull' to refresh existing repos."; \
+	[ -z "$$failed" ] || { echo "WARNING: not cloned:$$failed"; exit 1; }
 
 # Refresh every federation repo from GitHub: deploy itself (.) plus all members.
 # `switch main` + `--ff-only` fail loudly on a conflicting dirty tree or
