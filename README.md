@@ -123,6 +123,16 @@ sharing `scripts/bundle-lib.sh`); `make bundle` here just fans that out, and
 `busybox` probe container — make sure that image is loaded on the airgap host
 (or set `WAIT_PROBE_IMAGE`).
 
+The **copy** step is `scripts/copy-bundles.sh <dest-dir>`: it collects, per
+member, the image tarballs plus everything the airgap host needs beside them —
+compose files, Makefile (+ vendored `make/`), version files, `.env.example`,
+and the config directories the containers mount from the repo — into one
+destination (e.g. a mounted USB stick). Member paths are derived from the
+script's location (siblings of `deploy/`; override with `INFRA_ROOT=...`).
+Secrets stay behind by design: edge-plane's `authelia/users.yml`, `certs/`,
+and every real `.env` are never copied — they are provisioned fresh on the
+airgap side.
+
 `bundle`/`load` move only the **images** — the inference tier also needs its
 **model weights** on the offline host. `scripts/pack-model.sh` /
 `scripts/unpack-model.sh` tar a Hugging Face model out of the

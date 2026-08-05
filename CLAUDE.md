@@ -161,6 +161,12 @@ prerequisites). Use `make -n <target>` to inspect what any change will actually 
 → `make up`. `wait-healthy.sh` spins up a throwaway `busybox` probe container, so that image must be
 loaded on the airgap host (or override `WAIT_PROBE_IMAGE`).
 
+The copy step is `scripts/copy-bundles.sh <dest-dir>` — per member it collects the tarballs plus
+compose files, Makefile (+ vendored `make/`), version files, `.env.example`, and repo-mounted
+config dirs. Paths derive from the script's own location (members are siblings of `deploy/`;
+`INFRA_ROOT` env overrides). It deliberately never copies secrets (edge-plane `authelia/users.yml`,
+`certs/`, real `.env` files — provisioned fresh on the airgap side); keep that property in any edit.
+
 `bundle`/`load` move only images; the inference tier's **model weights** travel separately via
 `scripts/pack-model.sh` / `scripts/unpack-model.sh` (pack a HF model out of the
 `huggingface-cache` volume, restore it on the airgap host — runbook in `docs/model-transfer.md`).
