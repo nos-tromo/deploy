@@ -123,6 +123,12 @@ sharing `scripts/bundle-lib.sh`); `make bundle` here just fans that out, and
 `busybox` probe container — make sure that image is loaded on the airgap host
 (or set `WAIT_PROBE_IMAGE`).
 
+`bundle`/`load` move only the **images** — the inference tier also needs its
+**model weights** on the offline host. `scripts/pack-model.sh` /
+`scripts/unpack-model.sh` tar a Hugging Face model out of the
+`huggingface-cache` Docker volume on the online host and restore it into the
+volume on the airgap host; see `docs/model-transfer.md` for the runbook.
+
 Once the federation is up, browsers reach it at `https://<EDGE_HOST>/` — the
 client-side hosts-entry/DNS setup and CA trust needed to reach that URL are
 documented in edge-plane's own README (see `../edge-plane/README.md`).

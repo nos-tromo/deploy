@@ -161,6 +161,12 @@ prerequisites). Use `make -n <target>` to inspect what any change will actually 
 → `make up`. `wait-healthy.sh` spins up a throwaway `busybox` probe container, so that image must be
 loaded on the airgap host (or override `WAIT_PROBE_IMAGE`).
 
+`bundle`/`load` move only images; the inference tier's **model weights** travel separately via
+`scripts/pack-model.sh` / `scripts/unpack-model.sh` (pack a HF model out of the
+`huggingface-cache` volume, restore it on the airgap host — runbook in `docs/model-transfer.md`).
+These are standalone host-side scripts, not Make targets: they run under `sudo` against
+`/var/lib/docker` on whichever machine holds the model, outside any member's lifecycle.
+
 ## Scope boundary
 
 Single-host by design. Multi-host orchestration is explicitly **out of scope** — that's the trigger
