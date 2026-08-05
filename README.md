@@ -84,6 +84,9 @@ automatically on merge. `main` is the always-green integration trunk (GitHub
 Flow: short-lived `feature/*` / `fix/*` branches → PR → CI → `main`); there is no
 long-lived staging branch.
 
+`deploy` itself is versioned the same way: a one-line `VERSION` file read by the
+same `release-tag` workflow, minting the tag on merge to `main`.
+
 1. In a `release/vX.Y.Z` branch, bump the member's declared version — `pyproject.toml`
    `[project].version` (the Python apps + `vllm-service`) or the one-line `VERSION`
    file (`data-plane`, `open-webui-service`) — and, for the Python repos, run
