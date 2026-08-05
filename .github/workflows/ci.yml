@@ -20,7 +20,7 @@ jobs:
   # hadolint because there are no Dockerfiles; make-common because deploy does
   # not vendor make/common.mk.
   validate:
-    uses: nos-tromo/.github/.github/workflows/infra-validation.yml@v3
+    uses: nos-tromo/.github/.github/workflows/infra-validation.yml@589ea4656ecba00c278ea02b4dbf754727b18062 # v3.11
 
   # Bespoke and intentionally not shared — no reusable workflow covers it:
   # validates that the orchestration Makefile parses (`make help`) and that the
@@ -29,7 +29,7 @@ jobs:
   makefile:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Makefile parses + compose helper expands
         run: |
           make help >/dev/null
