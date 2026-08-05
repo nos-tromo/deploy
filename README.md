@@ -84,6 +84,9 @@ automatically on merge. `main` is the always-green integration trunk (GitHub
 Flow: short-lived `feature/*` / `fix/*` branches → PR → CI → `main`); there is no
 long-lived staging branch.
 
+`deploy` itself is versioned the same way: a one-line `VERSION` file read by the
+same `release-tag` workflow, minting the tag on merge to `main`.
+
 1. In a `release/vX.Y.Z` branch, bump the member's declared version — `pyproject.toml`
    `[project].version` (the Python apps + `vllm-service`) or the one-line `VERSION`
    file (`data-plane`, `open-webui-service`) — and, for the Python repos, run
@@ -122,6 +125,22 @@ sharing `scripts/bundle-lib.sh`); `make bundle` here just fans that out, and
 `edge-plane-pulled-<version>.tar.gz` are included in the fan-out. `wait-healthy.sh` uses a throwaway
 `busybox` probe container — make sure that image is loaded on the airgap host
 (or set `WAIT_PROBE_IMAGE`).
+
+The **copy** step is `scripts/copy-bundles.sh <dest-dir>`: it collects, per
+member, the image tarballs plus everything the airgap host needs beside them —
+compose files, Makefile (+ vendored `make/`), version files, `.env.example`,
+and the config directories the containers mount from the repo — into one
+destination (e.g. a mounted USB stick). Member paths are derived from the
+script's location (siblings of `deploy/`; override with `INFRA_ROOT=...`).
+Secrets stay behind by design: edge-plane's `authelia/users.yml`, `certs/`,
+and every real `.env` are never copied — they are provisioned fresh on the
+airgap side.
+
+`bundle`/`load` move only the **images** — the inference tier also needs its
+**model weights** on the offline host. `scripts/pack-model.sh` /
+`scripts/unpack-model.sh` tar a Hugging Face model out of the
+`huggingface-cache` Docker volume on the online host and restore it into the
+volume on the airgap host; see `docs/model-transfer.md` for the runbook.
 
 Once the federation is up, browsers reach it at `https://<EDGE_HOST>/` — the
 client-side hosts-entry/DNS setup and CA trust needed to reach that URL are
