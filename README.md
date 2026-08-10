@@ -150,6 +150,22 @@ On a brand-new host, the edge tier aborts `make up` with a clear message
 until `edge-plane/authelia/users.yml` has been provisioned from its
 template (see edge-plane's README quickstart).
 
+## Hardening runbooks (ADR 0001)
+
+The container-hardening releases (non-root images, `cap_drop`, read-only
+rootfs — see `docs/decisions/0001-container-engine-docker.md`) require two
+host-side, one-time procedures, documented as runbooks:
+
+- `docs/runbooks/userns-remap.md` — enabling `userns-remap` on the daemon
+  (the compensating control for the root-daemon finding). Changes the
+  Docker storage root: images/volumes must be re-provisioned.
+- `docs/runbooks/volume-reown.md` — per-repo table of external volumes
+  that need a one-time `chown` to the new container users, with the
+  snapshot-first rule and the fresh-volume trap.
+
+Rehearse both together on a scratch host before staging/production; the
+`huggingface-cache` re-own is the long pole.
+
 ## Known integration points
 
 **Delegated `up`** (was: foreground vs detached). Every member's `make up` is now
