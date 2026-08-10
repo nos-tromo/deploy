@@ -204,6 +204,17 @@ federation's public entry point fronting everything behind it. Set
 prerequisites — `EDGE_HOST` resolution and CA trust — are documented in
 `../edge-plane/README.md`.
 
+## Decisions
+
+Architecture decision records live in `docs/decisions/`. Federation-wide
+decisions that have no better home (host platform, container engine) are
+recorded here, since `deploy` is the layer that operates the whole stack:
+
+- `docs/decisions/0001-container-engine-docker.md` — Docker Engine stays the
+  federation runtime; conformance effort goes into container/host hardening
+  (`userns-remap`, non-root images, socket removal) instead of a Podman
+  migration.
+
 ## Not included (deliberately)
 
 - **A federation `compose.yaml` with `include:`** — Compose can merge the member
