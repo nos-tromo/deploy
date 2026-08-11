@@ -67,6 +67,12 @@ What it does, in order:
    delete files that only exist in the old copy — remove the directory first
    if you need a guaranteed-clean replacement.
 3. Checks free space (tarball size + 10% headroom).
+> **Hardened releases (ADR 0001):** the vllm-service containers run as uid
+> `10001`, so the volume itself must already be owned `10001:10001` — see
+> `runbooks/volume-reown.md`. The chown step below then inherits the right
+> owner automatically. Under `userns-remap` the on-host path differs; use
+> `docker volume inspect huggingface-cache` to find the real mountpoint.
+
 4. Extracts, then `chown -R`s the model directory to match the owner of the
    destination directory, so files get the UID the container runs as.
    Override with `sudo CHOWN=1000:1000 ./unpack-model.sh ...` if needed.
