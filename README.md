@@ -146,6 +146,11 @@ airgap side.
 `huggingface-cache` Docker volume on the online host and restore it into the
 volume on the airgap host; see `docs/model-transfer.md` for the runbook.
 
+Hosts deployed before vllm-service 0.4.0 (the non-root hardening wave, ADR
+0001) need a one-time ownership migration of that volume before the first
+hardened start — `make migrate-cache` in the vllm-service checkout; see
+`docs/hardening-migration.md` for the runbook.
+
 Once the federation is up, browsers reach it at `https://<EDGE_HOST>/` — the
 client-side hosts-entry/DNS setup and CA trust needed to reach that URL are
 documented in edge-plane's own README (see `../edge-plane/README.md`).
