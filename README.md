@@ -146,10 +146,10 @@ airgap side.
 `huggingface-cache` Docker volume on the online host and restore it into the
 volume on the airgap host; see `docs/model-transfer.md` for the runbook.
 
-Hosts deployed before vllm-service 0.4.0 (the non-root hardening wave, ADR
-0001) need a one-time ownership migration of that volume before the first
-hardened start — `make migrate-cache` in the vllm-service checkout; see
-`docs/hardening-migration.md` for the runbook.
+Volume ownership for the hardened (uid 10001) members is self-healing: each
+member's compose file ships a `volume-permissions` one-shot that fixes
+wrong-owner entries at every `up` — no manual migration step, also not on
+hosts populated before the hardening wave. See `docs/hardening-migration.md`.
 
 Once the federation is up, browsers reach it at `https://<EDGE_HOST>/` — the
 client-side hosts-entry/DNS setup and CA trust needed to reach that URL are
