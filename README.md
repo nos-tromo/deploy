@@ -74,8 +74,8 @@ make down      # reverse-order stop (never removes data volumes)
 | `ps` / `logs` | Fan out across all tiers. |
 | `clone` | Clones every federation member missing under `INFRA_ROOT`, from `$(GIT_REMOTE)/<dir>.git` (`GIT_REMOTE` defaults to the nos-tromo GitHub account; set it to an SSH prefix or an internal mirror in `federation.env`). Existing directories are skipped untouched — refreshing is `pull`'s job — so the target is idempotent. A failed clone warns and the loop continues, exiting non-zero at the end. Clones are never shallow, because members' `make bundle` needs reachable tags. `deploy` itself, `infra-ui`, and `pr-notify` are not cloned. |
 | `pull` | Switches every federation repo (deploy itself + all members) to `main` and pulls from GitHub (`--ff-only`; a dirty/diverged repo is skipped with a warning, and the target exits non-zero at the end if any repo was skipped). `infra-ui` is not a member and is not pulled. |
-| `bundle` | Runs `make bundle` in every image-bearing member — `APP_DIRS` apps + vllm-service + data-plane (active profile) + open-webui-service (`OPENWEBUI_DIR`) + obs-plane (`OBS_DIR`) + edge-plane (`EDGE_DIR`). |
-| `load` | `docker load` every `*.tar.gz` found under the member repos. |
+| `bundle` | Runs `make bundle` in every image-bearing member — `APP_DIRS` apps + vllm-service + data-plane (active profile) + open-webui-service (`OPENWEBUI_DIR`) + obs-plane (`OBS_DIR`) + edge-plane (`EDGE_DIR`) — then saves the `wait-healthy.sh` probe image (digest-pinned via `WAIT_PROBE_PIN`) as `wait-probe-image.tar.gz` in this repo. |
+| `load` | `docker load` every `*.tar.gz` found under deploy + the member repos. |
 
 ## Releasing
 
@@ -122,9 +122,13 @@ Each member repo already produces its own versioned tarballs (`make bundle`,
 sharing `scripts/bundle-lib.sh`); `make bundle` here just fans that out, and
 `make load` loads them on the offline side. obs-plane's
 `obs-plane-pulled-<version>.tar.gz` and edge-plane's
-`edge-plane-pulled-<version>.tar.gz` are included in the fan-out. `wait-healthy.sh` uses a throwaway
-`busybox` probe container — make sure that image is loaded on the airgap host
-(or set `WAIT_PROBE_IMAGE`).
+`edge-plane-pulled-<version>.tar.gz` are included in the fan-out.
+`wait-healthy.sh` uses a throwaway `busybox` probe container; `make bundle`
+saves that image too (`wait-probe-image.tar.gz` in this repo, pulled by the
+digest in `WAIT_PROBE_PIN` and tagged `WAIT_PROBE_IMAGE`), and `make load`
+restores it — so the health gates work offline without any extra step. If you
+swap the probe image, override `WAIT_PROBE_IMAGE` and `WAIT_PROBE_PIN`
+together in `federation.env`.
 
 The **copy** step is `scripts/copy-bundles.sh <dest-dir>`: it collects, per
 member, the image tarballs plus everything the airgap host needs beside them —

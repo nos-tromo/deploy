@@ -35,7 +35,8 @@ APP_DIRS     ?= chorus docint Nextext translator
 # below (setup/up/down/ps/logs) and the bundle/load fan-out — it honors the same
 # network/volumes/down/bundle contract as the apps (its volume target was renamed
 # from the singular `volume` to `volumes` to match). Set empty to drop it from the
-# federation entirely. (deploy itself has no images.)
+# federation entirely. (deploy itself carries no service images — its `bundle`
+# contributes only the wait-healthy probe image tarball, saved in this repo.)
 OPENWEBUI_DIR ?= open-webui-service
 # obs-plane is the observability plane (Prometheus + Grafana + Loki) — a
 # pulled-image member with a bespoke Makefile (data-plane pattern). Its tier
@@ -62,7 +63,15 @@ GIT_REMOTE   ?= https://github.com/nos-tromo
 # Health-probe knobs consumed by wait-healthy.sh, which runs as a child process
 # (not a sub-make). Export them so values set in federation.env actually reach
 # the script; without this they stay make-only variables and the script falls
-# back to its built-ins (180s timeout / busybox probe image).
+# back to its built-ins (180s timeout).
+# WAIT_PROBE_IMAGE is the tag the probe runs under; WAIT_PROBE_PIN is the
+# digest-pinned reference `bundle` pulls, re-tags as WAIT_PROBE_IMAGE, and
+# saves into this repo so `load` restores the exact same image on the airgap
+# host — without it every health gate tries to pull from Docker Hub and the
+# bring-up times out. Override both together in federation.env if you swap
+# the probe image.
+WAIT_PROBE_IMAGE ?= busybox:1.37
+WAIT_PROBE_PIN   ?= busybox@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0
 export WAIT_TIMEOUT WAIT_PROBE_IMAGE
 
 # Production-shape compose invocation for a member repo. $(1) = repo dir.
@@ -81,8 +90,8 @@ help:
 	@echo "  make ps       service status across all tiers"
 	@echo "  make logs     tail logs across all tiers"
 	@echo "  make pull     switch every federation repo (deploy + members) to main and pull from GitHub"
-	@echo "  make bundle   run 'make bundle' in every image-bearing member repo"
-	@echo "  make load     docker load every *.tar.gz found under the member repos"
+	@echo "  make bundle   run 'make bundle' in every image-bearing member repo + save the health-probe image"
+	@echo "  make load     docker load every *.tar.gz found under deploy + the member repos"
 	@echo
 	@echo "Apps on this host: $(APP_DIRS) $(OPENWEBUI_DIR)   obs: $(if $(OBS_DIR),$(OBS_DIR),disabled)   edge: $(if $(EDGE_DIR),$(EDGE_DIR),disabled)   data-plane profile: $(DATA_PROFILE)"
 
@@ -184,9 +193,14 @@ bundle:
 	[ -z "$(OBS_DIR)" ] || $(MAKE) -C $(INFRA_ROOT)/$(OBS_DIR) bundle
 	[ -z "$(EDGE_DIR)" ] || $(MAKE) -C $(INFRA_ROOT)/$(EDGE_DIR) bundle
 	@for a in $(APP_DIRS) $(OPENWEBUI_DIR); do echo ">> $$a"; $(MAKE) -C $(INFRA_ROOT)/$$a bundle; done
+	@echo ">> wait-healthy probe image ($(WAIT_PROBE_PIN) -> $(WAIT_PROBE_IMAGE))"
+	docker pull "$(WAIT_PROBE_PIN)"
+	docker tag "$(WAIT_PROBE_PIN)" "$(WAIT_PROBE_IMAGE)"
+	docker save "$(WAIT_PROBE_IMAGE)" | gzip > wait-probe-image.tar.gz
 
-# Airgapped host: load every image tarball produced by `make bundle`.
+# Airgapped host: load every image tarball produced by `make bundle` — the
+# members' plus deploy's own probe-image tarball (the bare *.tar.gz glob).
 load:
-	@found=0; for f in $(INFRA_ROOT)/$(VLLM_DIR)/*.tar.gz $(INFRA_ROOT)/$(DATA_DIR)/*.tar.gz $(foreach a,$(OBS_DIR) $(EDGE_DIR) $(APP_DIRS) $(OPENWEBUI_DIR),$(INFRA_ROOT)/$(a)/*.tar.gz); do \
+	@found=0; for f in *.tar.gz $(INFRA_ROOT)/$(VLLM_DIR)/*.tar.gz $(INFRA_ROOT)/$(DATA_DIR)/*.tar.gz $(foreach a,$(OBS_DIR) $(EDGE_DIR) $(APP_DIRS) $(OPENWEBUI_DIR),$(INFRA_ROOT)/$(a)/*.tar.gz); do \
 	  [ -e "$$f" ] || continue; found=1; echo ">> docker load -i $$f"; docker load -i "$$f"; \
-	done; [ $$found -eq 1 ] || echo "no *.tar.gz found under the member repos — run 'make bundle' on the build host first."
+	done; [ $$found -eq 1 ] || echo "no *.tar.gz found under deploy or the member repos — run 'make bundle' on the build host first."
