@@ -158,8 +158,11 @@ prerequisites). Use `make -n <target>` to inspect what any change will actually 
 ## Airgap flow
 
 `make bundle` (online build host) → copy the `*.tar.gz` → `make load` (offline host) → `make setup`
-→ `make up`. `wait-healthy.sh` spins up a throwaway `busybox` probe container, so that image must be
-loaded on the airgap host (or override `WAIT_PROBE_IMAGE`).
+→ `make up`. `wait-healthy.sh` spins up a throwaway `busybox` probe container; `make bundle` saves
+that image too (`wait-probe-image.tar.gz` in this repo, pulled by the digest pin `WAIT_PROBE_PIN`
+and tagged `WAIT_PROBE_IMAGE`) and `make load` restores it, so the health gates work offline.
+Swapping the probe image means overriding `WAIT_PROBE_IMAGE` **and** `WAIT_PROBE_PIN` together in
+`federation.env`.
 
 The copy step is `scripts/copy-bundles.sh <dest-dir>` — per member it collects the tarballs plus
 compose files, Makefile (+ vendored `make/`), version files, `.env.example`, and repo-mounted

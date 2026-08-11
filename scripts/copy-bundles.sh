@@ -183,6 +183,19 @@ echo -e "\n${BLUE}Processing: [deploy]${NC}"
 DEPLOY_DEST="$DEST_BASE/deploy"
 mkdir -p "$DEPLOY_DEST"
 
+# deploy's own image tarball: the wait-healthy probe image (digest-pinned by
+# `make bundle`). Without it every health gate on the airgap host tries to
+# pull from Docker Hub and the bring-up times out.
+probe_tarball_count=0
+for tarball in "$DEPLOY_SRC"/*.tar.gz; do
+    cp -u "$tarball" "$DEPLOY_DEST/"
+    echo -e "  ${GREEN}✓${NC} image copied: $(basename "$tarball")"
+    probe_tarball_count=$((probe_tarball_count + 1))
+done
+if [ "$probe_tarball_count" -eq 0 ]; then
+    echo -e "  ${YELLOW}⚠ no probe-image tarball in deploy — run 'make bundle' first, or load the wait-healthy probe image on the airgap host another way.${NC}"
+fi
+
 if [ -d "$DEPLOY_SRC/scripts" ]; then
     cp -r "$DEPLOY_SRC/scripts" "$DEPLOY_DEST/"
     echo -e "  ${GREEN}✓${NC} deploy: scripts/ copied."
