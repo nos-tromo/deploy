@@ -140,6 +140,17 @@ Secrets stay behind by design: edge-plane's `authelia/users.yml`, `certs/`,
 and every real `.env` are never copied — they are provisioned fresh on the
 airgap side.
 
+The script also refuses to assemble a skewed transfer set. Member bundles are
+built from the latest release tag, while the repo files copied beside them
+come from the working tree — so a member that has moved past its last release
+(new commits since the tag, or uncommitted changes) would hand the airgap
+host compose files referencing images its tarball doesn't contain, and the
+first `make up` there tries to pull from the internet. Each member's
+`.<slug>-version` file records what its bundle was built from (release tag or
+`<date>-<sha>`); on mismatch the run lists the skewed members and exits
+non-zero. Re-run that member's `make bundle` (tagging a new release first if
+the changes should ship), or force with `COPY_BUNDLES_ALLOW_SKEW=1`.
+
 `bundle`/`load` move only the **images** — the inference tier also needs its
 **model weights** on the offline host. `scripts/pack-model.sh` /
 `scripts/unpack-model.sh` tar a Hugging Face model out of the

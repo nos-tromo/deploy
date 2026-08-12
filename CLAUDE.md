@@ -169,6 +169,10 @@ compose files, Makefile (+ vendored `make/`), version files, `.env.example`, and
 config dirs. Paths derive from the script's own location (members are siblings of `deploy/`;
 `INFRA_ROOT` env overrides). It deliberately never copies secrets (edge-plane `authelia/users.yml`,
 `certs/`, real `.env` files — provisioned fresh on the airgap side); keep that property in any edit.
+It also fails (listing the skewed members) when a member repo has moved past the version its
+tarball was built from — recorded in the member's `.<slug>-version` file — since bundles come from
+the latest release tag while the copied repo files come from the working tree, and that skew makes
+the airgap host's first `up` pull from the internet. `COPY_BUNDLES_ALLOW_SKEW=1` overrides.
 
 `bundle`/`load` move only images; the inference tier's **model weights** travel separately via
 `scripts/pack-model.sh` / `scripts/unpack-model.sh` (pack a HF model out of the
