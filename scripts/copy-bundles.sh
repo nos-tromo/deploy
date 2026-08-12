@@ -18,7 +18,12 @@ shopt -s nullglob # *.tar.gz globs expand to nothing instead of a literal
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+RED='\033[0;31m'
 NC='\033[0m' # No Color
+
+# Members whose tarball no longer matches their repo checkout; collected by
+# check_bundle_version and reported (non-zero exit) at the end of the run.
+SKEW_ERRORS=()
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_SRC="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -36,6 +41,51 @@ echo -e "Workspace:   $INFRA_ROOT"
 echo -e "Destination: $DEST_BASE"
 
 mkdir -p "$DEST_BASE"
+
+# Guard against tarball/repo skew. Member bundles are built from the latest
+# release tag (bundle-lib.sh's `bundle_checkout_release`), while everything
+# else this script copies comes from the working tree. If the repo has moved
+# past the bundled version, the airgap host gets compose files referencing
+# images the tarball doesn't contain — and the first `make up` there tries to
+# pull from the internet. `bundle_version` records what the bundle was built
+# from in the member's `.<slug>-version` file; compare that against the
+# repo's current state and treat any mismatch as an error.
+check_bundle_version() {
+    local source_dir="$1"
+    local dest_name="$2"
+    local ver head_tag skew=""
+
+    # nullglob is active: no version file -> empty array.
+    local vfiles=("$source_dir"/.*-version)
+    if [ ${#vfiles[@]} -eq 0 ]; then
+        echo -e "  ${YELLOW}⚠ no .*-version file — cannot verify the tarball matches the repo.${NC}"
+        return 0
+    fi
+    ver="$(cat "${vfiles[0]}")"
+
+    if ! git -C "$source_dir" rev-parse --git-dir >/dev/null 2>&1; then
+        echo -e "  ${YELLOW}⚠ not a git repo — cannot verify the tarball matches the repo.${NC}"
+        return 0
+    fi
+
+    if [ -n "$(git -C "$source_dir" status --porcelain -uno 2>/dev/null)" ]; then
+        skew="uncommitted changes in the working tree (bundle built from $ver)"
+    elif head_tag="$(git -C "$source_dir" describe --exact-match HEAD 2>/dev/null)" \
+            && [ "$head_tag" = "$ver" ]; then
+        : # release bundle, repo checked out at exactly that tag
+    elif [[ "$ver" == *"-$(git -C "$source_dir" rev-parse --short HEAD 2>/dev/null)" ]]; then
+        : # dev bundle (<date>-<sha>) built from this HEAD
+    else
+        skew="bundle built from $ver, repo is at $(git -C "$source_dir" describe --tags --always HEAD 2>/dev/null)"
+    fi
+
+    if [ -n "$skew" ]; then
+        echo -e "  ${RED}✗ version skew: $skew${NC}"
+        SKEW_ERRORS+=("$dest_name: $skew")
+    else
+        echo -e "  ${GREEN}✓${NC} tarball matches the repo checkout ($ver)."
+    fi
+}
 
 copy_project() {
     local source_dir="$1"
@@ -58,6 +108,8 @@ copy_project() {
 
     if [ "$tarball_count" -eq 0 ]; then
         echo -e "  ${YELLOW}⚠ no .tar.gz files found in the source dir.${NC}"
+    else
+        check_bundle_version "$source_dir" "$dest_name"
     fi
 
     # 2. Compose files.
@@ -211,5 +263,20 @@ for deploy_file in federation.env.example Makefile; do
         echo -e "  ${YELLOW}⚠ deploy: $deploy_file not found — skipped.${NC}"
     fi
 done
+
+if [ ${#SKEW_ERRORS[@]} -gt 0 ]; then
+    echo -e "\n${RED}=== Version skew detected ===${NC}"
+    for err in "${SKEW_ERRORS[@]}"; do
+        echo -e "  ${RED}✗ $err${NC}"
+    done
+    echo -e "${RED}The copied repo files would not match the bundled images on the airgap"
+    echo -e "host. Re-run 'make bundle' in the affected member(s) — tagging a new"
+    echo -e "release first if the changes should ship — or set"
+    echo -e "COPY_BUNDLES_ALLOW_SKEW=1 to copy anyway.${NC}"
+    if [ -z "${COPY_BUNDLES_ALLOW_SKEW:-}" ]; then
+        exit 1
+    fi
+    echo -e "${YELLOW}⚠ COPY_BUNDLES_ALLOW_SKEW is set — continuing despite skew.${NC}"
+fi
 
 echo -e "\n${GREEN}=== Transfer set complete ===${NC}"
