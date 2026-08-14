@@ -74,6 +74,11 @@ WAIT_PROBE_IMAGE ?= busybox:1.37
 WAIT_PROBE_PIN   ?= busybox@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0
 export WAIT_TIMEOUT WAIT_PROBE_IMAGE
 
+# BUNDLE_FORCE is consumed by scripts/bundle-exists.sh (a child process, not a
+# sub-make) — export so `make bundle BUNDLE_FORCE=1` reaches it. Command-line
+# make variables are NOT exported to recipe child processes without this.
+export BUNDLE_FORCE
+
 # Production-shape compose invocation for a member repo. $(1) = repo dir.
 compose = docker compose --env-file $(INFRA_ROOT)/$(1)/.env -f $(INFRA_ROOT)/$(1)/docker/compose.yaml
 
@@ -90,7 +95,7 @@ help:
 	@echo "  make ps       service status across all tiers"
 	@echo "  make logs     tail logs across all tiers"
 	@echo "  make pull     switch every federation repo (deploy + members) to main and pull from GitHub"
-	@echo "  make bundle   run 'make bundle' in every image-bearing member repo + save the health-probe image"
+	@echo "  make bundle   run 'make bundle' in every image-bearing member repo (skips members already bundled at their current tag; BUNDLE_FORCE=1 rebuilds) + save the health-probe image"
 	@echo "  make load     docker load every *.tar.gz found under deploy + the member repos"
 	@echo
 	@echo "Apps on this host: $(APP_DIRS) $(OPENWEBUI_DIR)   obs: $(if $(OBS_DIR),$(OBS_DIR),disabled)   edge: $(if $(EDGE_DIR),$(EDGE_DIR),disabled)   data-plane profile: $(DATA_PROFILE)"
@@ -187,12 +192,21 @@ pull:
 	done; \
 	[ -z "$$failed" ] || { echo "WARNING: not updated:$$failed"; exit 1; }
 
+# Each delegation is gated by scripts/bundle-exists.sh: when the member's
+# .<slug>-version file matches its latest reachable tag on a clean tree and a
+# tarball is present, the member is skipped with a log line (exit 0 short-
+# circuits the ||); any doubt (no version file, dev bundle, moved tag, a
+# *VERSION_OVERRIDE set) exits non-zero silently and the member's own `make
+# bundle` runs as before. BUNDLE_FORCE=1 rebuilds everything. Caveat: the
+# version record carries no profile, so after switching DATA_PROFILE force a
+# data-plane rebuild with BUNDLE_FORCE=1. The probe-image step is unversioned
+# and cheap — it always runs.
 bundle:
-	$(MAKE) -C $(INFRA_ROOT)/$(VLLM_DIR) bundle
-	$(MAKE) -C $(INFRA_ROOT)/$(DATA_DIR) bundle PROFILE=$(DATA_PROFILE)
-	[ -z "$(OBS_DIR)" ] || $(MAKE) -C $(INFRA_ROOT)/$(OBS_DIR) bundle
-	[ -z "$(EDGE_DIR)" ] || $(MAKE) -C $(INFRA_ROOT)/$(EDGE_DIR) bundle
-	@for a in $(APP_DIRS) $(OPENWEBUI_DIR); do echo ">> $$a"; $(MAKE) -C $(INFRA_ROOT)/$$a bundle; done
+	./scripts/bundle-exists.sh $(INFRA_ROOT)/$(VLLM_DIR) || $(MAKE) -C $(INFRA_ROOT)/$(VLLM_DIR) bundle
+	./scripts/bundle-exists.sh $(INFRA_ROOT)/$(DATA_DIR) || $(MAKE) -C $(INFRA_ROOT)/$(DATA_DIR) bundle PROFILE=$(DATA_PROFILE)
+	[ -z "$(OBS_DIR)" ] || ./scripts/bundle-exists.sh $(INFRA_ROOT)/$(OBS_DIR) || $(MAKE) -C $(INFRA_ROOT)/$(OBS_DIR) bundle
+	[ -z "$(EDGE_DIR)" ] || ./scripts/bundle-exists.sh $(INFRA_ROOT)/$(EDGE_DIR) || $(MAKE) -C $(INFRA_ROOT)/$(EDGE_DIR) bundle
+	@for a in $(APP_DIRS) $(OPENWEBUI_DIR); do echo ">> $$a"; ./scripts/bundle-exists.sh $(INFRA_ROOT)/$$a || $(MAKE) -C $(INFRA_ROOT)/$$a bundle; done
 	@echo ">> wait-healthy probe image ($(WAIT_PROBE_PIN) -> $(WAIT_PROBE_IMAGE))"
 	docker pull "$(WAIT_PROBE_PIN)"
 	docker tag "$(WAIT_PROBE_PIN)" "$(WAIT_PROBE_IMAGE)"

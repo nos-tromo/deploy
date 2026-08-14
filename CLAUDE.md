@@ -65,7 +65,12 @@ drive compose directly. Keep this split:
    while inference stays pinned to production `up`. `bundle`/`load` cover every image-bearing member — the `APP_DIRS` apps +
    `vllm-service` + `data-plane` (which `bundle` runs at `PROFILE=$(DATA_PROFILE)`) +
    `open-webui-service` (via `OPENWEBUI_DIR`; its bundle is bespoke but yields the same kind of
-   tarball) + `obs-plane` (via `OBS_DIR`; bespoke, data-plane pattern). Every app-tier loop (`setup`/`up`/`down`/`ps`/`logs`) iterates
+   tarball) + `obs-plane` (via `OBS_DIR`; bespoke, data-plane pattern). Delegation does not
+   preclude gating: `bundle` decides *whether* to invoke each member's `make bundle` via
+   `scripts/bundle-exists.sh` (skip when the member's `.<slug>-version` file matches its latest
+   reachable tag on a clean tree and a tarball is present; `BUNDLE_FORCE=1` overrides). The check
+   reads only the version file and git state — never tarball filenames, which stay the member's
+   business. Every app-tier loop (`setup`/`up`/`down`/`ps`/`logs`) iterates
    `$(APP_DIRS) $(OPENWEBUI_DIR)`, so `open-webui-service` is a full lifecycle member, not
    bundle/load-only.
 2. **`ps`/`logs`: drive compose directly** via the helper
@@ -118,7 +123,8 @@ profile, **edit `federation.env`, not the Makefile**: `INFRA_ROOT`, `GIT_REMOTE`
 `APP_DIRS`, `OPENWEBUI_DIR` (the upstream UI — a full lifecycle member, appended to every app-tier
 loop + `bundle`/`load`), `OBS_DIR` (the observability plane; set empty to disable),
 `EDGE_DIR` (the edge gateway — Caddy + Authelia, `edge-plane`; set empty to disable),
-`DATA_PROFILE` (`cpu`|`cuda`), and optional `WAIT_TIMEOUT` / `WAIT_PROBE_IMAGE`.
+`DATA_PROFILE` (`cpu`|`cuda`), and optional `WAIT_TIMEOUT` / `WAIT_PROBE_IMAGE` / `BUNDLE_FORCE`
+(usually passed one-shot: `make bundle BUNDLE_FORCE=1`).
 `GIT_REMOTE` is an account/namespace **prefix**, not a full URL — `make clone`
 derives each member's URL as `$(GIT_REMOTE)/<dir>.git`, so one edit repoints the
 whole federation at SSH or an internal mirror.
@@ -136,7 +142,7 @@ make up-dev    # like up, but state + obs + app tiers publish host ports; infere
 make ps        # status across all tiers       make logs  # tail across all tiers
 make down      # reverse-order stop (never removes data volumes)
 make pull      # switch every federation repo (deploy + members) to main, git pull --ff-only
-make bundle    # build every image-bearing member's airgap tarball(s) (online build host)
+make bundle    # build every image-bearing member's airgap tarball(s); skips already-bundled members — BUNDLE_FORCE=1 rebuilds (online build host)
 make load      # docker load every *.tar.gz under the member repos (offline host)
 ```
 
@@ -158,7 +164,10 @@ prerequisites). Use `make -n <target>` to inspect what any change will actually 
 ## Airgap flow
 
 `make bundle` (online build host) → copy the `*.tar.gz` → `make load` (offline host) → `make setup`
-→ `make up`. `wait-healthy.sh` spins up a throwaway `busybox` probe container; `make bundle` saves
+→ `make up`. `make bundle` skips a member whose bundle for its current release tag already exists,
+judged by the same `.<slug>-version` record `copy-bundles.sh` uses for its skew check;
+`BUNDLE_FORCE=1` forces a full rebuild (the escape-hatch pattern of `COPY_BUNDLES_ALLOW_SKEW=1`).
+`wait-healthy.sh` spins up a throwaway `busybox` probe container; `make bundle` saves
 that image too (`wait-probe-image.tar.gz` in this repo, pulled by the digest pin `WAIT_PROBE_PIN`
 and tagged `WAIT_PROBE_IMAGE`) and `make load` restores it, so the health gates work offline.
 Swapping the probe image means overriding `WAIT_PROBE_IMAGE` **and** `WAIT_PROBE_PIN` together in
