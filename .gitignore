@@ -6,3 +6,5 @@ federation.env
 
 # VS Code workspace files
 *.code-workspace
+
+.DS_STORE
