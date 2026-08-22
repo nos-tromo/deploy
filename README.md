@@ -138,57 +138,18 @@ Rehearse both together on a scratch host before staging/production; the
 
 ## Known integration points
 
-**Delegated `up`** (was: foreground vs detached). Every member's `make up` is now
-detached and `--no-build` — the apps via `common.mk` v3.2, `data-plane` /
-`open-webui-service` via their bespoke Makefiles. So this layer **delegates
-`make up`** per tier (with `PROFILE=$(DATA_PROFILE)` for `data-plane`), exactly as
-it delegates `network`/`volumes`/`down`/`bundle`. `make up-dev` rides the same
-delegation: the state + obs + app tiers come up via their detached `make up-dev` (host
-ports published), while inference and the edge tier stay pinned to production `up` —
-edge is never published in dev shape either, so a dev bring-up still fronts the stack
-through Caddy exactly as production does. Only `ps`/`logs` still use the
-compose helper directly — there is no uniform `ps` target, and `make logs`
-follows with `-f`, which a sequencer can't chain.
+- **Delegated `up`** — almost every target delegates to the member's own
+  Makefile rather than driving compose here; only `ps`/`logs` and the git
+  targets are driven directly. The rationale is in
+  [CLAUDE.md](CLAUDE.md) § *The central design split*.
+- **obs tier** (`OBS_DIR`) — after state, before the apps; gated on
+  `prometheus:9090`. [Design](docs/2026-07-22-obs-tier-wiring-design.md).
+- **edge tier** (`EDGE_DIR`) — last up, first down; gated on `caddy:443`,
+  production-pinned in both modes. [Design](docs/2026-07-24-edge-tier-wiring-design.md).
+- **open-webui-service** (`OPENWEBUI_DIR`) — a full lifecycle member kept out of
+  `APP_DIRS`. [ADR 0002](docs/decisions/0002-open-webui-lifecycle-member.md).
 
-**open-webui-service is folded in via `OPENWEBUI_DIR`, not `APP_DIRS`.** It is the
-upstream chat UI — a pulled image with a bespoke Makefile (it skipped the
-`common.mk` rollout) — so it is kept in its own variable rather than mixed into
-the first-party `APP_DIRS`. But it is a full lifecycle member: `setup`, `up`,
-`down`, `ps`, `logs`, and `bundle`/`load` all iterate `$(APP_DIRS) $(OPENWEBUI_DIR)`.
-This works because it honors the same target contract as the apps — `.env`,
-`docker/compose.yaml`, and the `network` / `volumes` / `down` / `bundle` targets
-(its volume target was renamed from the singular `volume` to `volumes` to match).
-It comes up in the app tier, attaching only to `inference-net` (like Nextext and
-translator).
-
-Set `OPENWEBUI_DIR` empty in `federation.env` to drop it from the federation
-entirely. It still self-manages, so you can also run it standalone:
-
-```bash
-make -C ../open-webui-service network volumes   # one-time
-make -C ../open-webui-service up                # detached, self-contained
-```
-
-**obs-plane is the obs tier, via `OBS_DIR`.** The observability plane
-(Prometheus + Grafana + Loki; pulled images, bespoke Makefile) comes up
-after state and before the apps, so app bring-up is observed. The health
-gate probes `prometheus:9090` over `data-net` (prometheus carries its
-service-name alias there); Grafana and Loki live on obs-plane's internal
-network — use `make -C ../obs-plane health` for the deep check. In
-production shape it publishes no host ports; `make up-dev` publishes
-Grafana (see obs-plane's README). Set `OBS_DIR` empty in `federation.env`
-to run without observability.
-
-**edge-plane is the edge tier, via `EDGE_DIR`.** The gateway (Caddy +
-Authelia; pulled image, bespoke Makefile), like inference, is pinned to
-production `up` in both modes — its production shape already publishes
-the entry ports, so the dev overlay only adds a repo-local echo container
-rather than changing what's exposed. It comes up last (gated on
-`caddy:443` over `edge-net`) and goes down first, since it is the
-federation's public entry point fronting everything behind it. Set
-`EDGE_DIR` empty in `federation.env` to run without the gateway. Client
-prerequisites — `EDGE_HOST` resolution and CA trust — are documented in
-`../edge-plane/README.md`.
+Each is disabled by setting its variable empty in `federation.env`.
 
 ## Decisions
 
@@ -196,10 +157,11 @@ Architecture decision records live in `docs/decisions/`. Federation-wide
 decisions that have no better home (host platform, container engine) are
 recorded here, since `deploy` is the layer that operates the whole stack:
 
-- `docs/decisions/0001-container-engine-docker.md` — Docker Engine stays the
-  federation runtime; conformance effort goes into container/host hardening
-  (`userns-remap`, non-root images, socket removal) instead of a Podman
-  migration.
+- `0001-container-engine-docker.md` — Docker Engine stays the federation
+  runtime; conformance effort goes into container/host hardening instead of a
+  Podman migration.
+- `0002-open-webui-lifecycle-member.md` — `open-webui-service` is a full
+  lifecycle member, carried in `OPENWEBUI_DIR` rather than `APP_DIRS`.
 
 ## Not included (deliberately)
 
