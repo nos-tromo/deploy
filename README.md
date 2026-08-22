@@ -38,18 +38,10 @@ Each tier must be healthy before the next starts — the apps assume the router 
 the databases are already reachable on `inference-net` / `data-net`. See
 `../CLAUDE.md` for the invariant.
 
-`make up` enforces this: it brings up `vllm-service`, waits for `vllm-router:4000`
-on `inference-net`, brings up `data-plane`, waits for `neo4j:7687` + `qdrant:6333`
-on `data-net`, brings up `obs-plane` and waits for `prometheus:9090` on `data-net`,
-then brings up the apps, and finally brings up `edge-plane` (production `up`, in
-both `up` and `up-dev`) and waits for `caddy:443` on `edge-net` — it is the last
-tier up because it is the federation's public entry point, fronting everything
-behind it.
-
-All three external network seams (`inference-net`, `data-net`, `edge-net`)
-are created by `make setup` before any tier starts — every member's own
-`make network` creates the seams it joins, so an app tier can never fail
-on a missing `edge-net` even though the edge tier itself comes up last.
+`make up` enforces this, health-gating each tier before starting the next, and
+`make setup` creates all three network seams up front so no tier can fail on a
+missing network. For the per-tier probes and the reverse-order `down`, see
+[bring-up.md](docs/runbooks/bring-up.md#what-make-up-enforces).
 
 ## Quick start
 
@@ -65,16 +57,20 @@ make down      # reverse-order stop (never removes data volumes)
 
 ## Targets
 
+`make help` prints this list plus the apps configured on this host. Full detail
+for every target — flags, skip rules, exit codes — is in
+[bring-up.md](docs/runbooks/bring-up.md#targets).
+
 | Target | What it does |
 |---|---|
 | `setup` | Delegates `make network volumes` to every tier (idempotent). |
-| `up` | Inference → state → obs → apps (incl. `open-webui-service`) → edge, each via the member's own `make up` (detached, `--no-build`), health-gated. |
-| `up-dev` | Same order + health gates as `up`, but the state + obs + app tiers come up via their own `make up-dev` (publishing host ports for local dev); inference and edge stay on production `up`. |
-| `down` | Edge → apps (incl. `open-webui-service`) → obs → state → inference, via each repo's `make down`. Never `-v`. |
+| `up` | Ordered, health-gated bring-up via each member's own `make up` (detached, `--no-build`). |
+| `up-dev` | Same order + gates, but state + obs + apps publish host ports; inference and edge stay production. |
+| `down` | Reverse order, via each repo's `make down`. Never `-v`. |
 | `ps` / `logs` | Fan out across all tiers. |
-| `clone` | Clones every federation member missing under `INFRA_ROOT`, from `$(GIT_REMOTE)/<dir>.git` (`GIT_REMOTE` defaults to the nos-tromo GitHub account; set it to an SSH prefix or an internal mirror in `federation.env`). Existing directories are skipped untouched — refreshing is `pull`'s job — so the target is idempotent. A failed clone warns and the loop continues, exiting non-zero at the end. Clones are never shallow, because members' `make bundle` needs reachable tags. `deploy` itself, `infra-ui`, and `pr-notify` are not cloned. |
-| `pull` | Switches every federation repo (deploy itself + all members) to `main` and pulls from GitHub (`--ff-only`; a dirty/diverged repo is skipped with a warning, and the target exits non-zero at the end if any repo was skipped). `infra-ui` is not a member and is not pulled. |
-| `bundle` | Runs `make bundle` in every image-bearing member — `APP_DIRS` apps + vllm-service + data-plane (active profile) + open-webui-service (`OPENWEBUI_DIR`) + obs-plane (`OBS_DIR`) + edge-plane (`EDGE_DIR`) — then saves the `wait-healthy.sh` probe image (digest-pinned via `WAIT_PROBE_PIN`) as `wait-probe-image.tar.gz` in this repo. A member whose bundle for the current release already exists — clean tree, `.<slug>-version` recording the latest reachable tag, tarball present — is skipped with a `>> <member>: bundle <ver> already present — skipping` line; `BUNDLE_FORCE=1` forces the full fan-out. Members without a version record (`open-webui-service`) always rebuild. |
+| `clone` | Clone every missing member repo under `INFRA_ROOT` from `$(GIT_REMOTE)/<dir>.git` (never shallow). |
+| `pull` | Switch every federation repo to `main` and `git pull --ff-only`. |
+| `bundle` | Build every image-bearing member's airgap tarball(s) + the health-probe image; skips members already bundled at their current tag. |
 | `load` | `docker load` every `*.tar.gz` found under deploy + the member repos. |
 
 ## Releasing
@@ -82,35 +78,10 @@ make down      # reverse-order stop (never removes data volumes)
 Releases are identified by an **annotated Git tag** on `main`, minted
 automatically on merge. `main` is the always-green integration trunk (GitHub
 Flow: short-lived `feature/*` / `fix/*` branches → PR → CI → `main`); there is no
-long-lived staging branch.
-
-`deploy` itself is versioned the same way: a one-line `VERSION` file read by the
-same `release-tag` workflow, minting the tag on merge to `main`.
-
-1. In a `release/vX.Y.Z` branch, bump the member's declared version — `pyproject.toml`
-   `[project].version` (the Python apps + `vllm-service`) or the one-line `VERSION`
-   file (`data-plane`, `open-webui-service`) — and, for the Python repos, run
-   `uv lock` to sync the lockfile. PR → CI → merge to `main`.
-2. On merge, the shared `release-tag` workflow (`nos-tromo/.github@v3`) reads the
-   declared version and mints the annotated `vX.Y.Z` tag **automatically** — no
-   manual `git tag`. It is idempotent (an unchanged version is a no-op) and refuses
-   a version that decreased. Bumping the version in the release PR is the whole
-   release action.
-3. Bundle the tag: `make bundle` — each member builds from the latest annotated
-   tag reachable from HEAD (it checks the tag out and restores your branch after),
-   stamping its image `vX.Y.Z`. It refuses on a dirty tree or with no reachable
-   tag, so a release artifact is always tag-versioned, never a dev `date+sha`. For
-   pre-tag soak iteration, per-member `make bundle-dev` bundles the current working
-   tree instead (never promoted). Re-running `make bundle` is idempotent per
-   member: one already bundled at its current tag (per its `.<slug>-version`
-   file, the same record `copy-bundles.sh` checks for skew) is skipped, so a
-   partially failed fan-out can be re-run without rebuilding the members that
-   succeeded. `BUNDLE_FORCE=1` rebuilds everything.
-4. Bring the tagged artifact up on a staging environment isolated from other
-   workloads and exercise it end to end.
-5. On success, promote the **same** artifact onward (see **Airgap flow** below).
-   On failure, fix forward on `main`, tag the next patch (`vX.Y.Z+1`), and
-   repeat — the failed candidate is never promoted.
+long-lived staging branch. Bumping the declared version in the release PR is the
+whole release action — the shared `release-tag` workflow does the rest, then
+`make bundle` builds that tag and the same artifact soaks on staging before
+promotion. Step-by-step: [releasing.md](docs/runbooks/releasing.md).
 
 ## Airgap flow
 
@@ -122,43 +93,12 @@ make bundle  ──▶ *.tar.gz  ──copy──▶  make load   (docker load a
                                       make up
 ```
 
-Each member repo already produces its own versioned tarballs (`make bundle`,
-sharing `scripts/bundle-lib.sh`); `make bundle` here just fans that out, and
-`make load` loads them on the offline side. obs-plane's
-`obs-plane-pulled-<version>.tar.gz` and edge-plane's
-`edge-plane-pulled-<version>.tar.gz` are included in the fan-out.
-The fan-out skips members already bundled at their current release tag (see
-the `bundle` row above). Two caveats: the version record carries no profile,
-so after switching `DATA_PROFILE` force a data-plane rebuild with
-`BUNDLE_FORCE=1`; setting a `*VERSION_OVERRIDE` disables the skip
-automatically for that run.
-`wait-healthy.sh` uses a throwaway `busybox` probe container; `make bundle`
-saves that image too (`wait-probe-image.tar.gz` in this repo, pulled by the
-digest in `WAIT_PROBE_PIN` and tagged `WAIT_PROBE_IMAGE`), and `make load`
-restores it — so the health gates work offline without any extra step. If you
-swap the probe image, override `WAIT_PROBE_IMAGE` and `WAIT_PROBE_PIN`
-together in `federation.env`.
+The copy step is `scripts/copy-bundles.sh <dest-dir>`, which also refuses to
+assemble a version-skewed transfer set. See
+[airgap-transfer.md](docs/runbooks/airgap-transfer.md) for what each step
+moves, the probe-image handling, and the skew guard.
 
-The **copy** step is `scripts/copy-bundles.sh <dest-dir>`: it collects, per
-member, the image tarballs plus everything the airgap host needs beside them —
-compose files, Makefile (+ vendored `make/`), version files, `.env.example`,
-and the config directories the containers mount from the repo — into one
-destination (e.g. a mounted USB stick). Member paths are derived from the
-script's location (siblings of `deploy/`; override with `INFRA_ROOT=...`).
-Secrets stay behind by design: edge-plane's `authelia/users.yml`, `certs/`,
-and every real `.env` are never copied — they are provisioned fresh on the
-airgap side.
-
-The script also refuses to assemble a skewed transfer set. Member bundles are
-built from the latest release tag, while the repo files copied beside them
-come from the working tree — so a member that has moved past its last release
-(new commits since the tag, or uncommitted changes) would hand the airgap
-host compose files referencing images its tarball doesn't contain, and the
-first `make up` there tries to pull from the internet. Each member's
-`.<slug>-version` file records what its bundle was built from (release tag or
-`<date>-<sha>`); on mismatch the run lists the skewed members and exits
-non-zero. Re-run that member's `make bundle` (tagging a new release first if
-the changes should ship), or force with `COPY_BUNDLES_ALLOW_SKEW=1`.
+### What else must travel
 
 `bundle`/`load` move only the **images** — the inference tier also needs its
 **model weights** on the offline host. `scripts/pack-model.sh` /
@@ -173,7 +113,8 @@ hosts populated before the hardening wave. See `docs/hardening-migration.md`.
 
 Once the federation is up, browsers reach it at `https://<EDGE_HOST>/` — the
 client-side hosts-entry/DNS setup and CA trust needed to reach that URL are
-documented in edge-plane's own README (see `../edge-plane/README.md`).
+documented in edge-plane's own TLS runbook (see
+`../edge-plane/docs/tls-runbook.md`).
 
 On a brand-new host, the edge tier aborts `make up` with a clear message
 until `edge-plane/authelia/users.yml` has been provisioned from its
@@ -197,57 +138,18 @@ Rehearse both together on a scratch host before staging/production; the
 
 ## Known integration points
 
-**Delegated `up`** (was: foreground vs detached). Every member's `make up` is now
-detached and `--no-build` — the apps via `common.mk` v3.2, `data-plane` /
-`open-webui-service` via their bespoke Makefiles. So this layer **delegates
-`make up`** per tier (with `PROFILE=$(DATA_PROFILE)` for `data-plane`), exactly as
-it delegates `network`/`volumes`/`down`/`bundle`. `make up-dev` rides the same
-delegation: the state + obs + app tiers come up via their detached `make up-dev` (host
-ports published), while inference and the edge tier stay pinned to production `up` —
-edge is never published in dev shape either, so a dev bring-up still fronts the stack
-through Caddy exactly as production does. Only `ps`/`logs` still use the
-compose helper directly — there is no uniform `ps` target, and `make logs`
-follows with `-f`, which a sequencer can't chain.
+- **Delegated `up`** — almost every target delegates to the member's own
+  Makefile rather than driving compose here; only `ps`/`logs` and the git
+  targets are driven directly. The rationale is in
+  [CLAUDE.md](CLAUDE.md) § *The central design split*.
+- **obs tier** (`OBS_DIR`) — after state, before the apps; gated on
+  `prometheus:9090`. [Design](docs/2026-07-22-obs-tier-wiring-design.md).
+- **edge tier** (`EDGE_DIR`) — last up, first down; gated on `caddy:443`,
+  production-pinned in both modes. [Design](docs/2026-07-24-edge-tier-wiring-design.md).
+- **open-webui-service** (`OPENWEBUI_DIR`) — a full lifecycle member kept out of
+  `APP_DIRS`. [ADR 0002](docs/decisions/0002-open-webui-lifecycle-member.md).
 
-**open-webui-service is folded in via `OPENWEBUI_DIR`, not `APP_DIRS`.** It is the
-upstream chat UI — a pulled image with a bespoke Makefile (it skipped the
-`common.mk` rollout) — so it is kept in its own variable rather than mixed into
-the first-party `APP_DIRS`. But it is a full lifecycle member: `setup`, `up`,
-`down`, `ps`, `logs`, and `bundle`/`load` all iterate `$(APP_DIRS) $(OPENWEBUI_DIR)`.
-This works because it honors the same target contract as the apps — `.env`,
-`docker/compose.yaml`, and the `network` / `volumes` / `down` / `bundle` targets
-(its volume target was renamed from the singular `volume` to `volumes` to match).
-It comes up in the app tier, attaching only to `inference-net` (like Nextext and
-translator).
-
-Set `OPENWEBUI_DIR` empty in `federation.env` to drop it from the federation
-entirely. It still self-manages, so you can also run it standalone:
-
-```bash
-make -C ../open-webui-service network volumes   # one-time
-make -C ../open-webui-service up                # detached, self-contained
-```
-
-**obs-plane is the obs tier, via `OBS_DIR`.** The observability plane
-(Prometheus + Grafana + Loki; pulled images, bespoke Makefile) comes up
-after state and before the apps, so app bring-up is observed. The health
-gate probes `prometheus:9090` over `data-net` (prometheus carries its
-service-name alias there); Grafana and Loki live on obs-plane's internal
-network — use `make -C ../obs-plane health` for the deep check. In
-production shape it publishes no host ports; `make up-dev` publishes
-Grafana (see obs-plane's README). Set `OBS_DIR` empty in `federation.env`
-to run without observability.
-
-**edge-plane is the edge tier, via `EDGE_DIR`.** The gateway (Caddy +
-Authelia; pulled image, bespoke Makefile), like inference, is pinned to
-production `up` in both modes — its production shape already publishes
-the entry ports, so the dev overlay only adds a repo-local echo container
-rather than changing what's exposed. It comes up last (gated on
-`caddy:443` over `edge-net`) and goes down first, since it is the
-federation's public entry point fronting everything behind it. Set
-`EDGE_DIR` empty in `federation.env` to run without the gateway. Client
-prerequisites — `EDGE_HOST` resolution and CA trust — are documented in
-`../edge-plane/README.md`.
+Each is disabled by setting its variable empty in `federation.env`.
 
 ## Decisions
 
@@ -255,10 +157,19 @@ Architecture decision records live in `docs/decisions/`. Federation-wide
 decisions that have no better home (host platform, container engine) are
 recorded here, since `deploy` is the layer that operates the whole stack:
 
-- `docs/decisions/0001-container-engine-docker.md` — Docker Engine stays the
-  federation runtime; conformance effort goes into container/host hardening
-  (`userns-remap`, non-root images, socket removal) instead of a Podman
-  migration.
+- `0001-container-engine-docker.md` — Docker Engine stays the federation
+  runtime; conformance effort goes into container/host hardening instead of a
+  Podman migration.
+- `0002-open-webui-lifecycle-member.md` — `open-webui-service` is a full
+  lifecycle member, carried in `OPENWEBUI_DIR` rather than `APP_DIRS`.
+
+## Documentation
+
+[`docs/README.md`](docs/README.md) indexes everything in `docs/`: the runbooks
+above, the decision records, and the federation-wide tech-stack overview
+([`docs/tech-stack.md`](docs/tech-stack.md) — German:
+[`docs/tech-stack.de.md`](docs/tech-stack.de.md)). Dated `YYYY-MM-DD-*` files
+are design history, not current reference.
 
 ## Not included (deliberately)
 
