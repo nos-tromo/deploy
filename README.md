@@ -163,6 +163,14 @@ recorded here, since `deploy` is the layer that operates the whole stack:
 - `0002-open-webui-lifecycle-member.md` — `open-webui-service` is a full
   lifecycle member, carried in `OPENWEBUI_DIR` rather than `APP_DIRS`.
 
+## Documentation
+
+[`docs/README.md`](docs/README.md) indexes everything in `docs/`: the runbooks
+above, the decision records, and the federation-wide tech-stack overview
+([`docs/tech-stack.md`](docs/tech-stack.md) — German:
+[`docs/tech-stack.de.md`](docs/tech-stack.de.md)). Dated `YYYY-MM-DD-*` files
+are design history, not current reference.
+
 ## Not included (deliberately)
 
 - **A federation `compose.yaml` with `include:`** — Compose can merge the member
