@@ -67,7 +67,7 @@ at the time and are not maintained as current reference.
   top-level README that summarizes them.
 - **Decision records** are numbered `decisions/NNNN-<slug>.md` and follow
   Context / Decision / Alternatives considered / Consequences.
-- **Member repo paths** are written relative to `INFRA_ROOT` (for example
-  `../edge-plane/README.md`) — the federation members are siblings of
-  `deploy/`.
+- **Sibling repo paths** are written as seen from the repo root — the
+  federation members are siblings of `deploy/`, so the top-level README refers
+  to them as `../edge-plane/...`.
 - Documentation is plain Markdown (GitHub Flavored). No build step is required.
