@@ -38,18 +38,10 @@ Each tier must be healthy before the next starts — the apps assume the router 
 the databases are already reachable on `inference-net` / `data-net`. See
 `../CLAUDE.md` for the invariant.
 
-`make up` enforces this: it brings up `vllm-service`, waits for `vllm-router:4000`
-on `inference-net`, brings up `data-plane`, waits for `neo4j:7687` + `qdrant:6333`
-on `data-net`, brings up `obs-plane` and waits for `prometheus:9090` on `data-net`,
-then brings up the apps, and finally brings up `edge-plane` (production `up`, in
-both `up` and `up-dev`) and waits for `caddy:443` on `edge-net` — it is the last
-tier up because it is the federation's public entry point, fronting everything
-behind it.
-
-All three external network seams (`inference-net`, `data-net`, `edge-net`)
-are created by `make setup` before any tier starts — every member's own
-`make network` creates the seams it joins, so an app tier can never fail
-on a missing `edge-net` even though the edge tier itself comes up last.
+`make up` enforces this, health-gating each tier before starting the next, and
+`make setup` creates all three network seams up front so no tier can fail on a
+missing network. For the per-tier probes and the reverse-order `down`, see
+[bring-up.md](docs/runbooks/bring-up.md#what-make-up-enforces).
 
 ## Quick start
 
@@ -65,16 +57,20 @@ make down      # reverse-order stop (never removes data volumes)
 
 ## Targets
 
+`make help` prints this list plus the apps configured on this host. Full detail
+for every target — flags, skip rules, exit codes — is in
+[bring-up.md](docs/runbooks/bring-up.md#targets).
+
 | Target | What it does |
 |---|---|
 | `setup` | Delegates `make network volumes` to every tier (idempotent). |
-| `up` | Inference → state → obs → apps (incl. `open-webui-service`) → edge, each via the member's own `make up` (detached, `--no-build`), health-gated. |
-| `up-dev` | Same order + health gates as `up`, but the state + obs + app tiers come up via their own `make up-dev` (publishing host ports for local dev); inference and edge stay on production `up`. |
-| `down` | Edge → apps (incl. `open-webui-service`) → obs → state → inference, via each repo's `make down`. Never `-v`. |
+| `up` | Ordered, health-gated bring-up via each member's own `make up` (detached, `--no-build`). |
+| `up-dev` | Same order + gates, but state + obs + apps publish host ports; inference and edge stay production. |
+| `down` | Reverse order, via each repo's `make down`. Never `-v`. |
 | `ps` / `logs` | Fan out across all tiers. |
-| `clone` | Clones every federation member missing under `INFRA_ROOT`, from `$(GIT_REMOTE)/<dir>.git` (`GIT_REMOTE` defaults to the nos-tromo GitHub account; set it to an SSH prefix or an internal mirror in `federation.env`). Existing directories are skipped untouched — refreshing is `pull`'s job — so the target is idempotent. A failed clone warns and the loop continues, exiting non-zero at the end. Clones are never shallow, because members' `make bundle` needs reachable tags. `deploy` itself, `infra-ui`, and `pr-notify` are not cloned. |
-| `pull` | Switches every federation repo (deploy itself + all members) to `main` and pulls from GitHub (`--ff-only`; a dirty/diverged repo is skipped with a warning, and the target exits non-zero at the end if any repo was skipped). `infra-ui` is not a member and is not pulled. |
-| `bundle` | Runs `make bundle` in every image-bearing member — `APP_DIRS` apps + vllm-service + data-plane (active profile) + open-webui-service (`OPENWEBUI_DIR`) + obs-plane (`OBS_DIR`) + edge-plane (`EDGE_DIR`) — then saves the `wait-healthy.sh` probe image (digest-pinned via `WAIT_PROBE_PIN`) as `wait-probe-image.tar.gz` in this repo. A member whose bundle for the current release already exists — clean tree, `.<slug>-version` recording the latest reachable tag, tarball present — is skipped with a `>> <member>: bundle <ver> already present — skipping` line; `BUNDLE_FORCE=1` forces the full fan-out. Members without a version record (`open-webui-service`) always rebuild. |
+| `clone` | Clone every missing member repo under `INFRA_ROOT` from `$(GIT_REMOTE)/<dir>.git` (never shallow). |
+| `pull` | Switch every federation repo to `main` and `git pull --ff-only`. |
+| `bundle` | Build every image-bearing member's airgap tarball(s) + the health-probe image; skips members already bundled at their current tag. |
 | `load` | `docker load` every `*.tar.gz` found under deploy + the member repos. |
 
 ## Releasing
