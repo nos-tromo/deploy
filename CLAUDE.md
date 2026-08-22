@@ -29,7 +29,13 @@ It is its own git repo but operates on **sibling repos** under `INFRA_ROOT` (def
 `infra/` workspace layout). The functional surface is 3 files — `Makefile` (the spine),
 `scripts/wait-healthy.sh` (the health gate), `.github/workflows/ci.yml` (lint-only CI) — but the
 blast radius is cross-repo: editing anything here changes how the entire federation boots. The
-`README.md` is the human runbook; keep it and this file in sync when behavior changes.
+documentation is split three ways, and each part has its own lane: `README.md` is the entry
+point (what this layer is, on-host layout, quick start, and pointers), `docs/runbooks/` holds the
+operator procedures (`bring-up.md`, `releasing.md`, `airgap-transfer.md`, plus the two ADR-0001
+host procedures), and **this file holds the agent-facing design detail** — the delegation split,
+the cross-repo contract, the invariants. A behavior change normally lands in one lane, not all
+three; prefer a pointer over mirroring the same prose into a second file. `docs/README.md` indexes
+the rest.
 
 > **Scaffold status.** The structure and ordering are real, but the health-probe targets in
 > `wait-healthy.sh` and the host profile are **unvalidated against a real deployment**. Don't treat
