@@ -204,11 +204,14 @@ Digest-gepinnt.
 
 ### `deploy` — Lebenszyklus-Ebene der Föderation
 
-Nur Make + Shell; besitzt keine Services, Daten oder Images. Sequenziert die
-eigenen `make`-Targets der Mitglieder: `make up` fährt Inference → State →
-Obs → Apps → Edge der Reihe nach hoch, health-gated, auf einem einzelnen
-Host; `make up-dev` ist das Dev-Pendant (Host-Ports für State + Apps
-veröffentlicht). Host-Profil über `federation.env` (`INFRA_ROOT`,
+Nur Make + Shell; besitzt keine Services und keine Daten und baut keine
+Service-Images — das eigene `bundle` sichert lediglich das gepinnte
+Health-Probe-Image. Sequenziert die eigenen `make`-Targets der Mitglieder:
+`make up` fährt Inference → State → Obs → Apps → Edge der Reihe nach hoch,
+health-gated, auf einem einzelnen Host; `make up-dev` behält dieselbe
+Reihenfolge und dieselben Gates bei, aber State-, Obs- und App-Tier kommen
+über ihr eigenes `up-dev` hoch und veröffentlichen Host-Ports, während
+Inference und Edge auf dem Produktions-`up` bleiben. Host-Profil über `federation.env` (`INFRA_ROOT`,
 Tier-Verzeichnislisten, `DATA_PROFILE=cpu|cuda`). Verteilt außerdem
 `network` / `volumes` / `down` / `bundle` / Airgap-`load` auf die Mitglieder.
 

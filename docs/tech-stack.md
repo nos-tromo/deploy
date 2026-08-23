@@ -198,10 +198,13 @@ nginx strips the sub-path prefix). All digest-pinned.
 
 ### `deploy` — federation lifecycle layer
 
-Make + shell only; owns no services, data, or images. Sequences the members'
-own `make` targets: `make up` brings up inference → state → obs → apps → edge
-in order, health-gated, on a single host; `make up-dev` does the dev-shape
-equivalent (host ports published for state + apps). Host profile via
+Make + shell only; owns no services or data and builds no service images — its
+own `bundle` merely re-saves the pinned health-probe image. Sequences the
+members' own `make` targets: `make up` brings up inference → state → obs →
+apps → edge in order, health-gated, on a single host; `make up-dev` keeps that
+same order and the same gates, but the state, obs and app tiers come up via
+their own `up-dev` to publish host ports while inference and edge stay on the
+production `up`. Host profile via
 `federation.env` (`INFRA_ROOT`, tier dir lists, `DATA_PROFILE=cpu|cuda`).
 Also fans out `network` / `volumes` / `down` / `bundle` / airgap `load`
 across members.
