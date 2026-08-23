@@ -15,9 +15,11 @@
 # bundle was built from (deploy must not assume tarball filename conventions,
 # per CLAUDE.md); the expected version of a would-be release bundle is the
 # latest annotated tag reachable from HEAD on a clean tree — exactly what the
-# member's `make bundle` would build. Members without a version file
-# (open-webui-service; obs-plane's plain VERSION file is a source version,
-# not a bundle record) are therefore always rebuilt.
+# member's `make bundle` would build. Every image-bearing member writes that
+# record from the vendored bundle-lib.sh (`bundle_version` -> `.<slug>-version`,
+# gitignored), open-webui-service (`.open-webui-version`) and obs-plane
+# (`.obs-plane-version`) included — obs-plane's tracked plain `VERSION` file is
+# a source version, not the bundle record, and is not what is read here.
 #
 # BUNDLE_FORCE=1 disables the skip entirely (always delegate).
 

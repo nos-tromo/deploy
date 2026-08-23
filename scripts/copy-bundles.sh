@@ -131,8 +131,8 @@ copy_project() {
         echo -e "  ${GREEN}✓${NC} Makefile copied."
         # Vendored make includes: the Makefile does `include make/common.mk`;
         # without make/ every make target fails on the airgap side.
-        # (edge-plane/obs-plane/data-plane have standalone Makefiles without
-        # make/ — then nothing is copied here.)
+        # (data-plane/obs-plane/edge-plane/open-webui-service have standalone
+        # Makefiles without make/ — then nothing is copied here.)
         if [ -d "$source_dir/make" ]; then
             cp -r "$source_dir/make" "$project_dest/"
             echo -e "  ${GREEN}✓${NC} make/ (vendored common.mk) copied."
@@ -196,7 +196,8 @@ copy_project "$INFRA_ROOT/obs-plane" obs-plane \
     "$INFRA_ROOT/obs-plane/grafana" \
     "$INFRA_ROOT/obs-plane/loki" \
     "$INFRA_ROOT/obs-plane/alloy" \
-    "$INFRA_ROOT/obs-plane/blackbox"
+    "$INFRA_ROOT/obs-plane/blackbox" \
+    "$INFRA_ROOT/obs-plane/dcgm"
 
 # edge-plane: Caddy/portal configuration is likewise mounted from the repo.
 # CAUTION: authelia/ and certs/ are deliberately NOT copied wholesale —
