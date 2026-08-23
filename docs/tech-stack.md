@@ -170,7 +170,7 @@ nginx strips the sub-path prefix). All digest-pinned.
 | Version / Python | 1.1.3 · `>=3.12,<3.13` (3.12 only) |
 | Backend | FastAPI + SSE (`sse-starlette`), Typer CLI, watchdog; setuptools build |
 | NLP / analysis | spaCy 3.8, NLTK, langdetect, camel-tools + pyarabic + arabic-reshaper + python-bidi (Arabic support), wordcloud, matplotlib |
-| Inference clients | `openai` SDK; per-model dedicated endpoints `WHISPER_API_BASE` / `NER_API_BASE` / `DIARIZATION_API_BASE` falling back to `OPENAI_API_BASE` |
+| Inference clients | `openai` SDK; per-service dedicated endpoints `WHISPER_API_BASE`, `NER_API_BASE`, `DIARIZE_API_BASE`, `VAD_API_BASE`, each falling back to the central `OPENAI_API_BASE` |
 | Frontend | React 19, TanStack Query/Table/Virtual, Zustand 5, Recharts 3 |
 | Tests | pytest + pytest-asyncio + respx |
 

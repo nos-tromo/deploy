@@ -176,7 +176,7 @@ Digest-gepinnt.
 | Version / Python | 1.1.3 · `>=3.12,<3.13` (nur 3.12) |
 | Backend | FastAPI + SSE (`sse-starlette`), Typer-CLI, watchdog; setuptools-Build |
 | NLP / Analyse | spaCy 3.8, NLTK, langdetect, camel-tools + pyarabic + arabic-reshaper + python-bidi (Arabisch-Support), wordcloud, matplotlib |
-| Inference-Clients | `openai`-SDK; dedizierte Endpunkte pro Modell `WHISPER_API_BASE` / `NER_API_BASE` / `DIARIZATION_API_BASE` mit Fallback auf `OPENAI_API_BASE` |
+| Inference-Clients | `openai`-SDK; dedizierte Endpunkte pro Dienst `WHISPER_API_BASE`, `NER_API_BASE`, `DIARIZE_API_BASE`, `VAD_API_BASE`, jeweils mit Fallback auf das zentrale `OPENAI_API_BASE` |
 | Frontend | React 19, TanStack Query/Table/Virtual, Zustand 5, Recharts 3 |
 | Tests | pytest + pytest-asyncio + respx |
 
