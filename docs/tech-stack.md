@@ -204,8 +204,8 @@ members' own `make` targets: `make up` brings up inference → state → obs →
 apps → edge in order, health-gated, on a single host; `make up-dev` keeps that
 same order and the same gates, but the state, obs and app tiers come up via
 their own `up-dev` to publish host ports while inference and edge stay on the
-production `up`. Host profile via
-`federation.env` (`INFRA_ROOT`, tier dir lists, `DATA_PROFILE=cpu|cuda`).
+production `up`. Host profile via `federation.env` (`INFRA_ROOT`, tier dir
+lists, `DATA_PROFILE=cpu|cuda`).
 Also fans out `network` / `volumes` / `down` / `bundle` / airgap `load`
 across members.
 

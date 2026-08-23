@@ -211,8 +211,9 @@ Health-Probe-Image. Sequenziert die eigenen `make`-Targets der Mitglieder:
 health-gated, auf einem einzelnen Host; `make up-dev` behält dieselbe
 Reihenfolge und dieselben Gates bei, aber State-, Obs- und App-Tier kommen
 über ihr eigenes `up-dev` hoch und veröffentlichen Host-Ports, während
-Inference und Edge auf dem Produktions-`up` bleiben. Host-Profil über `federation.env` (`INFRA_ROOT`,
-Tier-Verzeichnislisten, `DATA_PROFILE=cpu|cuda`). Verteilt außerdem
+Inference und Edge auf dem Produktions-`up` bleiben. Host-Profil über
+`federation.env` (`INFRA_ROOT`, Tier-Verzeichnislisten,
+`DATA_PROFILE=cpu|cuda`). Verteilt außerdem
 `network` / `volumes` / `down` / `bundle` / Airgap-`load` auf die Mitglieder.
 
 ### `infra-ui` — gemeinsames Designsystem `@infra/ui` (v0.15.x)
@@ -264,9 +265,9 @@ Dev-/Staging-Soak. `data-plane`, `obs-plane`, `edge-plane` und
 **CI / Release:** GitHub Flow (kurzlebige `feature/*`/`fix/*` → PR → CI →
 `main`); wiederverwendbare GitHub-Actions-Workflows aus `nos-tromo/.github`,
 jede `uses:`-Referenz auf einen vollständigen Commit-SHA gepinnt, mit der
-Version als nachgestelltem Kommentar (`@<sha> # v3.13`). Beim Merge nach `main` liest der gemeinsame
-`release-tag`-Workflow die deklarierte Version (`pyproject.toml` oder
-`VERSION`) und erzeugt den annotierten `vX.Y.Z`-Tag — idempotent, mit
+Version als nachgestelltem Kommentar (`@<sha> # v3.13`). Beim Merge nach
+`main` liest der gemeinsame `release-tag`-Workflow die deklarierte Version
+(`pyproject.toml` oder `VERSION`) und erzeugt den annotierten `vX.Y.Z`-Tag — idempotent, mit
 Anti-Downgrade-Schutz. Dasselbe Bundle-Artefakt wird auf Staging getestet,
 bevor es in die Produktion promotet wird. Design-Dokument:
 `2026-07-02-federation-release-workflow-design.md` im `docs/`-Verzeichnis des
