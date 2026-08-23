@@ -27,7 +27,7 @@ und nichts lädt zur Laufzeit Daten, Modelle oder Telemetrie nach.
 |---|---|
 | Sprachen | Python 3.11 / 3.12 (pro Repo gepinnt), TypeScript ~6.0 |
 | Backend-Framework | FastAPI + Uvicorn, Pydantic v2 |
-| Frontend | React 19 + Vite 8 + Tailwind CSS v4, gemeinsames Designsystem `@infra/ui` (v0.8.x) |
+| Frontend | React 19 + Vite 8 + Tailwind CSS v4, gemeinsames Designsystem `@infra/ui` (v0.15.x) |
 | Inference | LiteLLM-Proxy-Router → vLLM-v0.20.1-Backends; Ray Serve für GLiNER |
 | Datenbanken | Neo4j 5.26 Community (Graph), Qdrant v1.17 (Vektor) |
 | Edge / Auth | Caddy 2.11 (TLS, Pfad-Routing) + Authelia 4.39 (Forward-Auth-SSO, vertrauenswürdige Header `X-Auth-User`/`X-Auth-Email`) |
@@ -212,14 +212,14 @@ veröffentlicht). Host-Profil über `federation.env` (`INFRA_ROOT`,
 Tier-Verzeichnislisten, `DATA_PROFILE=cpu|cuda`). Verteilt außerdem
 `network` / `volumes` / `down` / `bundle` / Airgap-`load` auf die Mitglieder.
 
-### `infra-ui` — gemeinsames Designsystem `@infra/ui` (v0.8.x)
+### `infra-ui` — gemeinsames Designsystem `@infra/ui` (v0.15.x)
 
 | | |
 |---|---|
 | Stack | React 19 (Peer-Dependency), Tailwind-CSS-v4-Tokens, class-variance-authority + clsx + tailwind-merge |
 | Primitives | UI-Primitives + AppHeader, Light-/Dark-Theming (`useTheme`, CSS-Variablen), **ForceGraph** (Canvas-Kraftsimulation + Graph-Export, genutzt von chorus) |
 | Build | tsup → **committetes, vorgebautes `dist/`** (nur zur Build-Zeit, kein Rebuild bei der Installation); vitest + Testing Library + happy-dom; ESLint 9 + Prettier |
-| Konsum | Gepinnte pnpm-Git-Dependency (Release-Tag-URL, z. B. `#v0.8.1`) in allen vier App-Frontends; Theming pro App via `--app-accent`; erfordert eine Tailwind-`@source`-Zeile |
+| Konsum | Gepinnte pnpm-Dependency auf ein **Commit-SHA-Codeload-Tarball** (`https://codeload.github.com/nos-tromo/infra-ui/tar.gz/<sha>`) in allen vier App-Frontends — bewusst nie ein Tag; Theming pro App via `--app-accent`; erfordert eine Tailwind-`@source`-Zeile |
 | CI | Enthält einen dist-Guard (dist muss zu src passen) |
 
 ### `pr-notify` — Telegram-Notifier (Tooling)

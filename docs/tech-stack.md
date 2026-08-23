@@ -27,7 +27,7 @@ fetches data, models, or telemetry at runtime.
 |---|---|
 | Languages | Python 3.11 / 3.12 (per-repo pins), TypeScript ~6.0 |
 | Backend framework | FastAPI + Uvicorn, Pydantic v2 |
-| Frontend | React 19 + Vite 8 + Tailwind CSS v4, shared `@infra/ui` design system (v0.8.x) |
+| Frontend | React 19 + Vite 8 + Tailwind CSS v4, shared `@infra/ui` design system (v0.15.x) |
 | Inference | LiteLLM Proxy router → vLLM v0.20.1 backends; Ray Serve for GLiNER |
 | Databases | Neo4j 5.26 Community (graph), Qdrant v1.17 (vector) |
 | Edge / auth | Caddy 2.11 (TLS, path routing) + Authelia 4.39 (forward-auth SSO, trusted `X-Auth-User`/`X-Auth-Email` headers) |
@@ -206,14 +206,14 @@ equivalent (host ports published for state + apps). Host profile via
 Also fans out `network` / `volumes` / `down` / `bundle` / airgap `load`
 across members.
 
-### `infra-ui` — `@infra/ui` shared design system (v0.8.x)
+### `infra-ui` — `@infra/ui` shared design system (v0.15.x)
 
 | | |
 |---|---|
 | Stack | React 19 (peer dep), Tailwind CSS v4 tokens, class-variance-authority + clsx + tailwind-merge |
 | Primitives | UI primitives + AppHeader, light/dark theming (`useTheme`, CSS vars), **ForceGraph** (canvas force simulation + graph export, consumed by chorus) |
 | Build | tsup → **committed prebuilt `dist/`** (build-time only, no install-time rebuild); vitest + Testing Library + happy-dom; ESLint 9 + Prettier |
-| Consumption | Pinned pnpm git dependency (release-tag URL, e.g. `#v0.8.1`) in all four app frontends; per-app theming via `--app-accent`; requires a Tailwind `@source` line |
+| Consumption | Pinned pnpm dependency on a **commit-SHA codeload tarball** (`https://codeload.github.com/nos-tromo/infra-ui/tar.gz/<sha>`) in all four app frontends — deliberately never a tag; per-app theming via `--app-accent`; requires a Tailwind `@source` line |
 | CI | Includes a dist-guard (dist must match src) |
 
 ### `pr-notify` — Telegram notifier (tooling)
