@@ -1,6 +1,6 @@
 # nos-tromo-Föderation — Tech-Stack
 
-Stand: 2026-08-03. Englische Version: [tech-stack.md](tech-stack.md).
+Stand: 2026-08-23. Englische Version: [tech-stack.md](tech-stack.md).
 Die unten genannten Versionen stammen aus den Manifesten der einzelnen Repos
 (`pyproject.toml`, `package.json`, `compose.yaml`, Dockerfiles, `VERSION`)
 zum Zeitpunkt der Erstellung; die Manifeste bleiben die maßgebliche Quelle.

@@ -1,6 +1,6 @@
 # nos-tromo federation — tech stack
 
-Last updated: 2026-08-03. German version: [tech-stack.de.md](tech-stack.de.md).
+Last updated: 2026-08-23. German version: [tech-stack.de.md](tech-stack.de.md).
 Versions below are taken from each repo's manifests (`pyproject.toml`,
 `package.json`, `compose.yaml`, Dockerfiles, `VERSION`) at time of writing;
 the manifests remain the source of truth.
