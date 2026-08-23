@@ -1,6 +1,6 @@
 # nos-tromo federation — tech stack
 
-Last updated: 2026-08-03. German version: [tech-stack.de.md](tech-stack.de.md).
+Last updated: 2026-08-23. German version: [tech-stack.de.md](tech-stack.de.md).
 Versions below are taken from each repo's manifests (`pyproject.toml`,
 `package.json`, `compose.yaml`, Dockerfiles, `VERSION`) at time of writing;
 the manifests remain the source of truth.
@@ -27,7 +27,7 @@ fetches data, models, or telemetry at runtime.
 |---|---|
 | Languages | Python 3.11 / 3.12 (per-repo pins), TypeScript ~6.0 |
 | Backend framework | FastAPI + Uvicorn, Pydantic v2 |
-| Frontend | React 19 + Vite 8 + Tailwind CSS v4, shared `@infra/ui` design system (v0.8.x) |
+| Frontend | React 19 + Vite 8 + Tailwind CSS v4, shared `@infra/ui` design system (v0.15.x) |
 | Inference | LiteLLM Proxy router → vLLM v0.20.1 backends; Ray Serve for GLiNER |
 | Databases | Neo4j 5.26 Community (graph), Qdrant v1.17 (vector) |
 | Edge / auth | Caddy 2.11 (TLS, path routing) + Authelia 4.39 (forward-auth SSO, trusted `X-Auth-User`/`X-Auth-Email` headers) |
@@ -35,7 +35,7 @@ fetches data, models, or telemetry at runtime.
 | Packaging / deps | `uv` (Python, `uv.lock`), `pnpm` 9.12 (JS) |
 | Quality gates | ruff 0.15.14, pyrefly 1.1.1 (strict), pytest 9, pre-commit; ESLint 9 + `tsc` + vitest 4 |
 | Containers | Docker Compose per repo; digest-pinned images; Make-driven lifecycle |
-| CI / release | GitHub Actions via shared reusable workflows in `nos-tromo/.github` (`@v3`); auto-minted annotated semver tags |
+| CI / release | GitHub Actions via shared reusable workflows in `nos-tromo/.github` (every `uses:` ref pinned to a full commit SHA); auto-minted annotated semver tags |
 
 ---
 
@@ -94,7 +94,7 @@ external volumes (data-plane blast-radius pattern). Grafana joins `edge-net`
 
 | Component | Technology |
 |---|---|
-| Metrics | `prom/prometheus:v3.13.1`; `prom/node-exporter:v1.12.1` (host), `ghcr.io/google/cadvisor:v0.60.5` (containers), `prom/blackbox-exporter:v0.28.0` (probes) |
+| Metrics | `prom/prometheus:v3.13.1`; `prom/node-exporter:v1.12.1` (host), `ghcr.io/google/cadvisor:v0.60.5` (containers), `prom/blackbox-exporter:v0.28.0` (probes), `nvcr.io/nvidia/k8s/dcgm-exporter:4.6.0-4.8.3-distroless` (GPU, `gpu` profile) |
 | Logs | `grafana/loki:3.7.4`, collected by `grafana/alloy:v1.18.0` |
 | Dashboards | `grafana/grafana-oss:13.0.2` — dev override / SSH tunnel / `/grafana` via edge only |
 | Alerting | Alert rules with no notification channel by design (airgap) |
@@ -108,8 +108,10 @@ Known v1 gaps: Neo4j Community and LiteLLM metrics are license-gated.
 
 ### `edge-plane` (v0.4.3)
 
-Federation entry point and the only published host ports in production
-(`:443`; `:8443` for Open WebUI). Pure infra — pulled digest-pinned images.
+Federation entry point and the only published host ports in production:
+`:443`, `:8443` (the dedicated Open WebUI site), and `:80`, which serves
+nothing but a permanent redirect to `https://`. Pure infra — pulled
+digest-pinned images.
 
 | Component | Technology |
 |---|---|
@@ -168,7 +170,7 @@ nginx strips the sub-path prefix). All digest-pinned.
 | Version / Python | 1.1.3 · `>=3.12,<3.13` (3.12 only) |
 | Backend | FastAPI + SSE (`sse-starlette`), Typer CLI, watchdog; setuptools build |
 | NLP / analysis | spaCy 3.8, NLTK, langdetect, camel-tools + pyarabic + arabic-reshaper + python-bidi (Arabic support), wordcloud, matplotlib |
-| Inference clients | `openai` SDK; per-model dedicated endpoints `WHISPER_API_BASE` / `NER_API_BASE` / `DIARIZATION_API_BASE` falling back to `OPENAI_API_BASE` |
+| Inference clients | `openai` SDK; per-service dedicated endpoints `WHISPER_API_BASE`, `NER_API_BASE`, `DIARIZE_API_BASE`, `VAD_API_BASE`, each falling back to the central `OPENAI_API_BASE` |
 | Frontend | React 19, TanStack Query/Table/Virtual, Zustand 5, Recharts 3 |
 | Tests | pytest + pytest-asyncio + respx |
 
@@ -196,22 +198,25 @@ nginx strips the sub-path prefix). All digest-pinned.
 
 ### `deploy` — federation lifecycle layer
 
-Make + shell only; owns no services, data, or images. Sequences the members'
-own `make` targets: `make up` brings up inference → state → obs → apps → edge
-in order, health-gated, on a single host; `make up-dev` does the dev-shape
-equivalent (host ports published for state + apps). Host profile via
-`federation.env` (`INFRA_ROOT`, tier dir lists, `DATA_PROFILE=cpu|cuda`).
+Make + shell only; owns no services or data and builds no service images — its
+own `bundle` merely re-saves the pinned health-probe image. Sequences the
+members' own `make` targets: `make up` brings up inference → state → obs →
+apps → edge in order, health-gated, on a single host; `make up-dev` keeps that
+same order and the same gates, but the state, obs and app tiers come up via
+their own `up-dev` to publish host ports while inference and edge stay on the
+production `up`. Host profile via `federation.env` (`INFRA_ROOT`, tier dir
+lists, `DATA_PROFILE=cpu|cuda`).
 Also fans out `network` / `volumes` / `down` / `bundle` / airgap `load`
 across members.
 
-### `infra-ui` — `@infra/ui` shared design system (v0.8.x)
+### `infra-ui` — `@infra/ui` shared design system (v0.15.x)
 
 | | |
 |---|---|
 | Stack | React 19 (peer dep), Tailwind CSS v4 tokens, class-variance-authority + clsx + tailwind-merge |
 | Primitives | UI primitives + AppHeader, light/dark theming (`useTheme`, CSS vars), **ForceGraph** (canvas force simulation + graph export, consumed by chorus) |
 | Build | tsup → **committed prebuilt `dist/`** (build-time only, no install-time rebuild); vitest + Testing Library + happy-dom; ESLint 9 + Prettier |
-| Consumption | Pinned pnpm git dependency (release-tag URL, e.g. `#v0.8.1`) in all four app frontends; per-app theming via `--app-accent`; requires a Tailwind `@source` line |
+| Consumption | Pinned pnpm dependency on a **commit-SHA codeload tarball** (`https://codeload.github.com/nos-tromo/infra-ui/tar.gz/<sha>`) in all four app frontends — deliberately never a tag; per-app theming via `--app-accent`; requires a Tailwind `@source` line |
 | CI | Includes a dist-guard (dist must match src) |
 
 ### `pr-notify` — Telegram notifier (tooling)
@@ -245,11 +250,12 @@ bundle scripts source a vendored `scripts/bundle-lib.sh` — both canonical in
 `nos-tromo/.github` (currently v3.x line) and CI-drift-checked. `make bundle`
 builds the latest annotated tag reachable from HEAD (tag-versioned artifact);
 `make bundle-dev` bundles the working tree for dev/staging soak. `data-plane`,
-`obs-plane`, and `open-webui-service` keep bespoke Makefiles.
+`obs-plane`, `edge-plane`, and `open-webui-service` keep bespoke Makefiles.
 
 **CI / release:** GitHub Flow (short-lived `feature/*`/`fix/*` → PR → CI →
-`main`); reusable GitHub Actions workflows from `nos-tromo/.github`
-(referenced `@v3`). On merge to `main`, the shared `release-tag` workflow
+`main`); reusable GitHub Actions workflows from `nos-tromo/.github`, every
+`uses:` ref pinned to a full commit SHA with the version in a trailing comment
+(`@<sha> # v3.13`). On merge to `main`, the shared `release-tag` workflow
 reads the declared version (`pyproject.toml` or `VERSION`) and mints the
 annotated `vX.Y.Z` tag — idempotent, anti-downgrade guarded. The same bundle
 artifact soaks on staging before promotion to production. Design doc:

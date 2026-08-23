@@ -34,10 +34,12 @@ together in `federation.env`.
 
 ## The copy step — `scripts/copy-bundles.sh`
 
-The **copy** step is `scripts/copy-bundles.sh <dest-dir>`: it collects, per
-member, the image tarballs plus everything the airgap host needs beside them —
-compose files, Makefile (+ vendored `make/`), version files, `.env.example`,
-and the config directories the containers mount from the repo — into one
+The **copy** step is `scripts/copy-bundles.sh <dest-dir>`, run from the
+`deploy/` repo on the build host. It is a standalone script, not a make
+target — no `make` target invokes it. It collects, per member, the image
+tarballs plus everything the airgap host needs beside them — compose files,
+Makefile (+ vendored `make/`), version files, `.env.example`, and the config
+directories the containers mount from the repo — into one
 destination (e.g. a mounted USB stick). Member paths are derived from the
 script's location (siblings of `deploy/`; override with `INFRA_ROOT=...`).
 Secrets stay behind by design: edge-plane's `authelia/users.yml`, `certs/`,

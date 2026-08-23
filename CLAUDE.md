@@ -26,9 +26,12 @@ dependency order, health-gated. It owns **no services and no data** — every ta
 *other* repos' `make`/compose lifecycles.
 
 It is its own git repo but operates on **sibling repos** under `INFRA_ROOT` (default `..`, the
-`infra/` workspace layout). The functional surface is 3 files — `Makefile` (the spine),
-`scripts/wait-healthy.sh` (the health gate), `.github/workflows/ci.yml` (lint-only CI) — but the
-blast radius is cross-repo: editing anything here changes how the entire federation boots. The
+`infra/` workspace layout). The functional surface is small — the `Makefile` (the spine), five
+shell scripts (`scripts/wait-healthy.sh` the health gate, `scripts/bundle-exists.sh` the
+bundle-skip check, `scripts/copy-bundles.sh` the airgap transfer set, and the
+`scripts/pack-model.sh` / `scripts/unpack-model.sh` model-weight pair), and two workflows
+(`.github/workflows/ci.yml`, lint-only, plus `release-tag.yml`) — but the blast radius is
+cross-repo: editing anything here changes how the entire federation boots. The
 documentation is split three ways, and each part has its own lane: `README.md` is the entry
 point (what this layer is, on-host layout, quick start, and pointers), `docs/runbooks/` holds the
 operator procedures (`bring-up.md`, `releasing.md`, `airgap-transfer.md`, plus the two ADR-0001
@@ -105,12 +108,16 @@ The Makefile assumes every member listed in
 
 - lives at `$(INFRA_ROOT)/<dir>/`,
 - has `.env` and `docker/compose.yaml` (used by the `compose` helper above),
-- exposes the `common.mk` targets `network`, `volumes`, `down`, `bundle`,
+- exposes the lifecycle targets `network`, `volumes`, `down`, `bundle` (from
+  `common.mk`, or hand-written — see below),
 - has an upstream repo at `GIT_REMOTE` named identically to its directory —
   `clone` derives the clone URL from the directory name.
 
-`obs-plane` honors this same `network`/`volumes`/`down`/`bundle` contract with a bespoke Makefile
-(the data-plane / open-webui-service pattern), not `common.mk`.
+Four members honor that same `network`/`volumes`/`down`/`bundle` contract with a **bespoke
+Makefile** rather than `common.mk`: `data-plane`, `obs-plane`, `edge-plane`, and
+`open-webui-service`. Only `chorus`, `docint`, `Nextext`, `translator`, and `vllm-service`
+`include make/common.mk`. Delegation here must therefore never assume a `common.mk`-only
+target exists on a member.
 
 `open-webui-service` is kept in its **own variable** (`OPENWEBUI_DIR`) rather than `APP_DIRS`
 because it is a distinct member — the upstream chat UI, a pulled image with a bespoke Makefile.
@@ -149,7 +156,7 @@ make ps        # status across all tiers       make logs  # tail across all tier
 make down      # reverse-order stop (never removes data volumes)
 make pull      # switch every federation repo (deploy + members) to main, git pull --ff-only
 make bundle    # build every image-bearing member's airgap tarball(s); skips already-bundled members — BUNDLE_FORCE=1 rebuilds (online build host)
-make load      # docker load every *.tar.gz under the member repos (offline host)
+make load      # docker load every *.tar.gz under deploy + the member repos (offline host)
 ```
 
 ### Develop / validate this repo in isolation
