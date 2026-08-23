@@ -14,7 +14,8 @@ same `release-tag` workflow, minting the tag on merge to `main`.
    `[project].version` (the Python apps + `vllm-service`) or the one-line `VERSION`
    file (`data-plane`, `open-webui-service`) — and, for the Python repos, run
    `uv lock` to sync the lockfile. PR → CI → merge to `main`.
-2. On merge, the shared `release-tag` workflow (`nos-tromo/.github@v3`) reads the
+2. On merge, the shared `release-tag` workflow (`nos-tromo/.github`, pinned by
+   commit SHA in `.github/workflows/release-tag.yml`) reads the
    declared version and mints the annotated `vX.Y.Z` tag **automatically** — no
    manual `git tag`. It is idempotent (an unchanged version is a no-op) and refuses
    a version that decreased. Bumping the version in the release PR is the whole

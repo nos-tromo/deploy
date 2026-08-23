@@ -35,7 +35,7 @@ und nichts lädt zur Laufzeit Daten, Modelle oder Telemetrie nach.
 | Paketierung / Abhängigkeiten | `uv` (Python, `uv.lock`), `pnpm` 9.12 (JS) |
 | Qualitätssicherung | ruff 0.15.14, pyrefly 1.1.1 (strict), pytest 9, pre-commit; ESLint 9 + `tsc` + vitest 4 |
 | Container | Docker Compose pro Repo; Digest-gepinnte Images; Make-gesteuerter Lebenszyklus |
-| CI / Release | GitHub Actions über gemeinsame wiederverwendbare Workflows in `nos-tromo/.github` (`@v3`); automatisch erzeugte annotierte Semver-Tags |
+| CI / Release | GitHub Actions über gemeinsame wiederverwendbare Workflows in `nos-tromo/.github` (jede `uses:`-Referenz auf einen vollständigen Commit-SHA gepinnt); automatisch erzeugte annotierte Semver-Tags |
 
 ---
 
@@ -258,8 +258,9 @@ Dev-/Staging-Soak. `data-plane`, `obs-plane` und `open-webui-service` behalten
 eigene Makefiles.
 
 **CI / Release:** GitHub Flow (kurzlebige `feature/*`/`fix/*` → PR → CI →
-`main`); wiederverwendbare GitHub-Actions-Workflows aus `nos-tromo/.github`
-(referenziert `@v3`). Beim Merge nach `main` liest der gemeinsame
+`main`); wiederverwendbare GitHub-Actions-Workflows aus `nos-tromo/.github`,
+jede `uses:`-Referenz auf einen vollständigen Commit-SHA gepinnt, mit der
+Version als nachgestelltem Kommentar (`@<sha> # v3.13`). Beim Merge nach `main` liest der gemeinsame
 `release-tag`-Workflow die deklarierte Version (`pyproject.toml` oder
 `VERSION`) und erzeugt den annotierten `vX.Y.Z`-Tag — idempotent, mit
 Anti-Downgrade-Schutz. Dasselbe Bundle-Artefakt wird auf Staging getestet,

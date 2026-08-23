@@ -35,7 +35,7 @@ fetches data, models, or telemetry at runtime.
 | Packaging / deps | `uv` (Python, `uv.lock`), `pnpm` 9.12 (JS) |
 | Quality gates | ruff 0.15.14, pyrefly 1.1.1 (strict), pytest 9, pre-commit; ESLint 9 + `tsc` + vitest 4 |
 | Containers | Docker Compose per repo; digest-pinned images; Make-driven lifecycle |
-| CI / release | GitHub Actions via shared reusable workflows in `nos-tromo/.github` (`@v3`); auto-minted annotated semver tags |
+| CI / release | GitHub Actions via shared reusable workflows in `nos-tromo/.github` (every `uses:` ref pinned to a full commit SHA); auto-minted annotated semver tags |
 
 ---
 
@@ -248,8 +248,9 @@ builds the latest annotated tag reachable from HEAD (tag-versioned artifact);
 `obs-plane`, and `open-webui-service` keep bespoke Makefiles.
 
 **CI / release:** GitHub Flow (short-lived `feature/*`/`fix/*` → PR → CI →
-`main`); reusable GitHub Actions workflows from `nos-tromo/.github`
-(referenced `@v3`). On merge to `main`, the shared `release-tag` workflow
+`main`); reusable GitHub Actions workflows from `nos-tromo/.github`, every
+`uses:` ref pinned to a full commit SHA with the version in a trailing comment
+(`@<sha> # v3.13`). On merge to `main`, the shared `release-tag` workflow
 reads the declared version (`pyproject.toml` or `VERSION`) and mints the
 annotated `vX.Y.Z` tag — idempotent, anti-downgrade guarded. The same bundle
 artifact soaks on staging before promotion to production. Design doc:
