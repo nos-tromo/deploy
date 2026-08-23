@@ -94,7 +94,7 @@ external volumes (data-plane blast-radius pattern). Grafana joins `edge-net`
 
 | Component | Technology |
 |---|---|
-| Metrics | `prom/prometheus:v3.13.1`; `prom/node-exporter:v1.12.1` (host), `ghcr.io/google/cadvisor:v0.60.5` (containers), `prom/blackbox-exporter:v0.28.0` (probes) |
+| Metrics | `prom/prometheus:v3.13.1`; `prom/node-exporter:v1.12.1` (host), `ghcr.io/google/cadvisor:v0.60.5` (containers), `prom/blackbox-exporter:v0.28.0` (probes), `nvcr.io/nvidia/k8s/dcgm-exporter:4.6.0-4.8.3-distroless` (GPU, `gpu` profile) |
 | Logs | `grafana/loki:3.7.4`, collected by `grafana/alloy:v1.18.0` |
 | Dashboards | `grafana/grafana-oss:13.0.2` — dev override / SSH tunnel / `/grafana` via edge only |
 | Alerting | Alert rules with no notification channel by design (airgap) |
@@ -108,8 +108,10 @@ Known v1 gaps: Neo4j Community and LiteLLM metrics are license-gated.
 
 ### `edge-plane` (v0.4.3)
 
-Federation entry point and the only published host ports in production
-(`:443`; `:8443` for Open WebUI). Pure infra — pulled digest-pinned images.
+Federation entry point and the only published host ports in production:
+`:443`, `:8443` (the dedicated Open WebUI site), and `:80`, which serves
+nothing but a permanent redirect to `https://`. Pure infra — pulled
+digest-pinned images.
 
 | Component | Technology |
 |---|---|
@@ -245,7 +247,7 @@ bundle scripts source a vendored `scripts/bundle-lib.sh` — both canonical in
 `nos-tromo/.github` (currently v3.x line) and CI-drift-checked. `make bundle`
 builds the latest annotated tag reachable from HEAD (tag-versioned artifact);
 `make bundle-dev` bundles the working tree for dev/staging soak. `data-plane`,
-`obs-plane`, and `open-webui-service` keep bespoke Makefiles.
+`obs-plane`, `edge-plane`, and `open-webui-service` keep bespoke Makefiles.
 
 **CI / release:** GitHub Flow (short-lived `feature/*`/`fix/*` → PR → CI →
 `main`); reusable GitHub Actions workflows from `nos-tromo/.github`, every

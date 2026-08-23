@@ -97,7 +97,7 @@ denen andere abhängen); besitzt eigene externe Volumes
 
 | Komponente | Technologie |
 |---|---|
-| Metriken | `prom/prometheus:v3.13.1`; `prom/node-exporter:v1.12.1` (Host), `ghcr.io/google/cadvisor:v0.60.5` (Container), `prom/blackbox-exporter:v0.28.0` (Probes) |
+| Metriken | `prom/prometheus:v3.13.1`; `prom/node-exporter:v1.12.1` (Host), `ghcr.io/google/cadvisor:v0.60.5` (Container), `prom/blackbox-exporter:v0.28.0` (Probes), `nvcr.io/nvidia/k8s/dcgm-exporter:4.6.0-4.8.3-distroless` (GPU, Profil `gpu`) |
 | Logs | `grafana/loki:3.7.4`, eingesammelt von `grafana/alloy:v1.18.0` |
 | Dashboards | `grafana/grafana-oss:13.0.2` — nur Dev-Override / SSH-Tunnel / `/grafana` über die Edge |
 | Alerting | Alert-Regeln bewusst ohne Benachrichtigungskanal (Airgap) |
@@ -113,8 +113,9 @@ lizenzbeschränkt.
 ### `edge-plane` (v0.4.3)
 
 Eintrittspunkt der Föderation und die einzigen veröffentlichten Host-Ports in
-Produktion (`:443`; `:8443` für Open WebUI). Reine Infrastruktur — gepullte,
-Digest-gepinnte Images.
+Produktion: `:443`, `:8443` (die dedizierte Open-WebUI-Site) sowie `:80`, das
+ausschließlich einen permanenten Redirect auf `https://` ausliefert. Reine
+Infrastruktur — gepullte, Digest-gepinnte Images.
 
 | Komponente | Technologie |
 |---|---|
@@ -254,8 +255,8 @@ Bundle-Skripte sourcen ein vendortes `scripts/bundle-lib.sh` — beide kanonisch
 in `nos-tromo/.github` (aktuell v3.x-Linie) und per CI auf Drift geprüft.
 `make bundle` baut den letzten von HEAD aus erreichbaren annotierten Tag
 (tag-versioniertes Artefakt); `make bundle-dev` bündelt den Working Tree für
-Dev-/Staging-Soak. `data-plane`, `obs-plane` und `open-webui-service` behalten
-eigene Makefiles.
+Dev-/Staging-Soak. `data-plane`, `obs-plane`, `edge-plane` und
+`open-webui-service` behalten eigene Makefiles.
 
 **CI / Release:** GitHub Flow (kurzlebige `feature/*`/`fix/*` → PR → CI →
 `main`); wiederverwendbare GitHub-Actions-Workflows aus `nos-tromo/.github`,

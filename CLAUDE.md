@@ -105,12 +105,16 @@ The Makefile assumes every member listed in
 
 - lives at `$(INFRA_ROOT)/<dir>/`,
 - has `.env` and `docker/compose.yaml` (used by the `compose` helper above),
-- exposes the `common.mk` targets `network`, `volumes`, `down`, `bundle`,
+- exposes the lifecycle targets `network`, `volumes`, `down`, `bundle` (from
+  `common.mk`, or hand-written — see below),
 - has an upstream repo at `GIT_REMOTE` named identically to its directory —
   `clone` derives the clone URL from the directory name.
 
-`obs-plane` honors this same `network`/`volumes`/`down`/`bundle` contract with a bespoke Makefile
-(the data-plane / open-webui-service pattern), not `common.mk`.
+Four members honor that same `network`/`volumes`/`down`/`bundle` contract with a **bespoke
+Makefile** rather than `common.mk`: `data-plane`, `obs-plane`, `edge-plane`, and
+`open-webui-service`. Only `chorus`, `docint`, `Nextext`, `translator`, and `vllm-service`
+`include make/common.mk`. Delegation here must therefore never assume a `common.mk`-only
+target exists on a member.
 
 `open-webui-service` is kept in its **own variable** (`OPENWEBUI_DIR`) rather than `APP_DIRS`
 because it is a distinct member — the upstream chat UI, a pulled image with a bespoke Makefile.
