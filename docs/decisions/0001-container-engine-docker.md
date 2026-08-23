@@ -269,5 +269,6 @@ upstream default is root.
 **Estimated change for the follow-on hardening**, one PR per repo per the
 federation release workflow: 19 Dockerfiles, 12 Compose projects, one
 `obs-plane` socket replacement, one coordinated `edge-plane` + frontends port
-wave, and the host-level `userns-remap` runbook in `deploy/README.md`. The
+wave, and the host-level `userns-remap` runbook
+([runbooks/userns-remap.md](../runbooks/userns-remap.md)). The
 volume re-ownership rehearsal, not the file edits, is the long pole.
