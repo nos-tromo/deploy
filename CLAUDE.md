@@ -201,10 +201,13 @@ the latest release tag while the copied repo files come from the working tree, a
 the airgap host's first `up` pull from the internet. `COPY_BUNDLES_ALLOW_SKEW=1` overrides.
 
 `bundle`/`load` move only images; the inference tier's **model weights** travel separately via
-`scripts/pack-model.sh` / `scripts/unpack-model.sh` (pack a HF model out of the
-`huggingface-cache` volume, restore it on the airgap host — runbook in `docs/model-transfer.md`).
-These are standalone host-side scripts, not Make targets: they run under `sudo` against
-`/var/lib/docker` on whichever machine holds the model, outside any member's lifecycle.
+`scripts/fetch-model.sh` / `scripts/pack-model.sh` / `scripts/unpack-model.sh` (download a HF model
+by hub id into the online host's own HF cache, pack it, restore it on the airgap host — runbook in
+`docs/model-transfer.md`). These are standalone host-side scripts, not Make targets, outside any
+member's lifecycle: `pack`/`unpack` run under `sudo` against `/var/lib/docker` on whichever machine
+holds the model, while `fetch` is unprivileged and deliberately writes to the *host* HF cache rather
+than the `huggingface-cache` volume — `pack-model.sh` takes any model directory, so the volume is
+only ever touched on the restore side.
 
 ## Scope boundary
 
