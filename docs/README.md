@@ -15,7 +15,7 @@ Step-by-step procedures, in the order an operator meets them.
 | [runbooks/bring-up.md](runbooks/bring-up.md) | What `make up` does tier by tier, the health probes, and the full make-target reference |
 | [runbooks/releasing.md](runbooks/releasing.md) | The release ritual: version bump → auto-minted tag → `make bundle` → staging soak → promote |
 | [runbooks/airgap-transfer.md](runbooks/airgap-transfer.md) | Moving a release to an offline host: `bundle`/`load`, `copy-bundles.sh`, the version-skew guard |
-| [model-transfer.md](model-transfer.md) | `pack-model.sh` / `unpack-model.sh` — moving Hugging Face model weights between hosts |
+| [model-transfer.md](model-transfer.md) | `fetch-model.sh` / `pack-model.sh` / `unpack-model.sh` — downloading Hugging Face model weights and moving them between hosts |
 | [runbooks/userns-remap.md](runbooks/userns-remap.md) | One-time host procedure: enabling `userns-remap` on the Docker daemon (ADR 0001) |
 | [runbooks/volume-reown.md](runbooks/volume-reown.md) | One-time `chown` of external volumes to the non-root container users (ADR 0001) |
 | [hardening-migration.md](hardening-migration.md) | Why volume ownership is self-healing at every `up`, and what that replaced |

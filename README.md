@@ -101,10 +101,11 @@ moves, the probe-image handling, and the skew guard.
 ### What else must travel
 
 `bundle`/`load` move only the **images** — the inference tier also needs its
-**model weights** on the offline host. `scripts/pack-model.sh` /
-`scripts/unpack-model.sh` tar a Hugging Face model out of the
-`huggingface-cache` Docker volume on the online host and restore it into the
-volume on the airgap host; see `docs/model-transfer.md` for the runbook.
+**model weights** on the offline host. `scripts/fetch-model.sh` downloads a
+model by its hub id into the online host's HF cache, then
+`scripts/pack-model.sh` / `scripts/unpack-model.sh` tar it up and restore it
+into the `huggingface-cache` Docker volume on the airgap host; see
+`docs/model-transfer.md` for the runbook.
 
 Volume ownership for the hardened (uid 10001) members is self-healing: each
 member's compose file ships a `volume-permissions` one-shot that fixes
