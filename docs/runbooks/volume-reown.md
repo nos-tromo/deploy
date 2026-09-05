@@ -53,8 +53,8 @@ instead of two). The `huggingface-cache` chown is the long pole: time it.
 | docint | `sessions-storage` | `10001:10001` | ⚠ chat sessions |
 | docint | `source-preview-cache` | `10001:10001` | ⚠ uploaded sources |
 | docint | `pipeline-storage` | `10001:10001` | new in docint ≥1.4.0 — `make volumes` creates it; chown right after creation |
-| docint + vllm-service | `huggingface-cache` | `10001:10001` | ⚠ transferred model weights on airgap hosts — **snapshot first, time the chown**; shared volume, one chown serves both repos |
-| Nextext | `nltk-cache`, `spacy-cache` | `10001:10001` | pre-seeded language resources |
+| vllm-service | `huggingface-cache` | `10001:10001` | ⚠ transferred model weights on airgap hosts — **snapshot first, time the chown** |
+| Nextext | `spacy-cache` | `10001:10001` | pre-seeded language resources |
 | open-webui-service | `open-webui-data` | `10001:10001` | ⚠ user chats; fresh-volume trap applies (rule 5) |
 | obs-plane | `alloy-data` | `473:473` | handled by `make volumes` (re-run once); positions only |
 | obs-plane | `prometheus-data`, `loki-data`, `grafana-data` | — | no change — services keep their image-default users |

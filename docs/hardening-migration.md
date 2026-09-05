@@ -28,9 +28,9 @@ future member.
 | Member | Volumes self-healed |
 | --- | --- |
 | vllm-service | huggingface-cache (main stack and every `*-only` shape) |
-| docint | docling-cache, huggingface-cache (shared), sessions-storage, source-preview-cache, pipeline-storage |
+| docint | docling-cache, sessions-storage, source-preview-cache, pipeline-storage |
 | chorus | chorus-state |
-| Nextext | nltk-cache, spacy-cache, tmp-jobs |
+| Nextext | spacy-cache, tmp-jobs |
 | open-webui-service | open-webui-data |
 
 Out of scope — **never chown these to 10001**: data-plane, obs-plane, and
