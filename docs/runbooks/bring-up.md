@@ -7,7 +7,10 @@ order and why it is load-bearing; this is the detail behind it.
 ## What `make up` enforces
 
 `make up` enforces this: it brings up `vllm-service`, waits for `vllm-router:4000`
-on `inference-net`, brings up `data-plane`, waits for `neo4j:7687` + `qdrant:6333`
+on `inference-net`, brings up `data-plane` via its `make up-admin` (production
+shape plus 7474/7687/6333 bound to `127.0.0.1` only, so an admin can reach the
+Neo4j Browser and the Qdrant dashboard over an SSH tunnel — see data-plane's
+README § Admin access), waits for `neo4j:7687` + `qdrant:6333`
 on `data-net`, brings up `obs-plane` and waits for `prometheus:9090` on `data-net`,
 then brings up the apps, and finally brings up `edge-plane` (production `up`, in
 both `up` and `up-dev`) and waits for `caddy:443` on `edge-net` — it is the last
@@ -29,7 +32,7 @@ on a missing `edge-net` even though the edge tier itself comes up last.
 | Target | What it does |
 |---|---|
 | `setup` | Delegates `make network volumes` to every tier (idempotent). |
-| `up` | Inference → state → obs → apps (incl. `open-webui-service`) → edge, each via the member's own `make up` (detached, `--no-build`), health-gated. |
+| `up` | Inference → state → obs → apps (incl. `open-webui-service`) → edge, each via the member's own `make up` (detached, `--no-build`), health-gated. The state tier is the exception: it comes up via data-plane's `make up-admin`, which adds the loopback-only dashboard ports for SSH-tunnelled admin access (nothing reachable from the network). |
 | `up-dev` | Same order + health gates as `up`, but the state + obs + app tiers come up via their own `make up-dev` (publishing host ports for local dev); inference and edge stay on production `up`. |
 | `down` | Edge → apps (incl. `open-webui-service`) → obs → state → inference, via each repo's `make down`. Never `-v`. |
 | `ps` / `logs` | Fan out across all tiers. |
