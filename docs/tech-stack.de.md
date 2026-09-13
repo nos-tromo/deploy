@@ -141,10 +141,11 @@ hängen an `edge-net` und konsumieren `X-Auth-User` fail-closed
 (`*_DEFAULT_IDENTITY` bleibt in Produktion ungesetzt). Die UI-Sprache ist
 env-gesteuert (`RESPONSE_LANGUAGE`, `en` | `de`).
 
-Backend-Basis-Image: `ghcr.io/astral-sh/uv:<py-version>-trixie-slim`
-(Multi-Stage). Frontend-Image: `node:20-alpine`-Build → `nginx:1.27-alpine`
-zum Ausliefern (das nginx der App entfernt das Unterpfad-Präfix). Alle
-Digest-gepinnt.
+Backend-Image: Multi-Stage auf `python:<py-version>-slim-trixie`; uv wird
+nur für die Build-Stage aus `ghcr.io/astral-sh/uv` hineinkopiert.
+Frontend-Image: `node:22-alpine`-Build → `nginx-unprivileged:1.27-alpine`
+zum Ausliefern (das nginx der App entfernt das Unterpfad-Präfix). Alle auf
+den `FROM`-Zeilen Digest-gepinnt und per Dependabot aktualisiert.
 
 ### `chorus` — GraphRAG für Social-Network-Analyse (Produktion im Airgap)
 
