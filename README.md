@@ -49,7 +49,7 @@ missing network. For the per-tier probes and the reverse-order `down`, see
 cp federation.env.example federation.env   # then edit (GIT_REMOTE, INFRA_ROOT, apps, profile)
 make clone     # bare host: clone every missing member repo under INFRA_ROOT
 make setup     # one-time: external networks + volumes for every tier
-make up        # ordered, health-gated bring-up (detached)
+make up        # ordered, health-gated bring-up (detached; state tier publishes loopback-only admin ports)
 make up-dev    # dev bring-up: state + obs + app tiers publish host ports (inference & edge stay production)
 make ps        # status across all tiers
 make down      # reverse-order stop (never removes data volumes)
@@ -64,7 +64,7 @@ for every target — flags, skip rules, exit codes — is in
 | Target | What it does |
 |---|---|
 | `setup` | Delegates `make network volumes` to every tier (idempotent). |
-| `up` | Ordered, health-gated bring-up via each member's own `make up` (detached, `--no-build`). |
+| `up` | Ordered, health-gated bring-up via each member's own `make up` (detached, `--no-build`); the state tier uses data-plane's `up-admin`, binding 7474/7687/6333 to `127.0.0.1` for SSH-tunnelled dashboard access. |
 | `up-dev` | Same order + gates, but state + obs + apps publish host ports; inference and edge stay production. |
 | `down` | Reverse order, via each repo's `make down`. Never `-v`. |
 | `ps` / `logs` | Fan out across all tiers. |

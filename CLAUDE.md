@@ -73,9 +73,14 @@ drive compose directly. Keep this split:
    `up-dev`, `down`, `bundle` are delegated to each member, never reimplemented here. `up` can be delegated
    because every member's `make up` is now detached + `--no-build` (apps via `common.mk` v3.2;
    `data-plane` / `open-webui-service` bespoke), so a sequencer can chain them; `data-plane` gets
-   `PROFILE=$(DATA_PROFILE)`. `up-dev` reuses that same sequencer (one shared recipe selected by
-   `$(MODE_UP)`): the state + obs + app tiers come up via their detached `up-dev` to publish host ports,
-   while inference stays pinned to production `up`. `bundle`/`load` cover every image-bearing member — the `APP_DIRS` apps +
+   `PROFILE=$(DATA_PROFILE)`. The state tier has a second selector, `$(DATA_UP)`: production `up`
+   delegates it to data-plane's `up-admin`, which adds 7474/7687/6333 bound to `127.0.0.1` only so
+   admins reach the Neo4j Browser and the Qdrant dashboard over an SSH tunnel (edge-plane routes
+   neither) — nothing becomes reachable from the network, so the production no-published-ports
+   boundary holds; see data-plane's README § Admin access. `up-dev` reuses that same sequencer (one
+   shared recipe selected by `$(MODE_UP)` / `$(DATA_UP)`): the state + obs + app tiers come up via
+   their detached `up-dev` to publish host ports — data-plane's `up-dev` already publishes a superset
+   of the admin ports — while inference stays pinned to production `up`. `bundle`/`load` cover every image-bearing member — the `APP_DIRS` apps +
    `vllm-service` + `data-plane` (which `bundle` runs at `PROFILE=$(DATA_PROFILE)`) +
    `open-webui-service` (via `OPENWEBUI_DIR`; its bundle is bespoke but yields the same kind of
    tarball) + `obs-plane` (via `OBS_DIR`; bespoke, data-plane pattern). Delegation does not
@@ -154,7 +159,7 @@ make clone     # clone every missing member repo under INFRA_ROOT (never shallow
 
 # Operate the federation (needs the member repos present under INFRA_ROOT):
 make setup     # one-time: external networks + volumes for every tier (idempotent)
-make up        # ordered, health-gated bring-up, detached (inference -> state -> obs -> apps -> edge)
+make up        # ordered, health-gated bring-up, detached (inference -> state -> obs -> apps -> edge); state tier via data-plane 'up-admin'
 make up-dev    # like up, but state + obs + app tiers publish host ports; inference & edge stay production
 make ps        # status across all tiers       make logs  # tail across all tiers
 make down      # reverse-order stop (never removes data volumes)
