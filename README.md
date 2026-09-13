@@ -64,7 +64,7 @@ for every target — flags, skip rules, exit codes — is in
 | Target | What it does |
 |---|---|
 | `setup` | Delegates `make network volumes` to every tier (idempotent). |
-| `up` | Ordered, health-gated bring-up via each member's own `make up` (detached, `--no-build`); the state tier uses data-plane's `up-admin`, binding 7474/7687/6333 to `127.0.0.1` for SSH-tunnelled dashboard access. |
+| `up` | Ordered, health-gated bring-up via each member's own `make up` (detached, `--no-build`; uses data-plane's `up-admin`) |
 | `up-dev` | Same order + gates, but state + obs + apps publish host ports; inference and edge stay production. |
 | `down` | Reverse order, via each repo's `make down`. Never `-v`. |
 | `ps` / `logs` | Fan out across all tiers. |
