@@ -136,9 +136,11 @@ Frontends attach to `edge-net` and consume `X-Auth-User` fail-closed
 (`*_DEFAULT_IDENTITY` unset in production). UI locale is env-driven
 (`RESPONSE_LANGUAGE`, `en` | `de`).
 
-Backend base image: `ghcr.io/astral-sh/uv:<py-version>-trixie-slim` (multi-stage).
-Frontend image: `node:20-alpine` build → `nginx:1.27-alpine` serve (the app's
-nginx strips the sub-path prefix). All digest-pinned.
+Backend image: multi-stage on `python:<py-version>-slim-trixie`; uv is copied
+in from `ghcr.io/astral-sh/uv` for the build stage only. Frontend image:
+`node:22-alpine` build → `nginx-unprivileged:1.27-alpine` serve (the app's
+nginx strips the sub-path prefix). All digest-pinned on the `FROM` lines and
+Dependabot-bumped.
 
 ### `chorus` — GraphRAG for social-network analysis (airgapped production)
 
