@@ -20,7 +20,7 @@ jobs:
   # hadolint because there are no Dockerfiles; make-common because deploy does
   # not vendor make/common.mk.
   validate:
-    uses: nos-tromo/.github/.github/workflows/infra-validation.yml@0b022a325f9fc87b6bb3b56eb9b34769d730962f # v3.16
+    uses: nos-tromo/.github/.github/workflows/infra-validation.yml@84acae72c7e3dff861e16fba7db60674a0d4d2fb # v3.17
 
   # Bespoke and intentionally not shared — no reusable workflow covers it:
   # validates that the orchestration Makefile parses (`make help`) and that the
