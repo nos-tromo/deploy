@@ -116,10 +116,15 @@ copy_project() {
     mkdir -p "$project_dest/docker"
     if [ -f "$source_dir/docker/compose.yaml" ]; then
         cp "$source_dir"/docker/compose.yaml "$project_dest/docker/"
-        # The dev overlay is optional (not every member has one).
-        if [ -f "$source_dir/docker/compose.override.yaml" ]; then
-            cp "$source_dir"/docker/compose.override.yaml "$project_dest/docker/"
-        fi
+        # Overlays are optional (not every member has them): the dev override
+        # and data-plane's admin overlay, which `make up` uses for the state
+        # tier via data-plane's `up-admin`.
+        local overlay
+        for overlay in compose.override.yaml compose.admin.yaml; do
+            if [ -f "$source_dir/docker/$overlay" ]; then
+                cp "$source_dir/docker/$overlay" "$project_dest/docker/"
+            fi
+        done
         echo -e "  ${GREEN}✓${NC} docker compose files copied."
     else
         echo -e "  ${YELLOW}⚠ no compose.yaml found.${NC}"
