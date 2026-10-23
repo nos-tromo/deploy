@@ -20,8 +20,9 @@ sharing `scripts/bundle-lib.sh`); `make bundle` here just fans that out, and
 `make load` loads them on the offline side. obs-plane's
 `obs-plane-pulled-<version>.tar.gz` and edge-plane's
 `edge-plane-pulled-<version>.tar.gz` are included in the fan-out.
-The fan-out skips members already bundled at their current release tag (see
-the `bundle` row in [bring-up.md](bring-up.md#targets)). Two caveats: the
+Every member ends on its release tag: a member's own `make bundle` stays on
+the tag it built, and one already bundled at that tag is switched to it without
+a rebuild (see the `bundle` row in [bring-up.md](bring-up.md#targets)). Two caveats: the
 version record carries no profile, so after switching `DATA_PROFILE` force a
 data-plane rebuild with `BUNDLE_FORCE=1`; setting a `*VERSION_OVERRIDE`
 disables the skip automatically for that run.
@@ -46,6 +47,9 @@ Secrets stay behind by design: edge-plane's `authelia/users.yml`, `certs/`,
 and every real `.env` are never copied — they are provisioned fresh on the
 airgap side.
 
+Run it right after `make bundle`, while the members still sit on their release
+tags; afterwards `make pull` returns every repo to `main`.
+
 ## The version-skew guard
 
 The script also refuses to assemble a skewed transfer set. Member bundles are
@@ -56,8 +60,12 @@ host compose files referencing images its tarball doesn't contain, and the
 first `make up` there tries to pull from the internet. Each member's
 `.<slug>-version` file records what its bundle was built from (release tag or
 `<date>-<sha>`); on mismatch the run lists the skewed members and exits
-non-zero. Re-run that member's `make bundle` (tagging a new release first if
-the changes should ship), or force with `COPY_BUNDLES_ALLOW_SKEW=1`.
+non-zero. `make bundle` leaves members on their tags, so this trips only when
+a member moved on afterwards — typically a `make pull` before copying. Re-run
+`make bundle`: it puts each member back on its tag, without rebuilding the ones
+already bundled there. If the newer changes should ship, release a new version
+first or bundle the working tree (`make bundle-dev`; a `<NAME>_VERSION_OVERRIDE`
+in members without it). `COPY_BUNDLES_ALLOW_SKEW=1` forces the copy.
 
 ## What `bundle`/`load` do not move
 
