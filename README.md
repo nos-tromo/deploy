@@ -70,7 +70,7 @@ for every target — flags, skip rules, exit codes — is in
 | `ps` / `logs` | Fan out across all tiers. |
 | `clone` | Clone every missing member repo under `INFRA_ROOT` from `$(GIT_REMOTE)/<dir>.git` (never shallow). |
 | `pull` | Switch every federation repo to `main` and `git pull --ff-only`. |
-| `bundle` | Build every image-bearing member's airgap tarball(s) + the health-probe image; skips members already bundled at their current tag. |
+| `bundle` | Build every image-bearing member's airgap tarball(s) + the health-probe image, leaving each member on its release tag; members already bundled at that tag are switched to it, not rebuilt. `pull` returns them to `main`. |
 | `load` | `docker load` every `*.tar.gz` found under deploy + the member repos. |
 
 ## Releasing
@@ -94,7 +94,8 @@ make bundle  ──▶ *.tar.gz  ──copy──▶  make load   (docker load a
 ```
 
 The copy step is `scripts/copy-bundles.sh <dest-dir>`, which also refuses to
-assemble a version-skewed transfer set. See
+assemble a version-skewed transfer set. Run it right after `make bundle`, which
+leaves every member on its release tag, then `make pull` to return to `main`. See
 [airgap-transfer.md](docs/runbooks/airgap-transfer.md) for what each step
 moves, the probe-image handling, and the skew guard.
 

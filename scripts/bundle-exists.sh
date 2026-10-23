@@ -5,8 +5,12 @@
 #
 # Usage: bundle-exists.sh <member-dir>
 # Exit:  0  -> a bundle for the member's expected release version already
-#              exists; prints the ">> ... skipping" line. The caller skips.
-#        !=0 -> no matching bundle, or cannot determine. Silent. The caller
+#              exists; the member is switched to that tag (detached, unless
+#              HEAD already is the tag's commit) — exactly where its own
+#              `make bundle` would leave it — and the ">> ... skipping
+#              rebuild" line is printed. The caller skips.
+#        !=0 -> no matching bundle, cannot determine, or the switch failed.
+#              Silent. The caller
 #              delegates to the member's `make bundle`, which raises the real
 #              errors (dirty tree, no reachable tag) itself.
 #
@@ -21,7 +25,14 @@
 # (`.obs-plane-version`) included — obs-plane's tracked plain `VERSION` file is
 # a source version, not the bundle record, and is not what is read here.
 #
+# Switching on the skip path keeps the repo files that copy-bundles.sh ships
+# beside the tarballs on the same tag as the images, without a rebuild. It is
+# this script's only write; `make pull` returns every repo to main.
+#
 # BUNDLE_FORCE=1 disables the skip entirely (always delegate).
+# BUNDLE_EXISTS_DRY_RUN=1 (set by the Makefile under `make -n`, which still
+# executes recipe lines that mention $(MAKE)) reports the switch instead of
+# doing it.
 
 set -euo pipefail
 shopt -s nullglob # both globs below expand to nothing instead of a literal
@@ -52,8 +63,9 @@ git -C "$dir" rev-parse --git-dir >/dev/null 2>&1 || exit 1
 dirty="$(git -C "$dir" status --porcelain -uno 2>/dev/null)" || exit 1
 [ -z "$dirty" ] || exit 1
 
-# Expected release version: latest annotated tag reachable from HEAD.
-tag="$(git -C "$dir" describe --tags --abbrev=0 HEAD 2>/dev/null)" || exit 1
+# Expected release version: latest annotated tag reachable from HEAD. No
+# --tags: annotated tags only, the same rule bundle-lib.sh's `make bundle` uses.
+tag="$(git -C "$dir" describe --abbrev=0 HEAD 2>/dev/null)" || exit 1
 [ -n "$tag" ] || exit 1
 
 # The bundle record: at least one .<slug>-version file, and every one of them
@@ -72,4 +84,22 @@ done
 tarballs=("$dir"/*.tar.gz)
 [ "${#tarballs[@]}" -ge 1 ] || exit 1
 
-echo ">> $(basename "$dir"): bundle $tag already present — skipping (set BUNDLE_FORCE=1 to rebuild)"
+name="$(basename "$dir")"
+hint="(set BUNDLE_FORCE=1 to rebuild)"
+
+# Already at the tag's commit: the clean tree is the tagged tree; keep the branch.
+if [ "$(git -C "$dir" rev-parse HEAD)" = "$(git -C "$dir" rev-parse "${tag}^{commit}")" ]; then
+    echo ">> $name: bundle $tag already present — skipping rebuild $hint"
+    exit 0
+fi
+
+if [ -n "${BUNDLE_EXISTS_DRY_RUN:-}" ]; then
+    echo ">> $name: bundle $tag already present — would switch to $tag, skipping rebuild (dry run)"
+    exit 0
+fi
+
+# Put the member where its own `make bundle` would leave it. A failed switch
+# (e.g. an untracked file in the way) means delegate; the member's bundle hits
+# the same switch and reports the error.
+git -C "$dir" switch --quiet --detach "$tag" 2>/dev/null || exit 1
+echo ">> $name: bundle $tag already present — switched to $tag, skipping rebuild $hint"

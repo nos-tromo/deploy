@@ -85,8 +85,12 @@ drive compose directly. Keep this split:
    `open-webui-service` (via `OPENWEBUI_DIR`; its bundle is bespoke but yields the same kind of
    tarball) + `obs-plane` (via `OBS_DIR`; bespoke, data-plane pattern). Delegation does not
    preclude gating: `bundle` decides *whether* to invoke each member's `make bundle` via
-   `scripts/bundle-exists.sh` (skip when the member's `.<slug>-version` file matches its latest
-   reachable tag on a clean tree and a tarball is present; `BUNDLE_FORCE=1` overrides). The check
+   `scripts/bundle-exists.sh` (skip the rebuild when the member's `.<slug>-version` file matches
+   its latest reachable tag on a clean tree and a tarball is present — but still switch the member
+   to that tag, exactly where its own `make bundle` would leave it; `BUNDLE_FORCE=1` overrides).
+   That `git switch` is the script's only write, and it is reported instead of done under
+   `make -n` (which still executes every recipe line mentioning `$(MAKE)`; the Makefile's
+   `BUNDLE_EXISTS` passes `BUNDLE_EXISTS_DRY_RUN=1`). The check
    reads only the version file and git state — never tarball filenames, which stay the member's
    business. Every app-tier loop (`setup`/`up`/`down`/`ps`/`logs`) iterates
    `$(APP_DIRS) $(OPENWEBUI_DIR)`, so `open-webui-service` is a full lifecycle member, not
@@ -164,7 +168,7 @@ make up-dev    # like up, but state + obs + app tiers publish host ports; infere
 make ps        # status across all tiers       make logs  # tail across all tiers
 make down      # reverse-order stop (never removes data volumes)
 make pull      # switch every federation repo (deploy + members) to main, git pull --ff-only
-make bundle    # build every image-bearing member's airgap tarball(s); skips already-bundled members — BUNDLE_FORCE=1 rebuilds (online build host)
+make bundle    # build every image-bearing member's airgap tarball(s), leaving each on its release tag; already-bundled members are switched there, not rebuilt — BUNDLE_FORCE=1 rebuilds (online build host)
 make load      # docker load every *.tar.gz under deploy + the member repos (offline host)
 ```
 
@@ -186,9 +190,12 @@ prerequisites). Use `make -n <target>` to inspect what any change will actually 
 ## Airgap flow
 
 `make bundle` (online build host) → copy the `*.tar.gz` → `make load` (offline host) → `make setup`
-→ `make up`. `make bundle` skips a member whose bundle for its current release tag already exists,
-judged by the same `.<slug>-version` record `copy-bundles.sh` uses for its skew check;
+→ `make up`. `make bundle` leaves every member on its release tag (bundle-lib's
+`bundle_checkout_release` stays there on success), so the repo files copied next match the
+images. A member whose bundle for that tag already exists is switched to the tag without a
+rebuild, judged by the same `.<slug>-version` record `copy-bundles.sh` uses for its skew check;
 `BUNDLE_FORCE=1` forces a full rebuild (the escape-hatch pattern of `COPY_BUNDLES_ALLOW_SKEW=1`).
+After copying, `make pull` returns every repo to `main`.
 `wait-healthy.sh` spins up a throwaway `busybox` probe container; `make bundle` saves
 that image too (`wait-probe-image.tar.gz` in this repo, pulled by the digest pin `WAIT_PROBE_PIN`
 and tagged `WAIT_PROBE_IMAGE`) and `make load` restores it, so the health gates work offline.
@@ -203,7 +210,9 @@ config dirs. Paths derive from the script's own location (members are siblings o
 It also fails (listing the skewed members) when a member repo has moved past the version its
 tarball was built from — recorded in the member's `.<slug>-version` file — since bundles come from
 the latest release tag while the copied repo files come from the working tree, and that skew makes
-the airgap host's first `up` pull from the internet. `COPY_BUNDLES_ALLOW_SKEW=1` overrides.
+the airgap host's first `up` pull from the internet. With `make bundle` leaving members on their
+tags this trips only when a member moved on afterwards (e.g. `make pull` before copying); re-running
+`make bundle` fixes it. `COPY_BUNDLES_ALLOW_SKEW=1` overrides.
 
 `bundle`/`load` move only images; the inference tier's **model weights** travel separately via
 `scripts/fetch-model.sh` / `scripts/pack-model.sh` / `scripts/unpack-model.sh` (download a HF model

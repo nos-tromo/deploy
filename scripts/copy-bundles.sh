@@ -44,7 +44,9 @@ mkdir -p "$DEST_BASE"
 
 # Guard against tarball/repo skew. Member bundles are built from the latest
 # release tag (bundle-lib.sh's `bundle_checkout_release`), while everything
-# else this script copies comes from the working tree. If the repo has moved
+# else this script copies comes from the working tree. `make bundle` leaves
+# each member on that tag, so this only trips when a member moved on since
+# (e.g. `make pull` before copying). If the repo has moved
 # past the bundled version, the airgap host gets compose files referencing
 # images the tarball doesn't contain — and the first `make up` there tries to
 # pull from the internet. `bundle_version` records what the bundle was built
@@ -276,9 +278,11 @@ if [ ${#SKEW_ERRORS[@]} -gt 0 ]; then
         echo -e "  ${RED}✗ $err${NC}"
     done
     echo -e "${RED}The copied repo files would not match the bundled images on the airgap"
-    echo -e "host. Re-run 'make bundle' in the affected member(s) — tagging a new"
-    echo -e "release first if the changes should ship — or set"
-    echo -e "COPY_BUNDLES_ALLOW_SKEW=1 to copy anyway.${NC}"
+    echo -e "host. Run 'make bundle' in deploy: it puts each member back on its"
+    echo -e "release tag (members already bundled there are not rebuilt). If the newer"
+    echo -e "changes should ship, release a new version first, or bundle that member's"
+    echo -e "working tree ('make bundle-dev'; in members without it, 'make bundle' with"
+    echo -e "<NAME>_VERSION_OVERRIDE set). Or set COPY_BUNDLES_ALLOW_SKEW=1 to copy anyway.${NC}"
     if [ -z "${COPY_BUNDLES_ALLOW_SKEW:-}" ]; then
         exit 1
     fi

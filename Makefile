@@ -83,6 +83,11 @@ export WAIT_TIMEOUT WAIT_PROBE_IMAGE
 # make variables are NOT exported to recipe child processes without this.
 export BUNDLE_FORCE
 
+# bundle-exists.sh switches a skipped member to its tag. `make -n` still runs
+# recipe lines that mention $(MAKE) — every bundle line does — so tell the
+# script when this is a dry run and it reports the switch instead.
+BUNDLE_EXISTS = $(if $(findstring n,$(firstword -$(MAKEFLAGS))),BUNDLE_EXISTS_DRY_RUN=1 )./scripts/bundle-exists.sh
+
 # Production-shape compose invocation for a member repo. $(1) = repo dir.
 compose = docker compose --env-file $(INFRA_ROOT)/$(1)/.env -f $(INFRA_ROOT)/$(1)/docker/compose.yaml
 
@@ -99,7 +104,7 @@ help:
 	@echo "  make ps       service status across all tiers"
 	@echo "  make logs     tail logs across all tiers"
 	@echo "  make pull     switch every federation repo (deploy + members) to main and pull from GitHub"
-	@echo "  make bundle   run 'make bundle' in every image-bearing member repo (skips members already bundled at their current tag; BUNDLE_FORCE=1 rebuilds) + save the health-probe image"
+	@echo "  make bundle   run 'make bundle' in every image-bearing member repo (members already bundled at their current tag are switched to it, not rebuilt; BUNDLE_FORCE=1 rebuilds) + save the health-probe image; leaves members on their release tags"
 	@echo "  make load     docker load every *.tar.gz found under deploy + the member repos"
 	@echo
 	@echo "Apps on this host: $(APP_DIRS) $(OPENWEBUI_DIR)   obs: $(if $(OBS_DIR),$(OBS_DIR),disabled)   edge: $(if $(EDGE_DIR),$(EDGE_DIR),disabled)   data-plane profile: $(DATA_PROFILE)"
@@ -203,23 +208,26 @@ pull:
 
 # Each delegation is gated by scripts/bundle-exists.sh: when the member's
 # .<slug>-version file matches its latest reachable tag on a clean tree and a
-# tarball is present, the member is skipped with a log line (exit 0 short-
-# circuits the ||); any doubt (no version file, dev bundle, moved tag, a
-# *VERSION_OVERRIDE set) exits non-zero silently and the member's own `make
-# bundle` runs as before. BUNDLE_FORCE=1 rebuilds everything. Caveat: the
-# version record carries no profile, so after switching DATA_PROFILE force a
-# data-plane rebuild with BUNDLE_FORCE=1. The probe-image step is unversioned
-# and cheap — it always runs.
+# tarball is present, the member is switched to that tag without a rebuild and
+# skipped with a log line (exit 0 short-circuits the ||); any doubt (no version
+# file, dev bundle, moved tag, a *VERSION_OVERRIDE set) exits non-zero silently
+# and the member's own `make bundle` runs as before. Either way the member ends
+# on its release tag, so copy-bundles.sh ships repo files matching the images;
+# `make pull` returns every repo to main. BUNDLE_FORCE=1 rebuilds everything.
+# Caveat: the version record carries no profile, so after switching
+# DATA_PROFILE force a data-plane rebuild with BUNDLE_FORCE=1. The probe-image
+# step is unversioned and cheap — it always runs.
 bundle:
-	./scripts/bundle-exists.sh $(INFRA_ROOT)/$(VLLM_DIR) || $(MAKE) -C $(INFRA_ROOT)/$(VLLM_DIR) bundle
-	./scripts/bundle-exists.sh $(INFRA_ROOT)/$(DATA_DIR) || $(MAKE) -C $(INFRA_ROOT)/$(DATA_DIR) bundle PROFILE=$(DATA_PROFILE)
-	[ -z "$(OBS_DIR)" ] || ./scripts/bundle-exists.sh $(INFRA_ROOT)/$(OBS_DIR) || $(MAKE) -C $(INFRA_ROOT)/$(OBS_DIR) bundle
-	[ -z "$(EDGE_DIR)" ] || ./scripts/bundle-exists.sh $(INFRA_ROOT)/$(EDGE_DIR) || $(MAKE) -C $(INFRA_ROOT)/$(EDGE_DIR) bundle
-	@for a in $(APP_DIRS) $(OPENWEBUI_DIR); do echo ">> $$a"; ./scripts/bundle-exists.sh $(INFRA_ROOT)/$$a || $(MAKE) -C $(INFRA_ROOT)/$$a bundle; done
+	$(BUNDLE_EXISTS) $(INFRA_ROOT)/$(VLLM_DIR) || $(MAKE) -C $(INFRA_ROOT)/$(VLLM_DIR) bundle
+	$(BUNDLE_EXISTS) $(INFRA_ROOT)/$(DATA_DIR) || $(MAKE) -C $(INFRA_ROOT)/$(DATA_DIR) bundle PROFILE=$(DATA_PROFILE)
+	[ -z "$(OBS_DIR)" ] || $(BUNDLE_EXISTS) $(INFRA_ROOT)/$(OBS_DIR) || $(MAKE) -C $(INFRA_ROOT)/$(OBS_DIR) bundle
+	[ -z "$(EDGE_DIR)" ] || $(BUNDLE_EXISTS) $(INFRA_ROOT)/$(EDGE_DIR) || $(MAKE) -C $(INFRA_ROOT)/$(EDGE_DIR) bundle
+	@for a in $(APP_DIRS) $(OPENWEBUI_DIR); do echo ">> $$a"; $(BUNDLE_EXISTS) $(INFRA_ROOT)/$$a || $(MAKE) -C $(INFRA_ROOT)/$$a bundle; done
 	@echo ">> wait-healthy probe image ($(WAIT_PROBE_PIN) -> $(WAIT_PROBE_IMAGE))"
 	docker pull "$(WAIT_PROBE_PIN)"
 	docker tag "$(WAIT_PROBE_PIN)" "$(WAIT_PROBE_IMAGE)"
 	docker save "$(WAIT_PROBE_IMAGE)" | gzip > wait-probe-image.tar.gz
+	@echo ">> members are left on their release tags, matching the tarballs; run 'make pull' to return them to main"
 
 # Airgapped host: load every image tarball produced by `make bundle` — the
 # members' plus deploy's own probe-image tarball (the bare *.tar.gz glob).
