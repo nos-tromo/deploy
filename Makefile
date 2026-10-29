@@ -243,7 +243,8 @@ load:
 
 # Remove federation images no container uses — old release tags, superseded
 # dev builds, untagged rebuild leftovers: every image a member's compose
-# project built, matched by Compose's project label. PRUNE_UPSTREAM=1 also
+# projects built (vllm-service's CPU-only shapes included), matched by
+# Compose's project label. PRUNE_UPSTREAM=1 also
 # removes unused versions of the upstream images the members pull, matched by
 # repository. In-use images, the probe image, other projects' images,
 # containers, networks and volumes are never touched. Drives docker directly
