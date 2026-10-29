@@ -3,18 +3,24 @@
 #
 # Usage: prune-images.sh <member-dir>...
 #
-# Two matching rules, both read from each member's docker/compose.yaml:
+# A member's compose projects: docker/compose.yaml plus every other
+# docker/compose.*.yaml declaring its own top-level `name:` (vllm-service's
+# CPU-only shapes, compose.<shape>-only.yaml). Overlays (compose.override.yaml,
+# compose.admin.yaml, ...) declare none and are skipped: read alone they fall
+# back to the directory name `docker`, a project name others can share.
 #
-#   built     (always) every image a member's compose project built. Compose
-#             stamps com.docker.compose.project=<name> on each image it builds,
-#             so a label-filtered `docker image prune` takes every old release
-#             tag, superseded dev build and untagged rebuild leftover. <name> is
-#             the compose file's `name:`, resolved without .env.
+# Two matching rules, applied to each of those projects:
+#
+#   built     (always) every image the project built. Compose stamps
+#             com.docker.compose.project=<name> on each image it builds, so a
+#             label-filtered `docker image prune` takes every old release tag,
+#             superseded dev build and untagged rebuild leftover. <name> is the
+#             file's `name:`, resolved without .env.
 #   upstream  (PRUNE_UPSTREAM=<non-empty>) every version of the images the
 #             members pull (neo4j, qdrant, grafana, ...). They carry no
-#             federation label, so they match by repository — the members'
-#             image lists, read with each member's .env: for each image no
-#             container uses, the tag and digest references in a member's
+#             federation label, so they match by repository — each project's
+#             image list, read with the member's .env: for each image no
+#             container uses, the tag and digest references in a listed
 #             repository are removed. A reference outside the federation keeps
 #             the image alive under that name.
 #
@@ -24,11 +30,17 @@
 # `image prune`: the former drops unused networks (the external seams while
 # the stack is down).
 #
-# A member whose compose file cannot be read, or a removal that fails, is
-# reported and skipped; the script carries on and exits 1 at the end (the
-# clone/pull contract).
+# A member without docker/compose.yaml (or one declaring no `name:`), a
+# project that cannot be resolved, or a removal that fails is reported and
+# skipped; the script carries on and exits 1 at the end (the clone/pull
+# contract).
 
 set -euo pipefail
+shopt -s nullglob # a member without extra compose files globs to nothing
+
+# The file's `name:` must decide the project: a COMPOSE_PROJECT_NAME in the
+# caller's environment would override it for every file.
+unset COMPOSE_PROJECT_NAME
 
 if [ $# -lt 1 ]; then
     echo "usage: $0 <member-dir>..." >&2
@@ -57,30 +69,48 @@ repo_of() {
     printf '%s\n' "$ref"
 }
 
-for m in "$@"; do
-    file="$m/docker/compose.yaml"
-    if ! name="$(docker compose -f "$file" config --no-interpolate 2>/dev/null | sed -n '1s/^name: //p')" \
+# prune_project <compose-file> <member-dir>: label-prune the project the file
+# declares; under PRUNE_UPSTREAM also collect the repositories of its images.
+prune_project() {
+    local f="$1" m="$2" name refs ref
+    if ! name="$(docker compose -f "$f" config --no-interpolate 2>/dev/null | sed -n '1s/^name: //p')" \
         || [ -z "$name" ]; then
-        echo "WARNING: $m: compose project not resolved — its images are left alone."
-        failed="$failed $m"
-        continue
+        echo "WARNING: $f: compose project not resolved — its images are left alone."
+        failed="$failed $f"
+        return 0
     fi
-    echo ">> $m (project $name)"
-    docker image prune -af --filter "label=com.docker.compose.project=$name" || failed="$failed $m"
+    echo ">> $m: project $name"
+    docker image prune -af --filter "label=com.docker.compose.project=$name" || failed="$failed $f"
 
     if [ -n "$upstream" ]; then
         # Interpolated with the member's .env (the pair `make ps` uses): typed
         # fields such as `mem_limit: ${X:-7g}` only decode once resolved.
         # --profile '*': every service's image, whichever profile gates it.
-        if refs="$(docker compose --env-file "$m/.env" -f "$file" --profile '*' config --images 2>/dev/null)"; then
+        if refs="$(docker compose --env-file "$m/.env" -f "$f" --profile '*' config --images 2>/dev/null)"; then
             while read -r ref; do
                 if [ -n "$ref" ]; then repos="$repos$(repo_of "$ref")"$'\n'; fi
             done <<<"$refs"
         else
-            echo "WARNING: $m: image list not resolved (missing .env?) — its upstream images are left alone."
-            failed="$failed $m"
+            echo "WARNING: $f: image list not resolved (missing .env?) — its upstream images are left alone."
+            failed="$failed $f"
         fi
     fi
+}
+
+for m in "$@"; do
+    if [ ! -f "$m/docker/compose.yaml" ]; then
+        echo "WARNING: $m: no docker/compose.yaml — its images are left alone."
+        failed="$failed $m"
+        continue
+    fi
+    for f in "$m/docker/compose.yaml" "$m"/docker/compose.*.yaml; do
+        if grep -q '^name:' "$f"; then
+            prune_project "$f" "$m"
+        elif [ "$f" = "$m/docker/compose.yaml" ]; then
+            echo "WARNING: $f declares no top-level name: — its images are left alone."
+            failed="$failed $f"
+        fi
+    done
 done
 
 if [ -n "$upstream" ] && [ -n "$repos" ]; then

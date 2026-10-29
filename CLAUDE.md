@@ -118,7 +118,9 @@ drive compose directly. Keep this split:
 4. **`prune`: drive `docker` directly** via `scripts/prune-images.sh`. Image cleanup is a
    daemon-level operation, not a member lifecycle step — no member has a `prune` target, and
    adding one to nine repos (four of them bespoke) for one filtered command is churn. The script
-   reads each member's `docker/compose.yaml` for two matching rules: **built** images by Compose's
+   reads each member's standalone compose files — `docker/compose.yaml` plus any
+   `docker/compose.*.yaml` declaring its own `name:` (vllm-service's CPU-only shapes) — and
+   applies two matching rules to each project: **built** images by Compose's
    `com.docker.compose.project=<name>` label (always; `<name>` via `config --no-interpolate`, no
    `.env` needed — catches old tags and untagged rebuild leftovers; reliable because the backend
    Dockerfiles' `RUN --mount=` rules out Compose's label-less classic builder), and, with
@@ -141,9 +143,11 @@ The Makefile assumes every member listed in
   `common.mk`, or hand-written — see below),
 - has an upstream repo at `GIT_REMOTE` named identically to its directory —
   `clone` derives the clone URL from the directory name,
-- declares its compose project `name:` in `docker/compose.yaml` — `prune` matches the images a
-  member built by that project label; without it Compose falls back to the directory name
-  `docker`, which other projects could share.
+- declares its compose project `name:` in `docker/compose.yaml` and in every other standalone
+  `docker/compose.*.yaml`, while overlays declare none — `prune` treats exactly the files with a
+  top-level `name:` as the member's projects and matches the images each built by that project
+  label; read alone, an overlay falls back to the directory name `docker`, which other projects
+  could share, so it is skipped.
 
 Four members honor that same `network`/`volumes`/`down`/`bundle` contract with a **bespoke
 Makefile** rather than `common.mk`: `data-plane`, `obs-plane`, `edge-plane`, and
