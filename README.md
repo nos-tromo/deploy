@@ -72,6 +72,7 @@ for every target — flags, skip rules, exit codes — is in
 | `pull` | Switch every federation repo to `main` and `git pull --ff-only`. |
 | `bundle` | Build every image-bearing member's airgap tarball(s) + the health-probe image, leaving each member on its release tag; members already bundled at that tag are switched to it, not rebuilt. `pull` returns them to `main`. |
 | `load` | `docker load` every `*.tar.gz` found under deploy + the member repos. |
+| `prune` | Remove every federation-built image no container uses (old versions, rebuild leftovers); `PRUNE_UPSTREAM=1` also removes unused upstream images (neo4j, qdrant, grafana, …). Nothing else on the host is touched. Run `make load` (or rebuild) before the next `make up`. |
 
 ## Releasing
 

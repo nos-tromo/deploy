@@ -83,6 +83,10 @@ export WAIT_TIMEOUT WAIT_PROBE_IMAGE
 # make variables are NOT exported to recipe child processes without this.
 export BUNDLE_FORCE
 
+# PRUNE_UPSTREAM is consumed by scripts/prune-images.sh (a child process).
+# A command-line value reaches it anyway; the export is for a federation.env one.
+export PRUNE_UPSTREAM
+
 # bundle-exists.sh switches a skipped member to its tag. `make -n` still runs
 # recipe lines that mention $(MAKE) — every bundle line does — so tell the
 # script when this is a dry run and it reports the switch instead.
@@ -91,7 +95,7 @@ BUNDLE_EXISTS = $(if $(findstring n,$(firstword -$(MAKEFLAGS))),BUNDLE_EXISTS_DR
 # Production-shape compose invocation for a member repo. $(1) = repo dir.
 compose = docker compose --env-file $(INFRA_ROOT)/$(1)/.env -f $(INFRA_ROOT)/$(1)/docker/compose.yaml
 
-.PHONY: help setup up up-dev down ps logs clone pull bundle load
+.PHONY: help setup up up-dev down ps logs clone pull bundle load prune
 
 help:
 	@echo "Federation lifecycle (single host). Member repos under INFRA_ROOT=$(INFRA_ROOT)."
@@ -106,6 +110,7 @@ help:
 	@echo "  make pull     switch every federation repo (deploy + members) to main and pull from GitHub"
 	@echo "  make bundle   run 'make bundle' in every image-bearing member repo (members already bundled at their current tag are switched to it, not rebuilt; BUNDLE_FORCE=1 rebuilds) + save the health-probe image; leaves members on their release tags"
 	@echo "  make load     docker load every *.tar.gz found under deploy + the member repos"
+	@echo "  make prune    remove federation-built images no container uses (old versions, rebuild leftovers); PRUNE_UPSTREAM=1 also removes unused upstream images (neo4j, qdrant, grafana, ...)"
 	@echo
 	@echo "Apps on this host: $(APP_DIRS) $(OPENWEBUI_DIR)   obs: $(if $(OBS_DIR),$(OBS_DIR),disabled)   edge: $(if $(EDGE_DIR),$(EDGE_DIR),disabled)   data-plane profile: $(DATA_PROFILE)"
 
@@ -235,3 +240,14 @@ load:
 	@found=0; for f in *.tar.gz $(INFRA_ROOT)/$(VLLM_DIR)/*.tar.gz $(INFRA_ROOT)/$(DATA_DIR)/*.tar.gz $(foreach a,$(OBS_DIR) $(EDGE_DIR) $(APP_DIRS) $(OPENWEBUI_DIR),$(INFRA_ROOT)/$(a)/*.tar.gz); do \
 	  [ -e "$$f" ] || continue; found=1; echo ">> docker load -i $$f"; docker load -i "$$f"; \
 	done; [ $$found -eq 1 ] || echo "no *.tar.gz found under deploy or the member repos — run 'make bundle' on the build host first."
+
+# Remove federation images no container uses — old release tags, superseded
+# dev builds, untagged rebuild leftovers: every image a member's compose
+# project built, matched by Compose's project label. PRUNE_UPSTREAM=1 also
+# removes unused versions of the upstream images the members pull, matched by
+# repository. In-use images, the probe image, other projects' images,
+# containers, networks and volumes are never touched. Drives docker directly
+# (images are a host resource; no member has a prune target) — see
+# scripts/prune-images.sh. Afterwards `make load` (or rebuild) before `make up`.
+prune:
+	./scripts/prune-images.sh $(addprefix $(INFRA_ROOT)/,$(VLLM_DIR) $(DATA_DIR) $(OBS_DIR) $(EDGE_DIR) $(APP_DIRS) $(OPENWEBUI_DIR))
