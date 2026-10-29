@@ -30,10 +30,11 @@ dependency order, health-gated. It owns **no services and no data** — every ta
 *other* repos' `make`/compose lifecycles.
 
 It is its own git repo but operates on **sibling repos** under `INFRA_ROOT` (default `..`, the
-`infra/` workspace layout). The functional surface is small — the `Makefile` (the spine), five
+`infra/` workspace layout). The functional surface is small — the `Makefile` (the spine), seven
 shell scripts (`scripts/wait-healthy.sh` the health gate, `scripts/bundle-exists.sh` the
-bundle-skip check, `scripts/copy-bundles.sh` the airgap transfer set, and the
-`scripts/pack-model.sh` / `scripts/unpack-model.sh` model-weight pair), and two workflows
+bundle-skip check, `scripts/copy-bundles.sh` the airgap transfer set, `scripts/prune-images.sh`
+the image cleanup, and the `scripts/fetch-model.sh` / `scripts/pack-model.sh` /
+`scripts/unpack-model.sh` model-weight trio), and two workflows
 (`.github/workflows/ci.yml`, lint-only, plus `release-tag.yml`) — but the blast radius is
 cross-repo: editing anything here changes how the entire federation boots. The
 documentation is split three ways, and each part has its own lane: `README.md` is the entry
@@ -63,6 +64,11 @@ reorder these tiers.**
 
 `down` **never** passes `-v` / removes data volumes. Only `data-plane`'s own `make nuke` may
 destroy state. Preserve this in any teardown edit.
+
+`prune` removes **federation images only** — never an image a container uses (not even one of
+its references), never containers, networks, or volumes. It never runs an unfiltered
+`docker image prune` or `docker system prune` (the latter drops unused networks — the external
+seams while the stack is down). Preserve this in any cleanup edit.
 
 ## The central design split (read before editing the Makefile)
 
@@ -109,10 +115,20 @@ drive compose directly. Keep this split:
    needs reachable tags); a pre-existing directory is skipped, not refused, so
    it never triggers the non-zero exit. `pull` refreshes what is present. Keep
    them symmetrical.
+4. **`prune`: drive `docker` directly** via `scripts/prune-images.sh`. Image cleanup is a
+   daemon-level operation, not a member lifecycle step — no member has a `prune` target, and
+   adding one to nine repos (four of them bespoke) for one filtered command is churn. The script
+   reads each member's `docker/compose.yaml` for two matching rules: **built** images by Compose's
+   `com.docker.compose.project=<name>` label (always; `<name>` via `config --no-interpolate`, no
+   `.env` needed — catches old tags and untagged rebuild leftovers; reliable because the backend
+   Dockerfiles' `RUN --mount=` rules out Compose's label-less classic builder), and, with
+   `PRUNE_UPSTREAM=1`, **upstream** images by repository (`config --images` across every profile,
+   interpolated with the member's `.env` — typed fields like `mem_limit` don't decode otherwise),
+   removing only the federation references of images no container uses.
 
 Rule of thumb: ordered/health-gated bring-up and every uniform target → delegate to the member's Make
-target; only the aggregate read-only views (`ps`/`logs`) and the repo-level git targets
-(`clone`/`pull`) are driven directly.
+target; only the aggregate read-only views (`ps`/`logs`), the repo-level git targets
+(`clone`/`pull`), and the host-level image cleanup (`prune`) are driven directly.
 
 ## Cross-repo contract (not visible from this repo alone)
 
@@ -124,7 +140,10 @@ The Makefile assumes every member listed in
 - exposes the lifecycle targets `network`, `volumes`, `down`, `bundle` (from
   `common.mk`, or hand-written — see below),
 - has an upstream repo at `GIT_REMOTE` named identically to its directory —
-  `clone` derives the clone URL from the directory name.
+  `clone` derives the clone URL from the directory name,
+- declares its compose project `name:` in `docker/compose.yaml` — `prune` matches the images a
+  member built by that project label; without it Compose falls back to the directory name
+  `docker`, which other projects could share.
 
 Four members honor that same `network`/`volumes`/`down`/`bundle` contract with a **bespoke
 Makefile** rather than `common.mk`: `data-plane`, `obs-plane`, `edge-plane`, and
@@ -149,8 +168,9 @@ profile, **edit `federation.env`, not the Makefile**: `INFRA_ROOT`, `GIT_REMOTE`
 `APP_DIRS`, `OPENWEBUI_DIR` (the upstream UI — a full lifecycle member, appended to every app-tier
 loop + `bundle`/`load`), `OBS_DIR` (the observability plane; set empty to disable),
 `EDGE_DIR` (the edge gateway — Caddy + Authelia, `edge-plane`; set empty to disable),
-`DATA_PROFILE` (`cpu`|`cuda`), and optional `WAIT_TIMEOUT` / `WAIT_PROBE_IMAGE` / `BUNDLE_FORCE`
-(usually passed one-shot: `make bundle BUNDLE_FORCE=1`).
+`DATA_PROFILE` (`cpu`|`cuda`), and optional `WAIT_TIMEOUT` / `WAIT_PROBE_IMAGE` / `BUNDLE_FORCE` /
+`PRUNE_UPSTREAM` (the last two usually passed one-shot: `make bundle BUNDLE_FORCE=1`,
+`make prune PRUNE_UPSTREAM=1`).
 `GIT_REMOTE` is an account/namespace **prefix**, not a full URL — `make clone`
 derives each member's URL as `$(GIT_REMOTE)/<dir>.git`, so one edit repoints the
 whole federation at SSH or an internal mirror.
@@ -170,6 +190,7 @@ make down      # reverse-order stop (never removes data volumes)
 make pull      # switch every federation repo (deploy + members) to main, git pull --ff-only
 make bundle    # build every image-bearing member's airgap tarball(s), leaving each on its release tag; already-bundled members are switched there, not rebuilt — BUNDLE_FORCE=1 rebuilds (online build host)
 make load      # docker load every *.tar.gz under deploy + the member repos (offline host)
+make prune     # remove federation-built images no container uses (old versions, rebuild leftovers); PRUNE_UPSTREAM=1 also removes unused upstream images
 ```
 
 ### Develop / validate this repo in isolation
