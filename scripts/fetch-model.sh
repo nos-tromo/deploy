@@ -45,7 +45,14 @@ if [[ ! -d "$MODEL_DIR" ]]; then
     exit 1
 fi
 
+# The snapshot directory is named by the commit the download resolved to.
+# That commit is what the airgapped host will serve; print it so it can be
+# recorded with the release.
+REVISION="${SNAPSHOT##*/snapshots/}"
+REVISION="${REVISION%%/*}"
+
 echo "Done:"
 du -sh "$MODEL_DIR"
+echo "Revision: $REVISION"
 echo
 echo "To pack for transfer: ./pack-model.sh $MODEL_DIR"
