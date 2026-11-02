@@ -73,3 +73,16 @@ chown -R "$OWNER" "$DEST/$MODEL_ROOT"
 
 echo "Done:"
 du -sh "$DEST/$MODEL_ROOT"
+
+# The revision(s) this host now serves, read from the extracted archive itself
+# rather than from the .manifest beside it, which no checksum covers.
+if [[ -d "$DEST/$MODEL_ROOT/refs" ]]; then
+    find "$DEST/$MODEL_ROOT/refs" -type f | sort | while read -r ref; do
+        echo "ref ${ref#"$DEST/$MODEL_ROOT/refs/"}: $(cat "$ref")"
+    done
+fi
+for snap in "$DEST/$MODEL_ROOT"/snapshots/*/; do
+    if [[ -d "$snap" ]]; then
+        echo "snapshot: $(basename "$snap")"
+    fi
+done

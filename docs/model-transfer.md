@@ -41,7 +41,8 @@ directory that actually sits in your cache.
 The script downloads into **the machine's own HF hub cache**, not into the
 `huggingface-cache` Docker volume — so it needs no root and no `sudo`. On
 success it prints the `models--<org>--<name>` directory, which is exactly the
-argument `pack-model.sh` takes next.
+argument `pack-model.sh` takes next, and the **revision**: the commit the
+download resolved to, i.e. the exact weights the target host will serve.
 
 Notes:
 
@@ -73,7 +74,9 @@ sudo ./pack-model.sh \
 - `[output-dir]` defaults to the current directory.
 
 Output: `<name>.tar.zst` (e.g. `example-model-fp8.tar.zst`) plus a matching
-`.sha256` checksum file. Copy **both** files to the target machine, e.g.:
+`.sha256` checksum file and a `.manifest` naming the model id and the
+revision(s) the archive carries (`ref main: <commit>`, one `snapshot:` line per
+downloaded commit). Copy **all three** files to the target machine, e.g.:
 
 ```sh
 scp example-model-fp8.tar.zst* user@target:
@@ -113,6 +116,9 @@ What it does, in order:
 4. Extracts, then `chown -R`s the model directory to match the owner of the
    destination directory, so files get the UID the container runs as.
    Override with `sudo CHOWN=1000:1000 ./unpack-model.sh ...` if needed.
+5. Prints the revision(s) now in the volume, read from the extracted
+   `refs/` and `snapshots/` themselves (the `.manifest` is informational and
+   not covered by the checksum).
 
 > **Hardened releases (ADR 0001):** the vllm-service containers run as uid
 > `10001`, so the volume itself must already be owned `10001:10001` — see
@@ -120,6 +126,15 @@ What it does, in order:
 > then inherits the right owner automatically. Under `userns-remap` the
 > on-host path differs; use `docker volume inspect huggingface-cache` to find
 > the real mountpoint.
+
+## Which revision is served
+
+The services run with `HF_HUB_OFFLINE=1` and ask for the default revision
+`main`, which the hub cache resolves through `refs/main` to one commit under
+`snapshots/`. That commit is what a model id in `.env` means on this host.
+Record it with the release (the `Revision:` line from `fetch-model.sh`, the
+`.manifest`, or the output of `unpack-model.sh`): a later fetch of the same
+model id can move `refs/main` to different weights under the same name.
 
 ## Manual extraction
 
