@@ -16,6 +16,7 @@ Step-by-step procedures, in the order an operator meets them.
 | [runbooks/releasing.md](runbooks/releasing.md) | The release ritual: version bump → auto-minted tag → `make bundle` → staging soak → promote |
 | [runbooks/airgap-transfer.md](runbooks/airgap-transfer.md) | Moving a release to an offline host: `bundle`/`load`, `copy-bundles.sh`, the version-skew guard |
 | [model-transfer.md](model-transfer.md) | `fetch-model.sh` / `pack-model.sh` / `unpack-model.sh` — downloading Hugging Face model weights and moving them between hosts |
+| [runbooks/audit.md](runbooks/audit.md) | The audit trail: setup, the daily signed anchor, the verifier's alerts, exports for a review, retention |
 | [runbooks/userns-remap.md](runbooks/userns-remap.md) | One-time host procedure: enabling `userns-remap` on the Docker daemon (ADR 0001) |
 | [runbooks/volume-reown.md](runbooks/volume-reown.md) | One-time `chown` of external volumes to the non-root container users (ADR 0001) |
 | [hardening-migration.md](hardening-migration.md) | Why volume ownership is self-healing at every `up`, and what that replaced |
@@ -30,6 +31,7 @@ stack.
 |---|---|
 | [decisions/0001-container-engine-docker.md](decisions/0001-container-engine-docker.md) | Docker Engine stays the federation runtime; conformance effort goes into container/host hardening rather than a Podman migration |
 | [decisions/0002-open-webui-lifecycle-member.md](decisions/0002-open-webui-lifecycle-member.md) | `open-webui-service` is a full lifecycle member, carried in its own `OPENWEBUI_DIR` variable rather than in `APP_DIRS` |
+| [decisions/0003-federation-audit-trail.md](decisions/0003-federation-audit-trail.md) | A separate, verifiable audit trail: two log lanes, identity first, one hash-chained event library, the audit store in obs-plane, its access and integrity model, and the phased rollout |
 
 ## Reference
 

@@ -58,6 +58,8 @@ instead of two). The `huggingface-cache` chown is the long pole: time it.
 | open-webui-service | `open-webui-data` | `10001:10001` | ⚠ user chats; fresh-volume trap applies (rule 5) |
 | obs-plane | `alloy-data` | `473:473` | handled by `make volumes` (re-run once); positions only |
 | obs-plane | `prometheus-data`, `loki-data`, `grafana-data` | — | no change — services keep their image-default users |
+| obs-plane | `audit-verifier-state` | `65534:65534` | handled by `make volumes` (re-run once); the verifier's chain heads and bindings |
+| obs-plane | `loki-audit-data`, `grafana-audit-data` | — | no change — image-default users, like their ops counterparts; ⚠ the audit trail itself |
 | data-plane | all six | — | no change this wave — `user:` deliberately deferred (see data-plane README) |
 | edge-plane | `edge-state`, `edge-ca` | — | no change — caddy stays root-in-container (remap covers it), authelia manages its own files |
 

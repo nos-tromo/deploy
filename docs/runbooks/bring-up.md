@@ -36,7 +36,10 @@ edge-plane's docs:
   per app with edge-plane's `make secret`, and put it into edge-plane's
   `.env` and the app's `.env` under the same name: `CHORUS_EDGE_SECRET`,
   `DOCINT_EDGE_SECRET`, `NEXTEXT_EDGE_SECRET`, `TRANSLATOR_EDGE_SECRET`,
-  `OPEN_WEBUI_EDGE_SECRET`. The one service-to-service caller, docint →
+  `OPEN_WEBUI_EDGE_SECRET`. obs-plane's two Grafanas work the same way,
+  with the values in obs-plane's `.env`: `GRAFANA_EDGE_SECRET` (optional)
+  and `AUDIT_EDGE_SECRET` (required: without it the audit-trail viewer
+  refuses every request). The one service-to-service caller, docint →
   Nextext, uses a token instead: the same value in Nextext's
   `NEXTEXT_SERVICE_TOKENS` (as `docint=<token>`) and docint's
   `NEXTEXT_API_KEY`. `make up` starts the gateway last, so an app that

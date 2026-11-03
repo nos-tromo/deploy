@@ -196,7 +196,8 @@ copy_project "$INFRA_ROOT/data-plane" data-plane \
     "$INFRA_ROOT/data-plane/.env.example"
 
 # obs-plane: the containers mount their configuration straight from the repo —
-# without these directories nothing starts on the airgap side.
+# without these directories nothing starts on the airgap side. scripts/ also
+# holds the signing helper the audit-export and audit-anchor targets call.
 copy_project "$INFRA_ROOT/obs-plane" obs-plane \
     "$INFRA_ROOT/obs-plane/VERSION" \
     "$INFRA_ROOT/obs-plane/.env.example" \
@@ -205,7 +206,11 @@ copy_project "$INFRA_ROOT/obs-plane" obs-plane \
     "$INFRA_ROOT/obs-plane/loki" \
     "$INFRA_ROOT/obs-plane/alloy" \
     "$INFRA_ROOT/obs-plane/blackbox" \
-    "$INFRA_ROOT/obs-plane/dcgm"
+    "$INFRA_ROOT/obs-plane/dcgm" \
+    "$INFRA_ROOT/obs-plane/grafana-audit" \
+    "$INFRA_ROOT/obs-plane/audit" \
+    "$INFRA_ROOT/obs-plane/nginx" \
+    "$INFRA_ROOT/obs-plane/scripts"
 
 # edge-plane: Caddy/portal configuration is likewise mounted from the repo.
 # CAUTION: authelia/ and certs/ are deliberately NOT copied wholesale —
