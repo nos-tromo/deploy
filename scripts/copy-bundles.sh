@@ -188,7 +188,8 @@ copy_project "$INFRA_ROOT/translator" translator \
     "$INFRA_ROOT/translator/.env.example"
 
 copy_project "$INFRA_ROOT/open-webui-service" open-webui-service \
-    "$INFRA_ROOT/open-webui-service/.env.example"
+    "$INFRA_ROOT/open-webui-service/.env.example" \
+    "$INFRA_ROOT/open-webui-service/nginx"
 
 copy_project "$INFRA_ROOT/data-plane" data-plane \
     "$INFRA_ROOT/data-plane/.data-plane-version" \

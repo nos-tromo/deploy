@@ -25,6 +25,28 @@ on a missing `edge-net` even though the edge tier itself comes up last.
 `down` is the exact reverse, and never passes `-v`. Only `data-plane`'s own
 `make nuke` may destroy state.
 
+## Identity: edge secrets and second factors
+
+Two one-time preparations belong to a host's setup, both described in
+edge-plane's docs:
+
+- **Edge secrets.** The gateway sends each app its own `X-Edge-Secret`,
+  and the app trusts the `X-Auth-*` identity headers only when it matches
+  (edge-plane `docs/identity-contract.md` § Edge secret). Generate one value
+  per app with edge-plane's `make secret`, and put it into edge-plane's
+  `.env` and the app's `.env` under the same name: `CHORUS_EDGE_SECRET`,
+  `DOCINT_EDGE_SECRET`, `NEXTEXT_EDGE_SECRET`, `TRANSLATOR_EDGE_SECRET`,
+  `OPEN_WEBUI_EDGE_SECRET`. The one service-to-service caller, docint →
+  Nextext, uses a token instead: the same value in Nextext's
+  `NEXTEXT_SERVICE_TOKENS` (as `docint=<token>`) and docint's
+  `NEXTEXT_API_KEY`. `make up` starts the gateway last, so an app that
+  enforces its secret never waits on a gateway that does not send it yet.
+- **Second factors.** Logins need a password and a TOTP code, and TOTP is
+  provisioned by an admin: `make totp U=<user>` in edge-plane for every
+  user, before running with `EDGE_AUTH_POLICY=two_factor` (the default).
+  edge-plane `docs/user-accounts.md` § Second factor explains why users
+  cannot enrol through the portal.
+
 ## Targets
 
 `make help` prints the same list, plus the apps configured on this host.
