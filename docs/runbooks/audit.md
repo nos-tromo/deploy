@@ -31,6 +31,42 @@ store's own reference is obs-plane's `docs/audit.md`.
 `make up` brings the audit store up with the obs tier; nothing else is
 sequenced differently.
 
+### What writes to the trail
+
+Hash-chained events come from the four apps' backends, vllm-service's router
+(one `ai_call` per model call) and edge-plane's `auth-audit` (login attempts
+and account changes). obs-plane's verifier accepts chained lines only from
+these containers; adding or renaming an emitter means adding its
+`project/service` pair (obs-plane `docs/audit.md`, "Source binding"). The
+gateway's access log and Open WebUI's own audit log come in as they are.
+Open WebUI keeps no documents: uploads, knowledge bases and memories are
+off in open-webui-service.
+
+Rules that follow from it:
+
+- **Command-line runs go through the running backend.** The audited make
+  targets (chorus `ingest`/`resolve`/`migrate`, docint `resolve`/`extract`/
+  `topics`/`search-index`/…, Nextext `cli`) run with `docker compose exec`
+  inside the backend, so their events land in its log; bring the stack up
+  first. They pass the operator's host account as the actor, and
+  `CASE_REF=` / `REASON=` as the stated purpose where an action needs one.
+  A one-off container (`docker compose run --rm`) can exit before the log
+  collector sees it, and its events would be lost without a trace.
+  docint's `retention-report` stays a one-off container: it reads only the
+  retention clock, records nothing, and can run before the backend is up.
+- **Account changes need `auth-audit` up.** `make totp` refuses to change an
+  account it cannot record. Hand edits of `authelia/users.yml` are recorded
+  by `auth-audit` (without an operator identity; host-level file auditing is
+  what would add one).
+- **A stated purpose is not required yet.** The backends read
+  `X-Audit-Purpose` and record it, and each has `AUDIT_REQUIRE_PURPOSE` to
+  require one (`428` without). Leave it empty until the frontends send the
+  purpose (the next wave adds the input to every app).
+- **Dev identities stay in dev.** Each app's `*_DEFAULT_IDENTITY` is set only
+  by its dev overlay and is ignored while the app's edge secret is set.
+  translator's `/translate` now answers 401 without an identity, like the
+  other apps.
+
 ## Daily: anchor the previous day
 
 The chains make altered or removed lines visible. The anchor is what makes
@@ -56,7 +92,7 @@ Prometheus (obs-plane) evaluates the verifier's metrics:
 
 | Alert | Meaning | What to do |
 |---|---|---|
-| `AuditChainProblem` | A chain defect was found: altered or removed lines, a gap, a repeat, a malformed line, an event claiming another service's name or continuing a chain from another container, lines of one chain from several containers when its start was not seen (`ambiguous_source`), or a chain that stopped without a clean shutdown. obs-plane's `docs/audit.md` lists every kind. | Run `make audit-verify FROM= TO=` over the window to see which service, instance and sequence numbers are affected (never event content). A single `unterminated` after a crash or a forced restart is expected. Anything else needs an explanation. Compare against the signed anchors to tell a transport loss from tampering. |
+| `AuditChainProblem` | A chain defect was found: altered or removed lines, a gap, a repeat, a malformed line, an event claiming another service's name or continuing a chain from another container, lines of one chain from several containers when its start was not seen (`ambiguous_source`), a chain from a container that is not a listed emitter (`unlisted_source`), or a chain that stopped without a clean shutdown. obs-plane's `docs/audit.md` lists every kind. | Run `make audit-verify FROM= TO=` over the window to see which service, instance and sequence numbers are affected (never event content). A single `unterminated` after a crash or a forced restart is expected. Anything else needs an explanation. Compare against the signed anchors to tell a transport loss from tampering. |
 | `AuditVerifierStale` | The verifier has not completed a run for several intervals. | Check the `audit-verifier` and `loki-audit` containers (`make ps`, `make logs S=audit-verifier`). |
 | `AuditVerifierDown` | Prometheus cannot reach the verifier. | Same. |
 
