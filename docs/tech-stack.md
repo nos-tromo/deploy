@@ -32,7 +32,7 @@ fetches data, models, or telemetry at runtime.
 | Databases | Neo4j 5.26 Community (graph), Qdrant v1.17 (vector) |
 | Edge / auth | Caddy 2.11 (TLS, path routing) + Authelia 4.39 (forward-auth SSO, trusted `X-Auth-User`/`X-Auth-Email` headers) |
 | Observability | Prometheus v3.13, Grafana OSS 13.0, Loki 3.7, Alloy v1.18 + node-exporter, cAdvisor, blackbox-exporter |
-| Audit trail | Hash-chained events (shared `audit_event.py` + `audit_runtime.py`, vendored and drift-checked) from the app backends, the router and edge-plane's `auth-audit`, kept in a separate Loki with a verifier and signed daily anchors (ADR 0003) |
+| Audit trail | Hash-chained events (shared `audit_event.py` + `audit_runtime.py`, vendored and drift-checked) from the app backends, the router, edge-plane's `auth-audit` and data-plane's `admin-audit`, kept in a separate Loki with a verifier and signed daily anchors (ADR 0003). Queries and disclosures state a purpose, entered once per session in each SPA's purpose bar |
 | Packaging / deps | `uv` (Python, `uv.lock`), `pnpm` 9.12 (JS) |
 | Quality gates | ruff 0.15.14, pyrefly 1.1.1 (strict), pytest 9, pre-commit; ESLint 9 + `tsc` + vitest 4 |
 | Containers | Docker Compose per repo; digest-pinned images; Make-driven lifecycle |
@@ -80,6 +80,7 @@ only — no application code.
 | Lifecycle | Bespoke Makefile (not on `common.mk`): `make network` / `up` / `up-dev` / `bundle`; destructive teardown gated behind `make nuke` (interactive confirm) |
 | Versioning | One-line `VERSION` file; `make bundle` builds the latest annotated tag (bundle-lib.sh); working-tree bundles via `DATA_PLANE_VERSION_OVERRIDE` (no `bundle-dev`) |
 | Backups | Runbook + scripts under `backup/` |
+| Audit | `admin-audit` (pinned `python`, no network): database shells (`make db-shell`, `qdrant-shell`), backups and restores as audit events |
 
 ---
 
@@ -219,7 +220,7 @@ across members.
 | | |
 |---|---|
 | Stack | React 19 (peer dep), Tailwind CSS v4 tokens, class-variance-authority + clsx + tailwind-merge |
-| Primitives | UI primitives + AppHeader, light/dark theming (`useTheme`, CSS vars), **ForceGraph** (canvas force simulation + graph export, consumed by chorus) |
+| Primitives | UI primitives + AppHeader, light/dark theming (`useTheme`, CSS vars), **ForceGraph** (canvas force simulation + graph export, consumed by chorus), **PurposeBar** (the purpose every audited request states, with `withPurpose` for the fetch wrappers) |
 | Build | tsup → **committed prebuilt `dist/`** (build-time only, no install-time rebuild); vitest + Testing Library + happy-dom; ESLint 9 + Prettier |
 | Consumption | Pinned pnpm dependency on a **commit-SHA codeload tarball** (`https://codeload.github.com/nos-tromo/infra-ui/tar.gz/<sha>`) in all four app frontends — deliberately never a tag; per-app theming via `--app-accent`; requires a Tailwind `@source` line |
 | CI | Includes a dist-guard (dist must match src) |

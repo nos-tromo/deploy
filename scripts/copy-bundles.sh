@@ -197,9 +197,16 @@ copy_project "$INFRA_ROOT/open-webui-service" open-webui-service \
     "$INFRA_ROOT/open-webui-service/.env.example" \
     "$INFRA_ROOT/open-webui-service/nginx"
 
+# data-plane: admin-audit mounts audit/ and VERSION from the repo, and the
+# make targets that open, back up or restore the stores run the host-side
+# helpers in scripts/ (the Qdrant snapshot script among them) — without them
+# those targets fail on the airgap side, and admin-audit does not start.
 copy_project "$INFRA_ROOT/data-plane" data-plane \
     "$INFRA_ROOT/data-plane/.data-plane-version" \
-    "$INFRA_ROOT/data-plane/.env.example"
+    "$INFRA_ROOT/data-plane/.env.example" \
+    "$INFRA_ROOT/data-plane/VERSION" \
+    "$INFRA_ROOT/data-plane/audit" \
+    "$INFRA_ROOT/data-plane/scripts"
 
 # obs-plane: the containers mount their configuration straight from the repo —
 # without these directories nothing starts on the airgap side. scripts/ also

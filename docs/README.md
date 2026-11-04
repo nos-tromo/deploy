@@ -17,6 +17,7 @@ Step-by-step procedures, in the order an operator meets them.
 | [runbooks/airgap-transfer.md](runbooks/airgap-transfer.md) | Moving a release to an offline host: `bundle`/`load`, `copy-bundles.sh`, the version-skew guard |
 | [model-transfer.md](model-transfer.md) | `fetch-model.sh` / `pack-model.sh` / `unpack-model.sh` — downloading Hugging Face model weights and moving them between hosts |
 | [runbooks/audit.md](runbooks/audit.md) | The audit trail: setup, the daily signed anchor, the verifier's alerts, exports for a review, retention |
+| [runbooks/host-audit.md](runbooks/host-audit.md) | One-time host procedure: auditd rules that name who edited the account file or a `.env`, read a backup, or ran `docker` by hand; keeping those records; clock sync |
 | [runbooks/userns-remap.md](runbooks/userns-remap.md) | One-time host procedure: enabling `userns-remap` on the Docker daemon (ADR 0001) |
 | [runbooks/volume-reown.md](runbooks/volume-reown.md) | One-time `chown` of external volumes to the non-root container users (ADR 0001) |
 | [hardening-migration.md](hardening-migration.md) | Why volume ownership is self-healing at every `up`, and what that replaced |

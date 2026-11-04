@@ -143,3 +143,38 @@ Decided while the services were instrumented:
 - **Open WebUI stores no documents.** Its edge guard refuses uploads,
   knowledge bases and retrieval processing, and memories are off. Personal
   data therefore accumulates only in services that record their processing.
+
+## Amendment: the stated purpose and the remaining sources (phase 3, second part)
+
+- **Queries and disclosures state a purpose.** chorus, docint and Nextext
+  require one for `query` and `disclose` by default
+  (`AUDIT_REQUIRE_PURPOSE=query,disclose`, written colon-less in compose, so
+  an empty value switches it off). translator stores nothing and leaves it
+  to the operator. Each SPA's purpose bar holds a case reference and a
+  reason for the session and sends them with every request; a refused
+  request opens the bar and is sent once more. The four apps use one wording,
+  a declined prompt says what is missing, and a refused query reloads once a
+  purpose is stated.
+- **What a browser cannot decorate goes through `fetch` or a grant.**
+  Downloads are fetched files. A media player cannot send a header, so
+  Nextext issues a short-lived playback grant, bound on the server to the
+  caller, the stated purpose and the request; the streams it opens are
+  recorded with that purpose.
+- **Machine clients state a purpose too.** docint's media ingest through
+  Nextext sends the purpose of the docint request that started it, or
+  `docint ingest` when none was stated: the ingest is a collection, which
+  needs none of its own.
+- **Open WebUI's users reach the router only signed.** With a dedicated
+  secret, Open WebUI signs a short-lived token naming the user on every model
+  call, and the router records that user. The secret itself switches the
+  forwarding on, so the user's details never travel as plain headers.
+- **The served revision is the recorded one.** Each model launch loads the
+  commit its revision variable names, and the router records the same value,
+  pass-through backends included. A pinned commit missing from the cache
+  stops the service instead of serving other weights.
+- **Direct database access is recorded.** data-plane's `admin-audit` records
+  database shells, which always need a purpose, as well as backups and
+  restores. Each wrapper refuses to start when it cannot record.
+- **The host covers what no service sees.** auditd names who edits the account
+  file or a member's `.env`, reads a backup, or runs `docker` by hand
+  (`docs/runbooks/host-audit.md`).

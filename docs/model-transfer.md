@@ -129,12 +129,26 @@ What it does, in order:
 
 ## Which revision is served
 
-The services run with `HF_HUB_OFFLINE=1` and ask for the default revision
-`main`, which the hub cache resolves through `refs/main` to one commit under
-`snapshots/`. That commit is what a model id in `.env` means on this host.
-Record it with the release (the `Revision:` line from `fetch-model.sh`, the
-`.manifest`, or the output of `unpack-model.sh`): a later fetch of the same
-model id can move `refs/main` to different weights under the same name.
+The services run with `HF_HUB_OFFLINE=1`. Each model's commit comes from the
+`Revision:` line of `fetch-model.sh`, the `.manifest`, or the output of
+`unpack-model.sh`. Pin it by setting that 40-character commit as the model's
+revision variable in vllm-service's `.env`:
+
+- `TEXT_MODEL_REVISION`, `EMBED_MODEL_REVISION`, `RERANK_MODEL_REVISION` and
+  `WHISPER_MODEL_REVISION` for the vLLM backends;
+- `CLIP_MODEL_REVISION` and `DIARIZE_MODEL_REVISION` for the CLIP and
+  diarization servers.
+
+Each backend then loads exactly that snapshot, and the router's audit events
+record the same commit (vllm-service `docs/configuration.md`). A pinned
+revision that is missing from the cache stops that service at startup instead
+of serving other weights, so set the variable only after the transfer, and
+change it together with the model id.
+
+Unset, a service asks for the default revision `main`, which the cache resolves
+through `refs/main`. A later fetch of the same model id can move `refs/main`
+to different weights under the same name, so record the commit with the
+release either way.
 
 ## Manual extraction
 

@@ -32,7 +32,7 @@ und nichts lädt zur Laufzeit Daten, Modelle oder Telemetrie nach.
 | Datenbanken | Neo4j 5.26 Community (Graph), Qdrant v1.17 (Vektor) |
 | Edge / Auth | Caddy 2.11 (TLS, Pfad-Routing) + Authelia 4.39 (Forward-Auth-SSO, vertrauenswürdige Header `X-Auth-User`/`X-Auth-Email`) |
 | Observability | Prometheus v3.13, Grafana OSS 13.0, Loki 3.7, Alloy v1.18 + node-exporter, cAdvisor, blackbox-exporter |
-| Audit-Trail | Hash-verkettete Ereignisse (gemeinsame `audit_event.py` + `audit_runtime.py`, vendored und auf Drift geprüft) aus den App-Backends, dem Router und `auth-audit` in edge-plane, abgelegt in einem eigenen Loki mit Verifier und signierten Tagesankern (ADR 0003) |
+| Audit-Trail | Hash-verkettete Ereignisse (gemeinsame `audit_event.py` + `audit_runtime.py`, vendored und auf Drift geprüft) aus den App-Backends, dem Router, `auth-audit` in edge-plane und `admin-audit` in data-plane, abgelegt in einem eigenen Loki mit Verifier und signierten Tagesankern (ADR 0003). Abfragen und Offenlegungen nennen einen Zweck, der einmal je Sitzung in der Zweck-Leiste jedes SPA angegeben wird |
 | Paketierung / Abhängigkeiten | `uv` (Python, `uv.lock`), `pnpm` 9.12 (JS) |
 | Qualitätssicherung | ruff 0.15.14, pyrefly 1.1.1 (strict), pytest 9, pre-commit; ESLint 9 + `tsc` + vitest 4 |
 | Container | Docker Compose pro Repo; Digest-gepinnte Images; Make-gesteuerter Lebenszyklus |
@@ -82,6 +82,7 @@ Nur Docker Compose — kein Anwendungscode.
 | Lebenszyklus | Eigenes Makefile (nicht auf `common.mk`): `make network` / `up` / `up-dev` / `bundle`; destruktiver Abbau hinter `make nuke` (interaktive Bestätigung) |
 | Versionierung | Einzeilige `VERSION`-Datei; `make bundle` baut den letzten annotierten Tag (bundle-lib.sh); Working-Tree-Bundles via `DATA_PLANE_VERSION_OVERRIDE` (kein `bundle-dev`) |
 | Backups | Runbook + Skripte unter `backup/` |
+| Audit | `admin-audit` (gepinntes `python`, ohne Netzwerk): Datenbank-Shells (`make db-shell`, `qdrant-shell`), Backups und Wiederherstellungen als Audit-Ereignisse |
 
 ---
 
@@ -225,7 +226,7 @@ Inference und Edge auf dem Produktions-`up` bleiben. Host-Profil über
 | | |
 |---|---|
 | Stack | React 19 (Peer-Dependency), Tailwind-CSS-v4-Tokens, class-variance-authority + clsx + tailwind-merge |
-| Primitives | UI-Primitives + AppHeader, Light-/Dark-Theming (`useTheme`, CSS-Variablen), **ForceGraph** (Canvas-Kraftsimulation + Graph-Export, genutzt von chorus) |
+| Primitives | UI-Primitives + AppHeader, Light-/Dark-Theming (`useTheme`, CSS-Variablen), **ForceGraph** (Canvas-Kraftsimulation + Graph-Export, genutzt von chorus), **PurposeBar** (der Zweck, den jede protokollierte Anfrage nennt, mit `withPurpose` für die Fetch-Wrapper) |
 | Build | tsup → **committetes, vorgebautes `dist/`** (nur zur Build-Zeit, kein Rebuild bei der Installation); vitest + Testing Library + happy-dom; ESLint 9 + Prettier |
 | Konsum | Gepinnte pnpm-Dependency auf ein **Commit-SHA-Codeload-Tarball** (`https://codeload.github.com/nos-tromo/infra-ui/tar.gz/<sha>`) in allen vier App-Frontends — bewusst nie ein Tag; Theming pro App via `--app-accent`; erfordert eine Tailwind-`@source`-Zeile |
 | CI | Enthält einen dist-Guard (dist muss zu src passen) |
