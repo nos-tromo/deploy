@@ -89,9 +89,12 @@ Rules that follow from it:
   - `make db-shell` (Neo4j) and `make qdrant-shell` always need `CASE_REF=`
     or `REASON=`, and record when the session opened and when it closed.
   - `make backup` (`disclose`) follows `AUDIT_REQUIRE_PURPOSE`, so under the
-    default it needs `REASON=`; a scheduled backup passes one.
-  - `make restore-neo4j DUMP=…` and `make restore-qdrant COLLECTION=…
-    SNAPSHOT=…` (`modify`) are recorded and need no purpose under the
+    default it needs `REASON=`; the nightly timer passes one
+    ([backups.md](backups.md)). Every file is age-encrypted to the public
+    recipients in data-plane's `backup/recipients.txt`.
+  - `make restore-neo4j DUMP=….age IDENTITY=…` and `make restore-qdrant
+    COLLECTION=… SNAPSHOT=….age IDENTITY=…` (`modify`) decrypt with an identity
+    given for that run only; they are recorded and need no purpose under the
     default.
   - Every wrapper refuses to start when `admin-audit` cannot record.
   - The Neo4j Browser and the Qdrant dashboard are not open by default:
