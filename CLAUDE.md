@@ -39,8 +39,9 @@ the image cleanup, and the `scripts/fetch-model.sh` / `scripts/pack-model.sh` /
 cross-repo: editing anything here changes how the entire federation boots. The
 documentation is split three ways, and each part has its own lane: `README.md` is the entry
 point (what this layer is, on-host layout, quick start, and pointers), `docs/runbooks/` holds the
-operator procedures (`bring-up.md`, `releasing.md`, `airgap-transfer.md`, `audit.md`, plus the
-two ADR-0001 host procedures), and **this file holds the agent-facing design detail** — the delegation split,
+operator procedures (`bring-up.md`, `releasing.md`, `airgap-transfer.md`, `audit.md` with its
+host-side companion `host-audit.md`, plus the two ADR-0001 host procedures), and **this file holds
+the agent-facing design detail** — the delegation split,
 the cross-repo contract, the invariants. A behavior change normally lands in one lane, not all
 three; prefer a pointer over mirroring the same prose into a second file. `docs/README.md` indexes
 the rest.
