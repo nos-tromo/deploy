@@ -27,6 +27,17 @@ store's own reference is obs-plane's `docs/audit.md`.
    use a second factor (edge-plane `docs/identity-contract.md`,
    `docs/user-accounts.md`). Without that, the "who" in the trail could be
    forged.
+5. **Open WebUI's users at the router.** Generate one secret
+   (`openssl rand -hex 32`) and put it into open-webui-service's `.env` as
+   `OPEN_WEBUI_FORWARD_JWT_SECRET` and into vllm-service's `.env` as
+   `AUDIT_OPENWEBUI_JWT_SECRET`, then restart both stacks. Open WebUI then
+   signs a short-lived token naming the user on every model call, and the
+   router records that user. Without it, the router's events for Open WebUI
+   calls name no one. Use the value for nothing else; to rotate it, change it
+   in both files and restart both stacks.
+6. **Host-level records.** Set up auditd as in [host-audit.md](host-audit.md).
+   It names who edited the account file or a `.env`, read a backup, or ran
+   `docker` by hand — what no service can attribute.
 
 `make up` brings the audit store up with the obs tier; nothing else is
 sequenced differently.
@@ -34,13 +45,14 @@ sequenced differently.
 ### What writes to the trail
 
 Hash-chained events come from the four apps' backends, vllm-service's router
-(one `ai_call` per model call) and edge-plane's `auth-audit` (login attempts
-and account changes). obs-plane's verifier accepts chained lines only from
-these containers; adding or renaming an emitter means adding its
-`project/service` pair (obs-plane `docs/audit.md`, "Source binding"). The
-gateway's access log and Open WebUI's own audit log come in as they are.
-Open WebUI keeps no documents: uploads, knowledge bases and memories are
-off in open-webui-service.
+(one `ai_call` per model call, naming Open WebUI's user when step 5 is done),
+edge-plane's `auth-audit` (login attempts and account changes) and
+data-plane's `admin-audit` (database shells, backups and restores).
+obs-plane's verifier accepts chained lines only from these containers; adding
+or renaming an emitter means adding its `project/service` pair (obs-plane
+`docs/audit.md`, "Source binding"). The gateway's access log and Open WebUI's
+own audit log come in as they are. Open WebUI keeps no documents: uploads,
+knowledge bases and memories are off in open-webui-service.
 
 Rules that follow from it:
 
@@ -56,12 +68,34 @@ Rules that follow from it:
   retention clock, records nothing, and can run before the backend is up.
 - **Account changes need `auth-audit` up.** `make totp` refuses to change an
   account it cannot record. Hand edits of `authelia/users.yml` are recorded
-  by `auth-audit` (without an operator identity; host-level file auditing is
-  what would add one).
-- **A stated purpose is not required yet.** The backends read
-  `X-Audit-Purpose` and record it, and each has `AUDIT_REQUIRE_PURPOSE` to
-  require one (`428` without). Leave it empty until the frontends send the
-  purpose (the next wave adds the input to every app).
+  by `auth-audit` without an operator identity; the host's auditd records
+  name who made them ([host-audit.md](host-audit.md)).
+- **Queries and disclosures need a stated purpose.** chorus, docint and
+  Nextext default to `AUDIT_REQUIRE_PURPOSE=query,disclose`; translator,
+  which stores nothing, requires none unless set.
+  - In the apps, the purpose bar in the header holds a case reference and a
+    reason for the session; every request carries it, and a request that
+    needs one and has none opens the bar.
+  - Command-line runs that query or disclose need `CASE_REF=` or `REASON=`
+    and stop with exit code 2 without one.
+  - Nextext plays media through a short-lived grant bound to the stated
+    purpose, since a player cannot send the header.
+  - docint states its ingest's purpose when it fetches transcripts from
+    Nextext: the user's if one was stated, else `docint ingest`.
+  - To switch the requirement off for an app, set `AUDIT_REQUIRE_PURPOSE=`
+    (empty) in its `.env`. The empty value is kept; only an unset variable
+    gets the default.
+- **Direct database access goes through data-plane's wrappers.**
+  - `make db-shell` (Neo4j) and `make qdrant-shell` always need `CASE_REF=`
+    or `REASON=`, and record when the session opened and when it closed.
+  - `make backup` (`disclose`) follows `AUDIT_REQUIRE_PURPOSE`, so under the
+    default it needs `REASON=`; a scheduled backup passes one.
+  - `make restore-neo4j DUMP=…` and `make restore-qdrant COLLECTION=…
+    SNAPSHOT=…` (`modify`) are recorded and need no purpose under the
+    default.
+  - Every wrapper refuses to start when `admin-audit` cannot record.
+  - A `docker exec` into a database container bypasses them; the host's
+    auditd records name who did it.
 - **Dev identities stay in dev.** Each app's `*_DEFAULT_IDENTITY` is set only
   by its dev overlay and is ignored while the app's edge secret is set.
   translator's `/translate` now answers 401 without an identity, like the
