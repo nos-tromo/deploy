@@ -94,6 +94,12 @@ Rules that follow from it:
     SNAPSHOT=…` (`modify`) are recorded and need no purpose under the
     default.
   - Every wrapper refuses to start when `admin-audit` cannot record.
+  - The Neo4j Browser and the Qdrant dashboard are not open by default:
+    production `make up` publishes no data-plane ports. `make up-admin` in
+    data-plane, with `CASE_REF=` or `REASON=`, opens 7474/7687/6333 on
+    `127.0.0.1` for an SSH tunnel and records the opening. Closing them again
+    is recorded too (data-plane README § Admin access). Who used them in that
+    window is in the host's SSH logins.
   - A `docker exec` into a database container bypasses them; the host's
     auditd records name who did it.
 - **Dev identities stay in dev.** Each app's `*_DEFAULT_IDENTITY` is set only

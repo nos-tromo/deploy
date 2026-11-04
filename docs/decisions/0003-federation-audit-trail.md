@@ -175,6 +175,10 @@ Decided while the services were instrumented:
 - **Direct database access is recorded.** data-plane's `admin-audit` records
   database shells, which always need a purpose, as well as backups and
   restores. Each wrapper refuses to start when it cannot record.
+- **The database dashboards open only on demand.** Production starts the
+  state tier without published ports. Opening the loopback-only admin ports
+  for the Neo4j Browser and the Qdrant dashboard needs a stated purpose and is
+  recorded, and so is closing them.
 - **The host covers what no service sees.** auditd names who edits the account
   file or a member's `.env`, reads a backup, or runs `docker` by hand
   (`docs/runbooks/host-audit.md`).

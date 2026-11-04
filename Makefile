@@ -15,11 +15,12 @@
 # network/volumes/down/bundle — instead of driving compose directly. Each
 # member's `make up-dev` is detached too, so `make up-dev` sequences a dev-shape
 # bring-up the same way (state + obs + app tiers via `up-dev` to publish host ports;
-# inference stays on production `up`). The one per-tier exception: production
-# `up` brings the state tier up via data-plane's `up-admin` (its production
-# shape plus 7474/7687/6333 bound to 127.0.0.1 only, so admins can reach the
-# Neo4j Browser / Qdrant dashboard over an SSH tunnel — nothing is reachable
-# from the network). Only `ps`/`logs` still use the compose
+# inference stays on production `up`). Production `up` brings the state tier up
+# in its plain production shape: no published ports, so direct database access
+# goes through data-plane's recorded targets (db-shell, qdrant-shell). An admin
+# who needs the Neo4j Browser or the Qdrant dashboard opens the loopback-only
+# ports on demand with data-plane's `up-admin`, which records it in the audit
+# trail. Only `ps`/`logs` still use the compose
 # helper below (there is no uniform `ps` target, and `make logs` follows with
 # -f, which a sequencer can't chain).
 
@@ -102,7 +103,7 @@ help:
 	@echo
 	@echo "  make clone    clone every missing federation member repo under INFRA_ROOT"
 	@echo "  make setup    create external networks + volumes for every tier (idempotent)"
-	@echo "  make up       bring the stack up in order (inference -> data -> obs -> apps -> edge), health-gated; state tier via data-plane 'up-admin' (loopback-only dashboard ports)"
+	@echo "  make up       bring the stack up in order (inference -> data -> obs -> apps -> edge), health-gated; state tier in data-plane's plain production shape (admin ports only on demand: data-plane 'up-admin')"
 	@echo "  make up-dev   like 'up', but state + obs + app tiers publish host ports (inference & edge stay production)"
 	@echo "  make down     stop the stack in reverse order (never removes data volumes)"
 	@echo "  make ps       service status across all tiers"
@@ -129,11 +130,11 @@ setup:
 # never published, even in dev. The edge tier is pinned to production `up` like inference
 # — its production shape already publishes the entry ports, and its `up-dev` overlay only
 # adds a repo-local test container. The state tier has its own selector, $(DATA_UP):
-# production `up` delegates to data-plane's `up-admin` (loopback-only 7474/7687/6333
-# for SSH-tunnelled admin access — the no-network-ports boundary holds), while
-# `up-dev` uses data-plane's `up-dev`, which already publishes a superset of those ports.
+# production `up` delegates to data-plane's plain `up` (no published ports; the
+# loopback-only admin ports open only on demand, recorded, via data-plane's
+# `up-admin`), while `up-dev` uses data-plane's `up-dev`, which publishes them for dev.
 up:     MODE_UP := up
-up:     DATA_UP := up-admin
+up:     DATA_UP := up
 up-dev: MODE_UP := up-dev
 up-dev: DATA_UP := up-dev
 up up-dev: setup
