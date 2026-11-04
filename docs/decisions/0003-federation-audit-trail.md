@@ -115,3 +115,31 @@ review.
   processing and the impact assessment are decided and documented by the
   operator, outside these repositories. The repositories provide the
   mechanism and the settings.
+
+## Amendment: rules from the instrumentation (phase 3)
+
+Decided while the services were instrumented:
+
+- **A second shared module.** `audit_runtime.py` (canonical next to
+  `audit_event.py`, vendored and drift-checked the same way) holds what every
+  emitter must do alike. It writes to the container's main stdout under one
+  container-wide lock and reads the stated purpose (`X-Audit-Purpose`: a
+  form-encoded case reference and reason). It also parses
+  `AUDIT_REQUIRE_PURPOSE`, keeps only sane request ids, and splits long id
+  lists instead of cutting them.
+- **Command-line runs go through the long-running container.** A one-off
+  container can exit before the collector discovers it, and its lines would
+  then be lost without a trace. Audited command-line work therefore runs with
+  `docker compose exec` in the service's running container and writes into
+  its log.
+- **Listed emitters.** The verifier accepts chained lines only from the
+  federation's emitters, by compose project and service. A sibling
+  container of an emitter cannot write a chain in its name.
+- **Dev identities cannot stand in for verified ones.** A service ignores its
+  dev default identity while its edge secret is set.
+- **Fail closed.** An operation whose event cannot be written fails and
+  returns no data. Where the component allows it, the next call is refused
+  until the trail is writable again.
+- **Open WebUI stores no documents.** Its edge guard refuses uploads,
+  knowledge bases and retrieval processing, and memories are off. Personal
+  data therefore accumulates only in services that record their processing.

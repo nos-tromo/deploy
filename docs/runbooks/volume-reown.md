@@ -62,6 +62,7 @@ instead of two). The `huggingface-cache` chown is the long pole: time it.
 | obs-plane | `loki-audit-data`, `grafana-audit-data` | — | no change — image-default users, like their ops counterparts; ⚠ the audit trail itself |
 | data-plane | all six | — | no change this wave — `user:` deliberately deferred (see data-plane README) |
 | edge-plane | `edge-state`, `edge-ca` | — | no change — caddy stays root-in-container (remap covers it), authelia manages its own files |
+| edge-plane | `edge-audit-state` | `65534:65534` | new with edge-plane v0.11.0 — `make volumes` creates it and `auth-audit-init` hands it to `auth-audit` on every start; auth-audit's export position |
 
 Model weights arriving later via `unpack-model.sh` are safe: the script
 chowns what it extracts to the cache directory's current owner, so once

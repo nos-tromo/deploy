@@ -173,10 +173,16 @@ copy_project "$INFRA_ROOT/vllm-service" vllm-service \
     "$INFRA_ROOT/vllm-service/.vllm-service-version" \
     "$INFRA_ROOT/vllm-service/.env.example"
 
-# Special case: the router config is mounted from the repo.
+# Special case: the router config is mounted from the repo, and so is its
+# audit callback (docker/router/: the callback, the vendored audit library and
+# uvicorn's log config). Without docker/router/ the router does not start.
 if [ -f "$INFRA_ROOT/vllm-service/docker/litellm.config.yaml" ]; then
     cp "$INFRA_ROOT/vllm-service/docker/litellm.config.yaml" "$DEST_BASE/vllm-service/docker/"
     echo -e "  ${GREEN}✓${NC} litellm.config.yaml copied."
+fi
+if [ -d "$INFRA_ROOT/vllm-service/docker/router" ]; then
+    cp -r "$INFRA_ROOT/vllm-service/docker/router" "$DEST_BASE/vllm-service/docker/"
+    echo -e "  ${GREEN}✓${NC} docker/router/ (audit callback) copied."
 fi
 
 copy_project "$INFRA_ROOT/chorus" chorus \
@@ -217,12 +223,16 @@ copy_project "$INFRA_ROOT/obs-plane" obs-plane \
 # authelia/users.yml (real users/hashes), certs/ (private keys) and .env must
 # not leave the build machine; per the README they are provisioned fresh on
 # the airgap side.
+# audit/ and VERSION are mounted into auth-audit (login attempts and account
+# changes as audit events); without them that service does not start.
 copy_project "$INFRA_ROOT/edge-plane" edge-plane \
     "$INFRA_ROOT/edge-plane/.edge-plane-version" \
+    "$INFRA_ROOT/edge-plane/VERSION" \
     "$INFRA_ROOT/edge-plane/.env.example" \
     "$INFRA_ROOT/edge-plane/caddy" \
     "$INFRA_ROOT/edge-plane/landing" \
-    "$INFRA_ROOT/edge-plane/authcode"
+    "$INFRA_ROOT/edge-plane/authcode" \
+    "$INFRA_ROOT/edge-plane/audit"
 
 # edge-plane special case: authelia/ only template + configuration (without
 # users.yml), certs/ only as an empty mountpoint (compose mounts it ro).
@@ -233,15 +243,17 @@ cp "$INFRA_ROOT/edge-plane/authelia/configuration.yml" \
 echo -e "  ${GREEN}✓${NC} edge-plane: authelia configuration (without users.yml) copied."
 
 # edge-plane special case: client provisioning (hosts entry + CA trust) is
-# needed on the airgap clients, not just on the gateway.
-if [ -f "$INFRA_ROOT/edge-plane/scripts/client-setup.sh" ]; then
-    mkdir -p "$DEST_BASE/edge-plane/scripts"
-    cp "$INFRA_ROOT/edge-plane/scripts/client-setup.sh" \
-       "$DEST_BASE/edge-plane/scripts/"
-    echo -e "  ${GREEN}✓${NC} edge-plane: scripts/client-setup.sh copied."
-else
-    echo -e "  ${YELLOW}⚠ edge-plane: scripts/client-setup.sh not found — skipped.${NC}"
-fi
+# needed on the airgap clients, not just on the gateway; audit-admin.sh is what
+# `make totp` runs, so the account change is recorded.
+for script in client-setup.sh audit-admin.sh; do
+    if [ -f "$INFRA_ROOT/edge-plane/scripts/$script" ]; then
+        mkdir -p "$DEST_BASE/edge-plane/scripts"
+        cp "$INFRA_ROOT/edge-plane/scripts/$script" "$DEST_BASE/edge-plane/scripts/"
+        echo -e "  ${GREEN}✓${NC} edge-plane: scripts/$script copied."
+    else
+        echo -e "  ${YELLOW}⚠ edge-plane: scripts/$script not found — skipped.${NC}"
+    fi
+done
 
 # deploy (this repo): only what production needs — scripts/,
 # federation.env.example, Makefile.

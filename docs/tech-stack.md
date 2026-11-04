@@ -32,6 +32,7 @@ fetches data, models, or telemetry at runtime.
 | Databases | Neo4j 5.26 Community (graph), Qdrant v1.17 (vector) |
 | Edge / auth | Caddy 2.11 (TLS, path routing) + Authelia 4.39 (forward-auth SSO, trusted `X-Auth-User`/`X-Auth-Email` headers) |
 | Observability | Prometheus v3.13, Grafana OSS 13.0, Loki 3.7, Alloy v1.18 + node-exporter, cAdvisor, blackbox-exporter |
+| Audit trail | Hash-chained events (shared `audit_event.py` + `audit_runtime.py`, vendored and drift-checked) from the app backends, the router and edge-plane's `auth-audit`, kept in a separate Loki with a verifier and signed daily anchors (ADR 0003) |
 | Packaging / deps | `uv` (Python, `uv.lock`), `pnpm` 9.12 (JS) |
 | Quality gates | ruff 0.15.14, pyrefly 1.1.1 (strict), pytest 9, pre-commit; ESLint 9 + `tsc` + vitest 4 |
 | Containers | Docker Compose per repo; digest-pinned images; Make-driven lifecycle |
@@ -98,6 +99,7 @@ external volumes (data-plane blast-radius pattern). Grafana joins `edge-net`
 | Logs | `grafana/loki:3.7.4`, collected by `grafana/alloy:v1.18.0` |
 | Dashboards | `grafana/grafana-oss:13.0.2` — dev override / SSH tunnel / `/grafana` via edge only |
 | Alerting | Alert rules with no notification channel by design (airgap) |
+| Audit lane | `loki-audit` (own external volume, deletion API off), `loki-audit-read` (GET-only proxy for readers), `grafana-audit` at `/audit/` (group `audit`), `audit-verifier` (stdlib Python on the pinned `python` image: chains, source binding, listed emitters) |
 | Lifecycle | Bespoke Makefile: `make bundle` (tag) but no `bundle-dev`; `OBS_PLANE_VERSION_OVERRIDE` for working-tree bundles; `make health` |
 
 Known v1 gaps: Neo4j Community and LiteLLM metrics are license-gated.
@@ -118,6 +120,7 @@ digest-pinned images.
 | Reverse proxy | `caddy:2.11.4` — TLS on `:443`, path routing to the frontend aliases on `edge-net`; strips client-supplied identity headers |
 | Auth | `authelia:4.39.20` — forward-auth SSO; injects trusted `X-Auth-User` / `X-Auth-Email`; `Authorization` pass-through; file-backed users (`make user` / `make secret`); admins-group gate on `/grafana` |
 | Self-service | Landing portal + password self-service with one-time-code viewer (`landing/`, `authcode/`; project-scoped `edge-notify` volume for short-lived codes) |
+| Audit | `auth-audit` (pinned `python`, no network): Authelia's login attempts and the account changes in `users.yml` as audit events; position on the external `edge-audit-state` volume |
 | TLS | Internal CA (`make ca-export`) or org-issued certs via `EDGE_TLS`; `EDGE_HOST` must be a dotted hostname or IP |
 | State | External `edge-state` / `edge-ca` volumes |
 | Routing | Each SPA under its canonical sub-path (`/chorus/`, `/docint/`, `/nextext/`, `/translator/`); Open WebUI (no sub-path support) on the dedicated `:8443` site |
