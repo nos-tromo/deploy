@@ -193,9 +193,13 @@ copy_project "$INFRA_ROOT/translator" translator \
     "$INFRA_ROOT/translator/.translator-version" \
     "$INFRA_ROOT/translator/.env.example"
 
+# open-webui-service: the retention sidecar mounts retention/ and VERSION from
+# the repo; without them it does not start on the airgap side.
 copy_project "$INFRA_ROOT/open-webui-service" open-webui-service \
     "$INFRA_ROOT/open-webui-service/.env.example" \
-    "$INFRA_ROOT/open-webui-service/nginx"
+    "$INFRA_ROOT/open-webui-service/nginx" \
+    "$INFRA_ROOT/open-webui-service/retention" \
+    "$INFRA_ROOT/open-webui-service/VERSION"
 
 # data-plane: admin-audit mounts audit/ and VERSION from the repo, and the
 # make targets that open, back up or restore the stores run the host-side
