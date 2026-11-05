@@ -44,7 +44,11 @@ stack.
 
 Design history — the dated `YYYY-MM-DD-*` design and plan files — lives
 alongside these in this directory; they record how a change was reasoned about
-at the time and are not maintained as current reference.
+at the time and are not maintained as current reference. The retention period
+across the federation, for one, is
+[2026-11-05-retention-deadline-design.md](2026-11-05-retention-deadline-design.md);
+its operating side is in [runbooks/bring-up.md](runbooks/bring-up.md#retention-periods)
+and [runbooks/backups.md](runbooks/backups.md).
 
 ## Who this is for
 
