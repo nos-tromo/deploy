@@ -21,6 +21,7 @@ Step-by-step procedures, in the order an operator meets them.
 | [runbooks/host-audit.md](runbooks/host-audit.md) | One-time host procedure: auditd rules that name who edited the account file or a `.env`, read a backup, or ran `docker` by hand; keeping those records; clock sync |
 | [runbooks/userns-remap.md](runbooks/userns-remap.md) | One-time host procedure: enabling `userns-remap` on the Docker daemon (ADR 0001) |
 | [runbooks/volume-reown.md](runbooks/volume-reown.md) | One-time `chown` of external volumes to the non-root container users (ADR 0001) |
+| [runbooks/upgrade-to-audit-trail.md](runbooks/upgrade-to-audit-trail.md) | One-time upgrade of a host still on the releases from before the audit trail: transfer, secrets, the window, checks and the way back |
 | [hardening-migration.md](hardening-migration.md) | Why volume ownership is self-healing at every `up`, and what that replaced |
 
 ## Decisions
