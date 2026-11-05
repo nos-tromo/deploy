@@ -19,9 +19,14 @@ the restores work is data-plane's `backup/README.md`.
    single lost identity must not lose every backup.
 3. **Give the server the public key only:** put the `age1…` line or lines into
    `backup/recipients.txt` in the data-plane checkout (ignored by git), or set
-   `BACKUP_RECIPIENTS` in data-plane's `.env` to another path. The file must
-   be readable by the backup account and writable by no one else. Without
-   it, every backup refuses to run.
+   `BACKUP_RECIPIENTS` in data-plane's `.env` to another path. Whoever can
+   change the file chooses who reads the next backup. So the file and every
+   directory above it, up to the data-plane checkout (or up to `/` for a file
+   outside it), must belong to root or to the backup account (step 4), and
+   be writable by their owner only (a directory with the sticky bit, such as
+   `/tmp`, excepted). The backup account must be able to read the file.
+   Without such a file, every backup refuses to run, naming the path at fault
+   (data-plane 0.6.1 and later; `backup/README.md` § The recipients file).
 4. **A dedicated account for the unit**, for example `fed-backup`, with
    Docker access (the `docker` group is root-equivalent; see
    [host-audit.md](host-audit.md)). The trail records the account that ran
