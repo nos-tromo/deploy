@@ -85,14 +85,28 @@ systemctl list-timers federation-backup.timer
 
 ## After each run
 
-The encrypted files land in data-plane's `backup/snapshots/`. Copying them off
-the host and deleting old ones are not part of the targets:
+The encrypted files land in data-plane's `backup/snapshots/`. Backups are
+short-lived restore points, not an archive: the stores delete data after the
+configured retention period, and a backup kept longer would keep what they
+already deleted.
 
-- Move them to the offline medium with the daily audit anchors.
-- Delete them, here and there, once the applicable retention period is over.
+- **On the host, the timer's runs prune.** After every backup that succeeded,
+  data-plane deletes that store's backups older than `BACKUP_RETENTION_DAYS`
+  (data-plane `.env`, default `30`), and records each pruning (`delete` /
+  `backup.prune.<store>`). A period new on the host, or changed, deletes nothing
+  for `RETENTION_NOTICE_DAYS` (default `30`). Details: data-plane
+  `backup/README.md` § Retention.
+- **Off the host, the operator prunes.** Copying them to the offline medium
+  with the daily audit anchors is not part of the targets, and neither is
+  pruning there: delete the copies at the same age, `BACKUP_RETENTION_DAYS`.
 - The host's auditd rules record who reads, writes or deletes a backup file
   ([host-audit.md](host-audit.md)).
 
 A restore takes the identity for that run only:
 `make restore-neo4j DUMP=<file>.age IDENTITY=<file>` (data-plane
 `backup/README.md`).
+
+**After a restore,** the restored data still carries its own deadlines:
+docint's daily retention sweep, which starts a few minutes after docint's
+backend starts, deletes what fell due while it was away. Let it run before
+users work on restored collections.

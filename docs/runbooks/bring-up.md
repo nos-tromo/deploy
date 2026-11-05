@@ -25,6 +25,26 @@ on a missing `edge-net` even though the edge tier itself comes up last.
 `down` is the exact reverse, and never passes `-v`. Only `data-plane`'s own
 `make nuke` may destroy state.
 
+## Retention periods
+
+Stored data is deleted after the configured retention period, on by default;
+each member applies it to what it keeps and lists what falls due in the app
+for the notice period first. The settings, in each member's `.env`:
+
+| Member | Setting | Default | What it deletes |
+|---|---|---|---|
+| docint | `DOCUMENT_RETENTION_DAYS` | `365` | Each document, that many days after its ingest; chats, reports, extracts and topic runs built from it no later |
+| open-webui-service | `OPEN_WEBUI_CHAT_RETENTION_DAYS` | `365` | Each chat, that many days after it was started, with its files |
+| Nextext | `NEXTEXT_CLI_RETENTION_DAYS` | `365` | Command-line inputs and results, that many days after they were stored |
+| data-plane | `BACKUP_RETENTION_DAYS` | `30` | Backups, that many days after they were taken ([backups.md](backups.md)) |
+| each of the above | `RETENTION_NOTICE_DAYS` | `30` | — the notice before a deletion, and the grace after a period is new or changed: nothing is deleted sooner |
+
+docint, open-webui-service and Nextext also accept `off`, for development only,
+logged as a warning; data-plane does not. An invalid value stops the app at
+startup, and makes data-plane refuse the backup run. The first start of a
+release that brings a period deletes nothing for the notice period. The design is
+[2026-11-05-retention-deadline-design.md](../2026-11-05-retention-deadline-design.md).
+
 ## Identity: edge secrets and second factors
 
 Two one-time preparations belong to a host's setup, both described in
