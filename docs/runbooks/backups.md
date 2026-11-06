@@ -93,9 +93,11 @@ already deleted.
 - **On the host, the timer's runs prune.** After every backup that succeeded,
   data-plane deletes that store's backups older than `BACKUP_RETENTION_DAYS`
   (data-plane `.env`, default `30`), and records each pruning (`delete` /
-  `backup.prune.<store>`). A period new on the host, or changed, deletes nothing
-  for `RETENTION_NOTICE_DAYS` (default `30`). Details: data-plane
-  `backup/README.md` § Retention.
+  `backup.prune.<store>`). A period new on the host deletes nothing for
+  `RETENTION_NOTICE_DAYS` (default `30`); a changed one never deletes sooner
+  than announced — a longer one applies at once, a shorter one gives the
+  notice to what it makes due sooner. Details: data-plane `backup/README.md`
+  § Retention.
 - **Off the host, the operator prunes.** Copying them to the offline medium
   with the daily audit anchors is not part of the targets, and neither is
   pruning there: delete the copies at the same age, `BACKUP_RETENTION_DAYS`.
