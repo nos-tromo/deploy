@@ -270,6 +270,14 @@ class OrphanTests(PlanCase):
         )
         self.assertEqual(p.dropped_comments, 1)
 
+    def test_base_comment_lines_not_dropped(self) -> None:
+        p = self.plan("A=1\nB=2\n", "A=1\n# B=2\n", base="A=1\n# B=2\n")
+        self.assertEqual(p.entries["B"], Entry("B", "B=2", "2", "added"))
+        self.assertEqual(p.dropped_comments, 0)
+        self.assertIsNone(items(p, "dropped_comments"))
+        own = self.plan("A=1\nB=2\n", "A=1\n# B=2\n# mine\n", base="A=1\n# B=2\n")
+        self.assertEqual(own.dropped_comments, 1)
+
     def test_dropped_comment_count(self) -> None:
         p = self.plan("A=1\nB=2\n", "# mine about A\nA=1\n# mine about B\nB=2\n")
         self.assertEqual(p.dropped_comments, 2)
@@ -321,12 +329,61 @@ class RenameTests(PlanCase):
         )
         self.assertEqual(
             [(o.line.key, o.note) for o in p.orphans],
-            [("OLD", "renamed to NEW; NEW is set and applies")],
+            [("OLD", "renamed to NEW in the example; value not carried")],
         )
         self.assertEqual(
             event(p, "rename_conflict"),
             Event("rename_conflict", ["OLD -> NEW"], "warn"),
         )
+
+    def test_rename_note_stable_on_replan(self) -> None:
+        cases = (
+            (
+                "# renamed: OLD -> NEW\nNEW=e\n",
+                "OLD=d\n",
+                "OLD=SENTINEL-1\nNEW=e\n",
+                "OLD",
+                "NEW",
+                ["rename_conflict", "rename_not_carried"],
+            ),
+            (
+                "# renamed: OLD_RETENTION -> NEW_RETENTION\nNEW_RETENTION=7d\n",
+                "NEW_RETENTION=30d\n",
+                "OLD_RETENTION=SENTINEL-1\nNEW_RETENTION=30d\n",
+                "OLD_RETENTION",
+                "NEW_RETENTION",
+                ["rename_not_carried", "rename_conflict"],
+            ),
+        )
+        for e, base, env, old, new, kinds in cases:
+            note = f"renamed to {new} in the example; value not carried"
+            with self.subTest(old=old):
+                plans = [self.plan(e, env, base=base), self.plan(e, env, base=e)]
+                for p, kind in zip(plans, kinds):
+                    self.assertEqual(
+                        [(o.line.key, o.note) for o in p.orphans], [(old, note)]
+                    )
+                    self.assertEqual(items(p, kind), [f"{old} -> {new}"])
+
+    def test_held_inherited_old_is_carried(self) -> None:
+        for old, new in (
+            ("OLD_RETENTION", "NEW_RETENTION"),
+            ("LOG_RETENTION", "LOG_DAYS"),
+            ("LOG_DAYS", "LOG_RETENTION"),
+        ):
+            with self.subTest(old=old, new=new):
+                p = self.plan(
+                    f"# renamed: {old} -> {new}\n{new}=7d\n",
+                    f"{old}=30d\n",
+                    base=f"{old}=30d\n",
+                )
+                self.assertEqual(
+                    p.entries[new], Entry(new, f"{new}=30d", "30d", "carried")
+                )
+                self.assertEqual(p.orphans, [])
+                self.assertEqual(
+                    items(p, "renamed"), [f"{old} -> {new} (value carried)"]
+                )
 
     def test_old_replaces_inherited_new(self) -> None:
         p = self.plan(

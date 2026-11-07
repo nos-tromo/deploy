@@ -125,6 +125,7 @@ class _Planner:
         self.e_raw = example.raw_lines()
         self.b_active = base.active() if base is not None else {}
         self.b_documented = base.documented() if base is not None else set()
+        self.b_raw = base.raw_lines() if base is not None else set()
         self.entries: Dict[str, Entry] = {}
         self.unset: Dict[str, str] = {}
         self.orphans: List[Orphan] = []
@@ -138,6 +139,15 @@ class _Planner:
 
     def follows(self, key: str) -> bool:
         return self.inherited(key) and not is_held(key, self.syntax, self.shared_keys)
+
+    def drops(self, old: str) -> bool:
+        """An inherited OLD whose default is dropped instead of carried."""
+        new = self.example.renames[old]
+        return (
+            self.inherited(old)
+            and not is_held(old, self.syntax, self.shared_keys)
+            and not is_held(new, self.syntax, self.shared_keys)
+        )
 
     def run(self, file_id: str, display: str) -> FilePlan:
         self.refuse_renamed_references()
@@ -189,11 +199,12 @@ class _Planner:
         olds = [key for key in self.ops if key in renames]
         live: Dict[str, List[str]] = {}
         for old in olds:
-            if not self.inherited(old):
+            if not self.drops(old):
                 live.setdefault(renames[old], []).append(old)
         for old in olds:
             new = renames[old]
-            if self.inherited(old):
+            not_carried = f"renamed to {new} in the example; value not carried"
+            if self.drops(old):
                 self.items["renamed"].append(f"{old} -> {new} (old default dropped)")
             elif len(live[new]) > 1:
                 self.orphan(
@@ -202,10 +213,10 @@ class _Planner:
                 )
                 self.items["rename_conflict"].append(f"{old} -> {new}")
             elif new in self.ops and not self.inherited(new):
-                self.orphan(old, f"renamed to {new}; {new} is set and applies")
+                self.orphan(old, not_carried)
                 self.items["rename_conflict"].append(f"{old} -> {new}")
             elif self.base is None or old not in self.b_documented:
-                self.orphan(old, f"renamed to {new} in the example; value not carried")
+                self.orphan(old, not_carried)
                 self.items["rename_not_carried"].append(f"{old} -> {new}")
             else:
                 line = self.ops[old]
@@ -307,6 +318,7 @@ class _Planner:
             if line.kind in _COMMENT_KINDS
             and not line.raw.startswith(MARKER)
             and line.raw not in self.e_raw
+            and line.raw not in self.b_raw
             and line.lineno not in self.reused
         )
 
