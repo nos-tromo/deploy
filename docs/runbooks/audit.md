@@ -44,7 +44,7 @@ sequenced differently.
 
 ### What writes to the trail
 
-Hash-chained events come from the four apps' backends, vllm-service's router
+Hash-chained events come from the three apps' backends, vllm-service's router
 (one `ai_call` per model call, naming Open WebUI's user when step 5 is done),
 edge-plane's `auth-audit` (login attempts and account changes) and
 data-plane's `admin-audit` (database shells, backups and restores).
@@ -57,10 +57,9 @@ knowledge bases and memories are off in open-webui-service.
 Rules that follow from it:
 
 - **Command-line runs go through the running backend.** The audited make
-  targets (chorus `ingest`/`resolve`/`migrate`, docint `resolve`/`extract`/
-  `topics`/`search-index`/…, Nextext `cli`) run with `docker compose exec`
-  inside the backend, so their events land in its log; bring the stack up
-  first. They pass the operator's host account as the actor, and
+  targets (docint `resolve`/`extract`/`topics`/`search-index`/…, Nextext
+  `cli`) run with `docker compose exec` inside the backend, so their events
+  land in its log; bring the stack up first. They pass the operator's host account as the actor, and
   `CASE_REF=` / `REASON=` as the stated purpose where an action needs one.
   A one-off container (`docker compose run --rm`) can exit before the log
   collector sees it, and its events would be lost without a trace.
@@ -70,8 +69,8 @@ Rules that follow from it:
   account it cannot record. Hand edits of `authelia/users.yml` are recorded
   by `auth-audit` without an operator identity; the host's auditd records
   name who made them ([host-audit.md](host-audit.md)).
-- **Queries and disclosures need a stated purpose.** chorus, docint and
-  Nextext default to `AUDIT_REQUIRE_PURPOSE=query,disclose`; translator,
+- **Queries and disclosures need a stated purpose.** docint and Nextext
+  default to `AUDIT_REQUIRE_PURPOSE=query,disclose`; translator,
   which stores nothing, requires none unless set.
   - In the apps, the purpose bar in the header holds a case reference and a
     reason for the session; every request carries it, and a request that
@@ -86,23 +85,22 @@ Rules that follow from it:
     (empty) in its `.env`. The empty value is kept; only an unset variable
     gets the default.
 - **Direct database access goes through data-plane's wrappers.**
-  - `make db-shell` (Neo4j) and `make qdrant-shell` always need `CASE_REF=`
-    or `REASON=`, and record when the session opened and when it closed.
+  - `make qdrant-shell` always needs `CASE_REF=` or `REASON=`, and records
+    when the session opened and when it closed.
   - `make backup` (`disclose`) follows `AUDIT_REQUIRE_PURPOSE`, so under the
     default it needs `REASON=`; the nightly timer passes one
     ([backups.md](backups.md)). Every file is age-encrypted to the public
     recipients in data-plane's `backup/recipients.txt`.
-  - `make restore-neo4j DUMP=….age IDENTITY=…` and `make restore-qdrant
-    COLLECTION=… SNAPSHOT=….age IDENTITY=…` (`modify`) decrypt with an identity
-    given for that run only; they are recorded and need no purpose under the
-    default.
+  - `make restore-qdrant COLLECTION=… SNAPSHOT=….age IDENTITY=…` (`modify`)
+    decrypts with an identity given for that run only; it is recorded and
+    needs no purpose under the default.
   - Every wrapper refuses to start when `admin-audit` cannot record.
-  - The Neo4j Browser and the Qdrant dashboard are not open by default:
-    production `make up` publishes no data-plane ports. `make up-admin` in
-    data-plane, with `CASE_REF=` or `REASON=`, opens 7474/7687/6333 on
-    `127.0.0.1` for an SSH tunnel and records the opening. Closing them again
-    is recorded too (data-plane README § Admin access). Who used them in that
-    window is in the host's SSH logins.
+  - The Qdrant dashboard is not open by default: production `make up`
+    publishes no data-plane ports. `make up-admin` in data-plane, with
+    `CASE_REF=` or `REASON=`, opens 6333 on `127.0.0.1` for an SSH tunnel
+    and records the opening. Closing it again is recorded too (data-plane
+    README § Admin access). Who used it in that window is in the host's SSH
+    logins.
   - A `docker exec` into a database container bypasses them; the host's
     auditd records name who did it.
 - **Dev identities stay in dev.** Each app's `*_DEFAULT_IDENTITY` is set only

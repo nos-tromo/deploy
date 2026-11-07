@@ -1,7 +1,7 @@
 # Runbook: releasing a federation member
 
-The full release ritual for any image-bundling member repo (`chorus`,
-`docint`, `Nextext`, `translator`, `vllm-service`, `data-plane`, `obs-plane`,
+The full release ritual for any image-bundling member repo (`docint`,
+`Nextext`, `translator`, `vllm-service`, `data-plane`, `obs-plane`,
 `open-webui-service`, `edge-plane`). The one-paragraph summary lives in the
 [README](../../README.md#releasing); this is the step-by-step.
 

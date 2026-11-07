@@ -5,26 +5,27 @@ audit trail (docint before v2.7.0) and moves to the current ones in a single
 maintenance window. The transfer itself follows the
 [README](../../README.md#airgap-flow) and
 [airgap-transfer.md](airgap-transfer.md); this runbook adds what the jump
-across the audit-trail releases needs on top.
+across the audit-trail releases needs on top. The same window also runs
+[retire-chorus.md](retire-chorus.md), at the steps named below: the current
+releases no longer carry what it removes.
 
 ## What moves
 
 The release each member ran before the audit trail, and the release this
-runbook was written against. Check what a host actually runs in each member's
+runbook targets. Check what a host actually runs in each member's
 `.<slug>-version` file (open-webui-service: `.open-webui-version`).
 
 | Member | Before | Target |
 |---|---|---|
-| edge-plane | v0.8.1 | v0.11.1 |
-| obs-plane | v0.6.6 | v0.11.1 |
-| data-plane | v0.3.7 | v0.7.0 |
+| edge-plane | v0.8.1 | v0.12.0 |
+| obs-plane | v0.6.6 | v0.12.0 |
+| data-plane | v0.3.7 | v0.9.0 |
 | vllm-service | v0.6.0 | v0.8.1 |
-| chorus | v0.6.15 | v0.10.1 |
-| docint | v2.6.0 | v2.11.0 |
-| Nextext | v1.12.12 | v1.16.0 |
+| docint | v2.6.0 | v2.12.0 |
+| Nextext | v1.12.12 | v1.17.0 |
 | translator | v1.5.11 | v1.8.1 |
-| open-webui-service | v0.4.4 | v0.10.0 |
-| deploy | v0.3.5 | v0.5.2 |
+| open-webui-service | v0.4.4 | v0.11.0 |
+| deploy | v0.3.5 | v0.6.0 |
 
 Upgrade every member in the same window. `make up` starts the gateway last,
 so no app enforces its edge secret while the gateway does not send it yet;
@@ -34,10 +35,14 @@ v2.10+).
 
 ## A. On the build host
 
-1. `make pull`, then `make bundle`: every member ends on its release tag.
-2. `scripts/copy-bundles.sh <dest>` right after, before any member leaves its
-   tag. From deploy v0.5.2 on it also ships open-webui-service's `retention/`
-   and `VERSION`, which the retention sidecar mounts.
+1. Steps A1 and A2 of
+   [retire-chorus.md](retire-chorus.md#a-on-the-build-host): `make pull` and
+   `make bundle`, which leave every member on its release tag; then
+   data-plane's older tarballs go.
+2. `scripts/copy-bundles.sh <dest>` into an empty `<dest>`, right after,
+   before any member leaves its tag. From deploy v0.5.2 on it also ships
+   open-webui-service's `retention/` and `VERSION`, which the retention
+   sidecar mounts.
 3. Download the `age` package for the host's distribution
    (`apt-get download age`, `dnf download age`): backups now encrypt with it,
    and it is not part of any bundle.
@@ -48,25 +53,24 @@ v2.10+).
 
 ## B. On the host, while the old releases still run
 
-1. **Back up with the old releases.** The new data-plane never restores
-   plaintext backups, so these are the way back:
+1. **Back up with the old releases:**
    - `make backup` in data-plane (plaintext under `backup/snapshots/`); move
-     the files to the offline medium.
-   - A copy of the volumes `sessions-storage` (docint), `open-webui-data`
-     (Open WebUI v0.13.0 migrates its database on first start) and
-     `chorus-state`.
-   - chorus stops writing its SQLite audit log (`audit.sqlite` on
-     `chorus-state`, or wherever `AUDIT_DB_PATH` pointed). The file stays; keep
-     it until the end of the year after its last row (chorus
-     `docs/retention.md`).
+     the files to the offline medium. They are a safety copy of the data, not
+     a way back: the new data-plane never restores plaintext backups, and
+     data-plane stays on its new release ([Going back](#going-back)). They
+     hold Qdrant's collections and Neo4j's dump; C3 deletes Neo4j's volumes
+     and then this dump, the last copy of its data
+     ([retire-chorus.md](retire-chorus.md), steps B3 and B4).
+   - A copy of the volumes `sessions-storage` (docint) and `open-webui-data`
+     (Open WebUI v0.13.0 migrates its database on first start): the way back
+     for those two apps.
 2. **Generate the secrets.** `make secret` in edge-plane; every value its own,
    at least 32 characters. `openssl rand -hex 32` for the Qdrant key and the
    Open WebUI token secret.
 
    | Value | edge-plane `.env` | Counterpart, same value |
    |---|---|---|
-   | `CHORUS_EDGE_SECRET` | yes | chorus `.env`, same name |
-   | `DOCINT_EDGE_SECRET` | yes | docint `.env` |
+   | `DOCINT_EDGE_SECRET` | yes | docint `.env`, same name |
    | `NEXTEXT_EDGE_SECRET` | yes | Nextext `.env` |
    | `TRANSLATOR_EDGE_SECRET` | yes | translator `.env` |
    | `OPEN_WEBUI_EDGE_SECRET` | yes | open-webui-service `.env` |
@@ -92,29 +96,32 @@ v2.10+).
 
 ## C. The window
 
-1. `make down`.
+1. `make down`, with the old files
+   ([retire-chorus.md](retire-chorus.md#b-on-the-host-in-the-window), step B1).
 2. Replace the member files with the transfer set. Leave every `.env`,
    edge-plane's `authelia/users.yml` and `certs/`, and data-plane's `backup/`
    as they are.
-3. `make load`.
-4. **Edit every `.env`:**
+3. Steps B2 to B6 of
+   [retire-chorus.md](retire-chorus.md#b-on-the-host-in-the-window), then
+   delete data-plane's older tarballs as in its step B7.
+4. `make load`.
+5. **Edit every `.env`:**
    - Enter the values from B2.
    - edge-plane: `EDGE_AUTH_POLICY=one_factor` for now. Logins otherwise need
      a TOTP code, and no user has one yet.
    - Remove what is no longer read: docint `COLLECTION_RETENTION`,
-     `SOCIAL_TIMESTAMP_LINK_ENABLED`, `SOCIAL_TEXT_LINK_ENABLED`; chorus
-     `AUDIT_DB_PATH`, `AUDIT_RETENTION_DAYS`.
-   - Leave `AUDIT_REQUIRE_PURPOSE` unset (chorus, docint and Nextext then
-     require a purpose for `query` and `disclose`) and every
-     `*_DEFAULT_IDENTITY` empty.
-5. In `authelia/users.yml`, give the group `audit` to the people who review
+     `SOCIAL_TIMESTAMP_LINK_ENABLED`, `SOCIAL_TEXT_LINK_ENABLED`.
+   - Leave `AUDIT_REQUIRE_PURPOSE` unset (docint and Nextext then require a
+     purpose for `query` and `disclose`) and every `*_DEFAULT_IDENTITY`
+     empty.
+6. In `authelia/users.yml`, give the group `audit` to the people who review
    data access, and only to them; `admins` does not grant it.
-6. `make setup`. It creates the new external volumes (`edge-audit-state`,
+7. `make setup`. It creates the new external volumes (`edge-audit-state`,
    `loki-audit-data`, `grafana-audit-data`, `audit-verifier-state`); run it
    after `make load`, since obs-plane needs its python image to set their
    ownership.
-7. `make up`.
-8. **Second factors.** `make totp U=<user>` in edge-plane for every user,
+8. `make up`.
+9. **Second factors.** `make totp U=<user>` in edge-plane for every user,
    handed over in person (edge-plane `docs/user-accounts.md`). Then set
    `EDGE_AUTH_POLICY=two_factor` and run `make up` in edge-plane; a restart
    alone keeps the old environment.
@@ -128,22 +135,23 @@ v2.10+).
   `unlisted_source`. A single `unterminated` per restarted service is
   expected; so is a burst of events from `auth-audit` exporting the existing
   login history.
-- Through the gateway: logins need the TOTP code; chorus, docint and Nextext
-  ask for a case reference or reason in their purpose bar; `/audit/` opens for
+- Through the gateway: logins need the TOTP code; docint and Nextext ask for
+  a case reference or reason in their purpose bar; `/audit/` opens for
   the `audit` group only. A request that bypasses the gateway gets `401`.
 - What retention will delete, after the 30-day grace that starts now: docint
   `make retention-report` (and the Dashboard card), open-webui-service
   `make retention-dry-run`, Nextext `make cli-clean LEGACY=1 DRY=1`.
 - A test backup: `make backup REASON="upgrade check"` in data-plane writes
   `*.age` files.
+- The checks in [retire-chorus.md](retire-chorus.md#c-checks).
 - Set up the nightly backup timer ([backups.md](backups.md)), the host's
   auditd rules ([host-audit.md](host-audit.md)) and, from tomorrow, the daily
   anchor ([audit.md](audit.md#daily-anchor-the-previous-day)).
 
 ## E. Afterwards
 
-- Delete the plaintext backups from B1 once the new releases have proven
-  themselves; until then they are the way back.
+- Delete data-plane's plaintext backups from B1 once the new releases have
+  proven themselves; until then they are a safety copy of Qdrant's data.
 - Nextext: remove CLI leftovers from before the upgrade with
   `make cli-clean LEGACY=1`; CLI inputs go to `/tmp/nextext-cli/` from now on.
 - open-webui-service: vectors of uploads from before the upgrade stay in its
@@ -152,18 +160,20 @@ v2.10+).
 ## What users notice
 
 - Logins need a second factor.
-- chorus, docint and Nextext show a purpose bar; requests that read or hand
-  out data need a case reference or reason.
+- docint and Nextext show a purpose bar; requests that read or hand out data
+  need a case reference or reason.
 - docint shows what is deleted when; Open WebUI shows a banner with its
   retention period, and uploads, knowledge bases and notes are off.
 - translator needs a login.
 
 ## Going back
 
-Retention deletes nothing for 30 days, so within that time images and `.env`
-can be reverted, with three limits:
+Retention deletes nothing for 30 days. deploy and data-plane stay on v0.6.0
+and v0.9.0: their older releases need Neo4j and chorus, which
+[retire-chorus.md](retire-chorus.md) removes with their data. Older
+data-plane would try to pull the neo4j image, and older deploy waits on
+`neo4j:7687` and runs `make` in chorus' checkout. Within those 30 days the
+other members' images and `.env` can be reverted, with two limits:
 
 - Open WebUI needs its volume copy from B1 (database migration).
-- Older data-plane scripts cannot read the new encrypted backups; use the
-  plaintext ones from B1.
 - What reached the audit trail stays there.

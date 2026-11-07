@@ -5,14 +5,14 @@ Die unten genannten Versionen stammen aus den Manifesten der einzelnen Repos
 (`pyproject.toml`, `package.json`, `compose.yaml`, Dockerfiles, `VERSION`)
 zum Zeitpunkt der Erstellung; die Manifeste bleiben die maßgebliche Quelle.
 
-Die Föderation besteht aus zwölf unabhängigen Repositories unter dem
+Die Föderation besteht aus elf unabhängigen Repositories unter dem
 GitHub-Account `nos-tromo` (ein persönlicher User-Account, keine
 Organisation), jedes mit eigener Git-Historie, CI und eigenem Release-Zyklus,
 zur Laufzeit verbunden über drei externe Docker-Netzwerke:
 
 - **`inference-net`** — App-Backends ↔ `vllm-service` (LiteLLM-Router, Alias `vllm-router`)
-- **`data-net`** — App-Backends ↔ `data-plane` (Aliase `neo4j`, `qdrant`)
-- **`edge-net`** — Edge-Gateway ↔ App-Frontends (Aliase `chorus-frontend`, `docint-frontend`, `nextext-frontend`, `translator-frontend`, `open-webui`, `grafana`)
+- **`data-net`** — App-Backends ↔ `data-plane` (Alias `qdrant`)
+- **`edge-net`** — Edge-Gateway ↔ App-Frontends (Aliase `docint-frontend`, `nextext-frontend`, `translator-frontend`, `open-webui`, `grafana`)
 
 Die Startreihenfolge ist Inference → State → Obs (optional) → Apps → Edge
 (optional), automatisiert durch `deploy`. Alles ist Airgap-first:
@@ -29,7 +29,7 @@ und nichts lädt zur Laufzeit Daten, Modelle oder Telemetrie nach.
 | Backend-Framework | FastAPI + Uvicorn, Pydantic v2 |
 | Frontend | React 19 + Vite 8 + Tailwind CSS v4, gemeinsames Designsystem `@infra/ui` (v0.15.x) |
 | Inference | LiteLLM-Proxy-Router → vLLM-v0.20.1-Backends; Ray Serve für GLiNER |
-| Datenbanken | Neo4j 5.26 Community (Graph), Qdrant v1.17 (Vektor) |
+| Datenbank | Qdrant v1.17 (Vektor) |
 | Edge / Auth | Caddy 2.11 (TLS, Pfad-Routing) + Authelia 4.39 (Forward-Auth-SSO, vertrauenswürdige Header `X-Auth-User`/`X-Auth-Email`) |
 | Observability | Prometheus v3.13, Grafana OSS 13.0, Loki 3.7, Alloy v1.18 + node-exporter, cAdvisor, blackbox-exporter |
 | Audit-Trail | Hash-verkettete Ereignisse (gemeinsame `audit_event.py` + `audit_runtime.py`, vendored und auf Drift geprüft) aus den App-Backends, dem Router, `auth-audit` in edge-plane und `admin-audit` in data-plane, abgelegt in einem eigenen Loki mit Verifier und signierten Tagesankern (ADR 0003). Abfragen und Offenlegungen nennen einen Zweck, der einmal je Sitzung in der Zweck-Leiste jedes SPA angegeben wird |
@@ -71,18 +71,17 @@ wird über das OpenAI-Feld `model`. Standardmäßig `HF_HUB_OFFLINE=1` /
 
 ### `data-plane` (v0.1.1)
 
-Alleiniger Eigentümer der Datenbanken der Föderation und ihrer Volumes.
+Alleiniger Eigentümer der Datenbank der Föderation und ihrer Volumes.
 Nur Docker Compose — kein Anwendungscode.
 
 | Komponente | Technologie |
 |---|---|
-| Graph-DB | `neo4j:5.26.26-community` (Digest-gepinnt), Alias `neo4j` auf `data-net` — genutzt von chorus |
 | Vektor-DB | `qdrant:v1.17.0` (CPU-Profil) / `qdrant:v1.17.0-gpu-nvidia` (CUDA-Profil), Alias `qdrant` — genutzt von docint |
-| Volumes | Alle extern (`neo4j-data/logs/import/plugins`, `qdrant-snapshots/storage`), sodass kein `down -v` eines App-Repos Daten zerstören kann |
+| Volumes | Alle extern (`qdrant-snapshots/storage`), sodass kein `down -v` eines App-Repos Daten zerstören kann |
 | Lebenszyklus | Eigenes Makefile (nicht auf `common.mk`): `make network` / `up` / `up-dev` / `bundle`; destruktiver Abbau hinter `make nuke` (interaktive Bestätigung) |
 | Versionierung | Einzeilige `VERSION`-Datei; `make bundle` baut den letzten annotierten Tag (bundle-lib.sh); Working-Tree-Bundles via `DATA_PLANE_VERSION_OVERRIDE` (kein `bundle-dev`) |
 | Backups | Runbook + Skripte unter `backup/` |
-| Audit | `admin-audit` (gepinntes `python`, ohne Netzwerk): Datenbank-Shells (`make db-shell`, `qdrant-shell`), Backups und Wiederherstellungen als Audit-Ereignisse |
+| Audit | `admin-audit` (gepinntes `python`, ohne Netzwerk): die Datenbank-Shell (`make qdrant-shell`), Backups und Wiederherstellungen als Audit-Ereignisse |
 
 ---
 
@@ -106,8 +105,7 @@ denen andere abhängen); besitzt eigene externe Volumes
 | Audit-Spur | `loki-audit` (eigenes externes Volume, Delete-API aus), `loki-audit-read` (Nur-GET-Proxy für Lesende), `grafana-audit` unter `/audit/` (Gruppe `audit`), `audit-verifier` (stdlib-Python auf dem gepinnten `python`-Image: Ketten, Quellbindung, gelistete Emitter) |
 | Lebenszyklus | Eigenes Makefile: `make bundle` (Tag), aber kein `bundle-dev`; `OBS_PLANE_VERSION_OVERRIDE` für Working-Tree-Bundles; `make health` |
 
-Bekannte Lücken in v1: Neo4j-Community- und LiteLLM-Metriken sind
-lizenzbeschränkt.
+Bekannte Lücke in v1: LiteLLM-Metriken sind lizenzbeschränkt.
 
 ---
 
@@ -128,14 +126,14 @@ Infrastruktur — gepullte, Digest-gepinnte Images.
 | Audit | `auth-audit` (gepinntes `python`, ohne Netzwerk): Anmeldeversuche aus Authelia und Kontoänderungen in `users.yml` als Audit-Ereignisse; Position auf dem externen Volume `edge-audit-state` |
 | TLS | Interne CA (`make ca-export`) oder organisationseigene Zertifikate via `EDGE_TLS`; `EDGE_HOST` muss ein Hostname mit Punkt oder eine IP sein |
 | State | Externe Volumes `edge-state` / `edge-ca` |
-| Routing | Jede SPA unter ihrem kanonischen Unterpfad (`/chorus/`, `/docint/`, `/nextext/`, `/translator/`); Open WebUI (kein Unterpfad-Support) auf der dedizierten `:8443`-Site |
+| Routing | Jede SPA unter ihrem kanonischen Unterpfad (`/docint/`, `/nextext/`, `/translator/`); Open WebUI (kein Unterpfad-Support) auf der dedizierten `:8443`-Site |
 | Netzwerke | Nur `edge-net` — niemals `inference-net` / `data-net`. `edge-net` ist eine vertrauenswürdige Zone: Mitglieder akzeptieren die Identitäts-Header ungeprüft |
 
 ---
 
 ## Tier: Anwendungen
 
-Alle vier Python-Apps haben dieselbe Form: FastAPI-Backend + React-SPA-
+Alle drei Python-Apps haben dieselbe Form: FastAPI-Backend + React-SPA-
 Frontend, env-gesteuerte Konfiguration in einem `env_cfg.py`-Dataclass-Modul,
 `uv`-verwaltete Abhängigkeiten, Docker-Dateien unter `docker/`
 (produktionsförmige `compose.yaml`, Dev-Overlay `compose.override.yaml` mit
@@ -150,17 +148,6 @@ nur für die Build-Stage aus `ghcr.io/astral-sh/uv` hineinkopiert.
 Frontend-Image: `node:22-alpine`-Build → `nginx-unprivileged:1.27-alpine`
 zum Ausliefern (das nginx der App entfernt das Unterpfad-Präfix). Alle auf
 den `FROM`-Zeilen Digest-gepinnt und per Dependabot aktualisiert.
-
-### `chorus` — GraphRAG für Social-Network-Analyse (Produktion im Airgap)
-
-| | |
-|---|---|
-| Version / Python | 0.3.0 · `>=3.12,<3.13` (nur 3.12) |
-| Backend | FastAPI, `neo4j`-6.x-Treiber, `openai`-SDK (→ LiteLLM-Router), httpx, tenacity, loguru; hatchling-Build |
-| Frontend | React 19, React Router 7, TanStack Query 5, `@infra/ui` **ForceGraph** (Graph-Visualisierung — eigene Canvas-Kraftsimulation im Designsystem), Recharts 3, react-markdown + remark-gfm |
-| Daten | Neo4j (über `data-plane`) |
-| Tests | pytest + pytest-asyncio + `testcontainers[neo4j]` |
-| Compliance | §76 BDSG; ADRs in `docs/decisions/` |
 
 ### `docint` — Document Intelligence (Ingestion / Retrieval / Chat-RAG)
 
@@ -226,9 +213,9 @@ Inference und Edge auf dem Produktions-`up` bleiben. Host-Profil über
 | | |
 |---|---|
 | Stack | React 19 (Peer-Dependency), Tailwind-CSS-v4-Tokens, class-variance-authority + clsx + tailwind-merge |
-| Primitives | UI-Primitives + AppHeader, Light-/Dark-Theming (`useTheme`, CSS-Variablen), **ForceGraph** (Canvas-Kraftsimulation + Graph-Export, genutzt von chorus), **PurposeBar** (der Zweck, den jede protokollierte Anfrage nennt, mit `withPurpose` für die Fetch-Wrapper) |
+| Primitives | UI-Primitives + AppHeader, Light-/Dark-Theming (`useTheme`, CSS-Variablen), **ForceGraph** (Canvas-Kraftsimulation + Graph-Export, genutzt von docint), **PurposeBar** (der Zweck, den jede protokollierte Anfrage nennt, mit `withPurpose` für die Fetch-Wrapper) |
 | Build | tsup → **committetes, vorgebautes `dist/`** (nur zur Build-Zeit, kein Rebuild bei der Installation); vitest + Testing Library + happy-dom; ESLint 9 + Prettier |
-| Konsum | Gepinnte pnpm-Dependency auf ein **Commit-SHA-Codeload-Tarball** (`https://codeload.github.com/nos-tromo/infra-ui/tar.gz/<sha>`) in allen vier App-Frontends — bewusst nie ein Tag; Theming pro App via `--app-accent`; erfordert eine Tailwind-`@source`-Zeile |
+| Konsum | Gepinnte pnpm-Dependency auf ein **Commit-SHA-Codeload-Tarball** (`https://codeload.github.com/nos-tromo/infra-ui/tar.gz/<sha>`) in allen drei App-Frontends — bewusst nie ein Tag; Theming pro App via `--app-accent`; erfordert eine Tailwind-`@source`-Zeile |
 | CI | Enthält einen dist-Guard (dist muss zu src passen) |
 
 ### `pr-notify` — Telegram-Notifier (Tooling)
@@ -245,7 +232,7 @@ Föderation; keine der gemeinsamen `uv`- / `common.mk`-Konventionen gilt hier.
 
 ## Gemeinsame Toolchain & Konventionen
 
-**Python (chorus, docint, Nextext, translator; nur Lint für vllm-service):**
+**Python (docint, Nextext, translator; nur Lint für vllm-service):**
 `uv` + `uv.lock` als maßgebliche Quelle für Abhängigkeiten; ruff `0.15.14`
 (Lint + Format, Google-Docstrings, 120 Spalten) und pyrefly `1.1.1` im
 Strict-Preset — beide spiegeln die kanonischen Konfigurationen in
@@ -253,7 +240,7 @@ Strict-Preset — beide spiegeln die kanonischen Konfigurationen in
 fehlschlagen); pytest 9; pre-commit 4. `make verify` ist das lokale
 Pre-Push-Gate (pre-commit + Frontend-`pnpm lint`/`pnpm build`, wo vorhanden).
 
-**Frontend (alle vier Apps + infra-ui):** pnpm 9.12, TypeScript ~6.0 strict
+**Frontend (alle drei Apps + infra-ui):** pnpm 9.12, TypeScript ~6.0 strict
 (`tsc -b` im Build), Vite 8, Vitest 4 + Testing Library + happy-dom, ESLint 9
 Flat Config + typescript-eslint 8 (gemeinsame Konfiguration in
 `.github/configs/frontend-eslint/`), Tailwind v4 via `@tailwindcss/postcss`,

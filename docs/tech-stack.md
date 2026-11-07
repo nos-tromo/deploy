@@ -5,14 +5,14 @@ Versions below are taken from each repo's manifests (`pyproject.toml`,
 `package.json`, `compose.yaml`, Dockerfiles, `VERSION`) at time of writing;
 the manifests remain the source of truth.
 
-The federation is twelve independent repositories under the `nos-tromo`
+The federation is eleven independent repositories under the `nos-tromo`
 GitHub account (a personal user account, not an organization), each with its
 own git history, CI, and release cycle, joined at runtime by three external
 Docker networks:
 
 - **`inference-net`** — app backends ↔ `vllm-service` (LiteLLM router, alias `vllm-router`)
-- **`data-net`** — app backends ↔ `data-plane` (aliases `neo4j`, `qdrant`)
-- **`edge-net`** — edge gateway ↔ app frontends (aliases `chorus-frontend`, `docint-frontend`, `nextext-frontend`, `translator-frontend`, `open-webui`, `grafana`)
+- **`data-net`** — app backends ↔ `data-plane` (alias `qdrant`)
+- **`edge-net`** — edge gateway ↔ app frontends (aliases `docint-frontend`, `nextext-frontend`, `translator-frontend`, `open-webui`, `grafana`)
 
 Bring-up order is inference → state → obs (optional) → apps → edge
 (optional), automated by `deploy`. Everything is airgap-first: production
@@ -29,7 +29,7 @@ fetches data, models, or telemetry at runtime.
 | Backend framework | FastAPI + Uvicorn, Pydantic v2 |
 | Frontend | React 19 + Vite 8 + Tailwind CSS v4, shared `@infra/ui` design system (v0.15.x) |
 | Inference | LiteLLM Proxy router → vLLM v0.20.1 backends; Ray Serve for GLiNER |
-| Databases | Neo4j 5.26 Community (graph), Qdrant v1.17 (vector) |
+| Database | Qdrant v1.17 (vector) |
 | Edge / auth | Caddy 2.11 (TLS, path routing) + Authelia 4.39 (forward-auth SSO, trusted `X-Auth-User`/`X-Auth-Email` headers) |
 | Observability | Prometheus v3.13, Grafana OSS 13.0, Loki 3.7, Alloy v1.18 + node-exporter, cAdvisor, blackbox-exporter |
 | Audit trail | Hash-chained events (shared `audit_event.py` + `audit_runtime.py`, vendored and drift-checked) from the app backends, the router, edge-plane's `auth-audit` and data-plane's `admin-audit`, kept in a separate Loki with a verifier and signed daily anchors (ADR 0003). Queries and disclosures state a purpose, entered once per session in each SPA's purpose bar |
@@ -69,18 +69,17 @@ OpenAI `model` field. `HF_HUB_OFFLINE=1` / `TRANSFORMERS_OFFLINE=1` by default.
 
 ### `data-plane` (v0.1.1)
 
-Sole owner of the federation's databases and their volumes. Docker Compose
+Sole owner of the federation's database and its volumes. Docker Compose
 only — no application code.
 
 | Component | Technology |
 |---|---|
-| Graph DB | `neo4j:5.26.26-community` (digest-pinned), alias `neo4j` on `data-net` — used by chorus |
 | Vector DB | `qdrant:v1.17.0` (CPU profile) / `qdrant:v1.17.0-gpu-nvidia` (CUDA profile), alias `qdrant` — used by docint |
-| Volumes | All external (`neo4j-data/logs/import/plugins`, `qdrant-snapshots/storage`) so no app-repo `down -v` can destroy state |
+| Volumes | All external (`qdrant-snapshots/storage`) so no app-repo `down -v` can destroy state |
 | Lifecycle | Bespoke Makefile (not on `common.mk`): `make network` / `up` / `up-dev` / `bundle`; destructive teardown gated behind `make nuke` (interactive confirm) |
 | Versioning | One-line `VERSION` file; `make bundle` builds the latest annotated tag (bundle-lib.sh); working-tree bundles via `DATA_PLANE_VERSION_OVERRIDE` (no `bundle-dev`) |
 | Backups | Runbook + scripts under `backup/` |
-| Audit | `admin-audit` (pinned `python`, no network): database shells (`make db-shell`, `qdrant-shell`), backups and restores as audit events |
+| Audit | `admin-audit` (pinned `python`, no network): the database shell (`make qdrant-shell`), backups and restores as audit events |
 
 ---
 
@@ -103,7 +102,7 @@ external volumes (data-plane blast-radius pattern). Grafana joins `edge-net`
 | Audit lane | `loki-audit` (own external volume, deletion API off), `loki-audit-read` (GET-only proxy for readers), `grafana-audit` at `/audit/` (group `audit`), `audit-verifier` (stdlib Python on the pinned `python` image: chains, source binding, listed emitters) |
 | Lifecycle | Bespoke Makefile: `make bundle` (tag) but no `bundle-dev`; `OBS_PLANE_VERSION_OVERRIDE` for working-tree bundles; `make health` |
 
-Known v1 gaps: Neo4j Community and LiteLLM metrics are license-gated.
+Known v1 gap: LiteLLM metrics are license-gated.
 
 ---
 
@@ -124,14 +123,14 @@ digest-pinned images.
 | Audit | `auth-audit` (pinned `python`, no network): Authelia's login attempts and the account changes in `users.yml` as audit events; position on the external `edge-audit-state` volume |
 | TLS | Internal CA (`make ca-export`) or org-issued certs via `EDGE_TLS`; `EDGE_HOST` must be a dotted hostname or IP |
 | State | External `edge-state` / `edge-ca` volumes |
-| Routing | Each SPA under its canonical sub-path (`/chorus/`, `/docint/`, `/nextext/`, `/translator/`); Open WebUI (no sub-path support) on the dedicated `:8443` site |
+| Routing | Each SPA under its canonical sub-path (`/docint/`, `/nextext/`, `/translator/`); Open WebUI (no sub-path support) on the dedicated `:8443` site |
 | Networks | `edge-net` only — never `inference-net` / `data-net`. `edge-net` is a trusted zone: members accept the identity headers unverified |
 
 ---
 
 ## Tier: applications
 
-All four Python apps share the same shape: FastAPI backend + React SPA
+All three Python apps share the same shape: FastAPI backend + React SPA
 frontend, env-driven config in one `env_cfg.py` dataclass module, `uv`-managed
 deps, docker files under `docker/` (production-shape `compose.yaml`, dev
 overlay `compose.override.yaml` publishing ports), Makefile on the shared
@@ -145,17 +144,6 @@ in from `ghcr.io/astral-sh/uv` for the build stage only. Frontend image:
 `node:22-alpine` build → `nginx-unprivileged:1.27-alpine` serve (the app's
 nginx strips the sub-path prefix). All digest-pinned on the `FROM` lines and
 Dependabot-bumped.
-
-### `chorus` — GraphRAG for social-network analysis (airgapped production)
-
-| | |
-|---|---|
-| Version / Python | 0.3.0 · `>=3.12,<3.13` (3.12 only) |
-| Backend | FastAPI, `neo4j` 6.x driver, `openai` SDK (→ LiteLLM router), httpx, tenacity, loguru; hatchling build |
-| Frontend | React 19, React Router 7, TanStack Query 5, `@infra/ui` **ForceGraph** (graph viz — homegrown canvas force simulation in the design system), Recharts 3, react-markdown + remark-gfm |
-| Data | Neo4j (via `data-plane`) |
-| Tests | pytest + pytest-asyncio + `testcontainers[neo4j]` |
-| Compliance | §76 BDSG; ADRs in `docs/decisions/` |
 
 ### `docint` — Document Intelligence (ingestion / retrieval / chat RAG)
 
@@ -220,9 +208,9 @@ across members.
 | | |
 |---|---|
 | Stack | React 19 (peer dep), Tailwind CSS v4 tokens, class-variance-authority + clsx + tailwind-merge |
-| Primitives | UI primitives + AppHeader, light/dark theming (`useTheme`, CSS vars), **ForceGraph** (canvas force simulation + graph export, consumed by chorus), **PurposeBar** (the purpose every audited request states, with `withPurpose` for the fetch wrappers) |
+| Primitives | UI primitives + AppHeader, light/dark theming (`useTheme`, CSS vars), **ForceGraph** (canvas force simulation + graph export, consumed by docint), **PurposeBar** (the purpose every audited request states, with `withPurpose` for the fetch wrappers) |
 | Build | tsup → **committed prebuilt `dist/`** (build-time only, no install-time rebuild); vitest + Testing Library + happy-dom; ESLint 9 + Prettier |
-| Consumption | Pinned pnpm dependency on a **commit-SHA codeload tarball** (`https://codeload.github.com/nos-tromo/infra-ui/tar.gz/<sha>`) in all four app frontends — deliberately never a tag; per-app theming via `--app-accent`; requires a Tailwind `@source` line |
+| Consumption | Pinned pnpm dependency on a **commit-SHA codeload tarball** (`https://codeload.github.com/nos-tromo/infra-ui/tar.gz/<sha>`) in all three app frontends — deliberately never a tag; per-app theming via `--app-accent`; requires a Tailwind `@source` line |
 | CI | Includes a dist-guard (dist must match src) |
 
 ### `pr-notify` — Telegram notifier (tooling)
@@ -238,14 +226,14 @@ shared `uv` / `common.mk` conventions apply.
 
 ## Shared toolchain & conventions
 
-**Python (chorus, docint, Nextext, translator; lint-only for vllm-service):**
+**Python (docint, Nextext, translator; lint-only for vllm-service):**
 `uv` + `uv.lock` as dependency source of truth; ruff `0.15.14` (lint + format,
 Google docstrings, 120-col) and pyrefly `1.1.1` strict preset — both mirroring
 canonical configs in `nos-tromo/.github/configs/python-strict/` (drift fails
 CI); pytest 9; pre-commit 4. `make verify` is the local pre-push gate
 (pre-commit + frontend `pnpm lint`/`pnpm build` where present).
 
-**Frontend (all four apps + infra-ui):** pnpm 9.12, TypeScript ~6.0 strict
+**Frontend (all three apps + infra-ui):** pnpm 9.12, TypeScript ~6.0 strict
 (`tsc -b` in the build), Vite 8, Vitest 4 + Testing Library + happy-dom,
 ESLint 9 flat config + typescript-eslint 8 (shared config in
 `.github/configs/frontend-eslint/`), Tailwind v4 via `@tailwindcss/postcss`,

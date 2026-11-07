@@ -48,7 +48,6 @@ instead of two). The `huggingface-cache` chown is the long pole: time it.
 
 | Repo | Volume | chown to | Notes |
 |---|---|---|---|
-| chorus | `chorus-state` | `10001:10001` | ⚠ audit DB + raw store |
 | docint | `docling-cache` | `10001:10001` | cache — regenerable |
 | docint | `sessions-storage` | `10001:10001` | ⚠ chat sessions |
 | docint | `source-preview-cache` | `10001:10001` | ⚠ uploaded sources |
@@ -60,7 +59,7 @@ instead of two). The `huggingface-cache` chown is the long pole: time it.
 | obs-plane | `prometheus-data`, `loki-data`, `grafana-data` | — | no change — services keep their image-default users |
 | obs-plane | `audit-verifier-state` | `65534:65534` | handled by `make volumes` (re-run once); the verifier's chain heads and bindings |
 | obs-plane | `loki-audit-data`, `grafana-audit-data` | — | no change — image-default users, like their ops counterparts; ⚠ the audit trail itself |
-| data-plane | all six | — | no change this wave — `user:` deliberately deferred (see data-plane README) |
+| data-plane | `qdrant-storage`, `qdrant-snapshots` | — | no change this wave — `user:` deliberately deferred (see data-plane README) |
 | edge-plane | `edge-state`, `edge-ca` | — | no change — caddy stays root-in-container (remap covers it), authelia manages its own files |
 | edge-plane | `edge-audit-state` | `65534:65534` | new with edge-plane v0.11.0 — `make volumes` creates it and `auth-audit-init` hands it to `auth-audit` on every start; auth-audit's export position |
 
@@ -73,8 +72,8 @@ the volume is `10001:10001` new models inherit it.
 Bring the stack up (`make up` in `deploy/`) and confirm, per tier:
 
 - every health gate passes (the bring-up enforces this);
-- one write per re-owned volume actually lands: a chorus tool call
-  (audit log row), a docint upload, a Nextext job, an open-webui chat,
-  a model load in vllm-service (`/health` on each backend);
+- one write per re-owned volume actually lands: a docint upload, a
+  Nextext job, an open-webui chat, a model load in vllm-service
+  (`/health` on each backend);
 - `docker compose exec <svc> id` reports uid `10001` (or the documented
   image-internal user) — not `0`.

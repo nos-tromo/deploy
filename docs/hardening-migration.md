@@ -29,7 +29,6 @@ future member.
 | --- | --- |
 | vllm-service | huggingface-cache (main stack and every `*-only` shape) |
 | docint | docling-cache, sessions-storage, source-preview-cache, pipeline-storage |
-| chorus | chorus-state |
 | Nextext | spacy-cache, tmp-jobs |
 | open-webui-service | open-webui-data |
 

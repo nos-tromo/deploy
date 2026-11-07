@@ -54,7 +54,7 @@ the rest.
 
 `inference (vllm-service) → state (data-plane) → obs (obs-plane) → apps → edge (edge-plane)`,
 each tier **healthy before the next starts**. `down` is the exact reverse. This is not a
-preference — the apps assume the router (`inference-net`) and the databases (`data-net`) are
+preference — the apps assume the router (`inference-net`) and the database (`data-net`) are
 already reachable when they start, and the edge tier assumes the apps it fronts are already up.
 `make up` enforces it by health-gating each tier with `wait-healthy.sh` before starting the next.
 The obs tier is gated on `prometheus:9090` over `data-net`; it is optional (`OBS_DIR` empty skips
@@ -82,13 +82,13 @@ drive compose directly. Keep this split:
    `data-plane` / `open-webui-service` bespoke), so a sequencer can chain them; `data-plane` gets
    `PROFILE=$(DATA_PROFILE)`. The state tier has a second selector, `$(DATA_UP)`: production `up`
    delegates it to data-plane's plain `up`, which publishes no ports, so direct database access goes
-   through data-plane's recorded targets (`make db-shell`, `make qdrant-shell`). The loopback-only
-   admin ports (7474/7687/6333 on `127.0.0.1`, for the Neo4j Browser and the Qdrant dashboard over
-   an SSH tunnel; edge-plane routes neither) open only on demand with data-plane's `up-admin`, which
-   records the opening and the closing in the audit trail; see data-plane's README § Admin access. `up-dev` reuses that same sequencer (one
+   through data-plane's recorded target (`make qdrant-shell`). The loopback-only admin port
+   (6333 on `127.0.0.1`, for the Qdrant dashboard over an SSH tunnel; edge-plane does not route it)
+   opens only on demand with data-plane's `up-admin`, which records the opening and the closing in
+   the audit trail; see data-plane's README § Admin access. `up-dev` reuses that same sequencer (one
    shared recipe selected by `$(MODE_UP)` / `$(DATA_UP)`): the state + obs + app tiers come up via
-   their detached `up-dev` to publish host ports — data-plane's `up-dev` already publishes a superset
-   of the admin ports — while inference stays pinned to production `up`. `bundle`/`load` cover every image-bearing member — the `APP_DIRS` apps +
+   their detached `up-dev` to publish host ports — data-plane's `up-dev` already publishes the admin
+   port among others — while inference stays pinned to production `up`. `bundle`/`load` cover every image-bearing member — the `APP_DIRS` apps +
    `vllm-service` + `data-plane` (which `bundle` runs at `PROFILE=$(DATA_PROFILE)`) +
    `open-webui-service` (via `OPENWEBUI_DIR`; its bundle is bespoke but yields the same kind of
    tarball) + `obs-plane` (via `OBS_DIR`; bespoke, data-plane pattern). Delegation does not
@@ -119,7 +119,7 @@ drive compose directly. Keep this split:
    them symmetrical.
 4. **`prune`: drive `docker` directly** via `scripts/prune-images.sh`. Image cleanup is a
    daemon-level operation, not a member lifecycle step — no member has a `prune` target, and
-   adding one to nine repos (four of them bespoke) for one filtered command is churn. The script
+   adding one to eight repos (four of them bespoke) for one filtered command is churn. The script
    reads each member's standalone compose files — `docker/compose.yaml` plus any
    `docker/compose.*.yaml` declaring its own `name:` (vllm-service's CPU-only shapes) — and
    applies two matching rules to each project: **built** images by Compose's
@@ -153,7 +153,7 @@ The Makefile assumes every member listed in
 
 Four members honor that same `network`/`volumes`/`down`/`bundle` contract with a **bespoke
 Makefile** rather than `common.mk`: `data-plane`, `obs-plane`, `edge-plane`, and
-`open-webui-service`. Only `chorus`, `docint`, `Nextext`, `translator`, and `vllm-service`
+`open-webui-service`. Only `docint`, `Nextext`, `translator`, and `vllm-service`
 `include make/common.mk`. Delegation here must therefore never assume a `common.mk`-only
 target exists on a member.
 
