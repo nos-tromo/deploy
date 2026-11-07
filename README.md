@@ -20,9 +20,9 @@ your host differs.
 ```
 <INFRA_ROOT>/
   vllm-service/      # inference tier (LiteLLM router + backends)
-  data-plane/        # state tier (Neo4j, Qdrant + their volumes)
+  data-plane/        # state tier (Qdrant + its volumes)
   obs-plane/         # observability tier (Prometheus, Grafana, Loki)
-  chorus/ docint/ Nextext/ translator/ open-webui-service/   # app tier
+  docint/ Nextext/ translator/ open-webui-service/   # app tier
   edge-plane/        # edge tier (Caddy gateway + Authelia — the entry point)
   deploy/            # this repo
 ```
@@ -49,7 +49,7 @@ missing network. For the per-tier probes and the reverse-order `down`, see
 cp federation.env.example federation.env   # then edit (GIT_REMOTE, INFRA_ROOT, apps, profile)
 make clone     # bare host: clone every missing member repo under INFRA_ROOT
 make setup     # one-time: external networks + volumes for every tier
-make up        # ordered, health-gated bring-up (detached; state tier publishes loopback-only admin ports)
+make up        # ordered, health-gated bring-up (detached; state tier without published ports)
 make up-dev    # dev bring-up: state + obs + app tiers publish host ports (inference & edge stay production)
 make ps        # status across all tiers
 make down      # reverse-order stop (never removes data volumes)
@@ -72,7 +72,7 @@ for every target — flags, skip rules, exit codes — is in
 | `pull` | Switch every federation repo to `main` and `git pull --ff-only`. |
 | `bundle` | Build every image-bearing member's airgap tarball(s) + the health-probe image, leaving each member on its release tag; members already bundled at that tag are switched to it, not rebuilt. `pull` returns them to `main`. |
 | `load` | `docker load` every `*.tar.gz` found under deploy + the member repos. |
-| `prune` | Remove every federation-built image no container uses (old versions, rebuild leftovers); `PRUNE_UPSTREAM=1` also removes unused upstream images (neo4j, qdrant, grafana, …). Nothing else on the host is touched. Run `make load` (or rebuild) before the next `make up`. |
+| `prune` | Remove every federation-built image no container uses (old versions, rebuild leftovers); `PRUNE_UPSTREAM=1` also removes unused upstream images (qdrant, grafana, …). Nothing else on the host is touched. Run `make load` (or rebuild) before the next `make up`. |
 
 ## Releasing
 

@@ -1,8 +1,8 @@
 # Runbook: scheduled, encrypted backups
 
-data-plane's `make backup` dumps Neo4j and snapshots every Qdrant collection,
-encrypting each file with age on its way out of the store; no plaintext copy
-rests on the host. Each run is recorded in the audit trail (`disclose` /
+data-plane's `make backup` snapshots every Qdrant collection, encrypting each
+file with age on its way out of the store; no plaintext copy rests on the
+host. Each run is recorded in the audit trail (`disclose` /
 `backup.<store>`). This runbook schedules it on the host. How the backup and
 the restores work is data-plane's `backup/README.md`.
 
@@ -72,16 +72,12 @@ systemctl list-timers federation-backup.timer
 - **`REASON=` is required.** Under the default `AUDIT_REQUIRE_PURPOSE`, a
   backup is a disclosure that needs a stated purpose; without one the run is
   recorded as denied and exits non-zero.
-- **Schedule it in a maintenance window.** Neo4j stops for the offline dump,
-  for about 20 seconds. To back up Qdrant more often, a second unit can run
-  `make backup-qdrant` on its own schedule.
 - **data-plane must be up.** `admin-audit` records the run; when it cannot,
   nothing is done.
 - **Watch the exit status.** It is 0 only when every file was written and
   recorded. Wire `OnFailure=` to the site's alerting.
-- **The output** (`neo4j-admin`'s progress, warnings about plaintext files
-  from earlier releases) goes to the journal: `journalctl -u
-  federation-backup`.
+- **The output**, warnings about plaintext files from earlier releases
+  included, goes to the journal: `journalctl -u federation-backup`.
 
 ## After each run
 
@@ -105,8 +101,8 @@ already deleted.
   ([host-audit.md](host-audit.md)).
 
 A restore takes the identity for that run only:
-`make restore-neo4j DUMP=<file>.age IDENTITY=<file>` (data-plane
-`backup/README.md`).
+`make restore-qdrant COLLECTION=<name> SNAPSHOT=<file>.age IDENTITY=<file>`
+(data-plane `backup/README.md`).
 
 **After a restore,** the restored data still carries its own deadlines:
 docint's daily retention sweep, which starts a few minutes after docint's

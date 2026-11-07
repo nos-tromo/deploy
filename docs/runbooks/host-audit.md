@@ -10,7 +10,7 @@ audit subsystem can name the person behind them:
 - **Edits of a member's `.env`**, which holds the secrets and switches such
   as `AUDIT_REQUIRE_PURPOSE`.
 - **`docker` commands run by hand**, for example a `docker exec` into a
-  database container that bypasses data-plane's audited `make db-shell`.
+  database container that bypasses data-plane's audited `make qdrant-shell`.
 - **Reads of data-plane's backup files.** `make backup` is recorded in the
   trail, but copying a backup off the host is not.
 
@@ -36,7 +36,6 @@ the trail itself.
    # writing a new file and renaming it over the old one replaces the file.
    -w $root/edge-plane/authelia -p wa -k fed-accounts
    # Every member's .env: secrets and switches such as AUDIT_REQUIRE_PURPOSE.
-   -w $root/chorus/.env -p wa -k fed-config
    -w $root/docint/.env -p wa -k fed-config
    -w $root/Nextext/.env -p wa -k fed-config
    -w $root/translator/.env -p wa -k fed-config
