@@ -88,6 +88,13 @@ Notes:
   nearly incompressible anyway.
 - The HF cache's internal symlinks (`snapshots/` → `blobs/`) are preserved,
   which keeps the archive at single-copy size and the cache layout intact.
+- `huggingface_hub` 2.x keeps large files in a blob store shared by every repo,
+  at the cache root (`<cache>/blobs/…`), and links the repo's `blobs/<sha>` to
+  it — out of the `models--…` directory. The script stores those files
+  themselves in the archive, so the target receives the weights. It packs from
+  a temporary mirror of the model directory next to it (hard links, no copy of
+  the data), removes the mirror when done, and leaves the cache as it was. A
+  cache with a link that points nowhere is refused: fetch the model again.
 - The script checks that the output directory has roughly the model's size in
   free space before starting.
 
@@ -113,16 +120,21 @@ What it does, in order:
    delete files that only exist in the old copy — remove the directory first
    if you need a guaranteed-clean replacement.
 3. Checks free space (tarball size + 10% headroom).
-4. Extracts, then `chown -R`s the model directory to match the owner of the
+4. Extracts, then checks that every link in the model directory points at a
+   file. An archive an older `pack-model.sh` packed from a `huggingface_hub`
+   2.x cache holds links into the source's shared blob store instead of the
+   weights; it is refused with a hint to re-pack the model on the source
+   machine with this version.
+5. `chown -R`s the model directory to match the owner of the
    destination directory, so files get the UID the container runs as.
    Override with `sudo CHOWN=1000:1000 ./unpack-model.sh ...` if needed.
-5. Prints the revision(s) now in the volume, read from the extracted
+6. Prints the revision(s) now in the volume, read from the extracted
    `refs/` and `snapshots/` themselves (the `.manifest` is informational and
    not covered by the checksum).
 
 > **Hardened releases (ADR 0001):** the vllm-service containers run as uid
 > `10001`, so the volume itself must already be owned `10001:10001` — see
-> [runbooks/volume-reown.md](runbooks/volume-reown.md). The chown in step 4
+> [runbooks/volume-reown.md](runbooks/volume-reown.md). The chown in step 5
 > then inherits the right owner automatically. Under `userns-remap` the
 > on-host path differs; use `docker volume inspect huggingface-cache` to find
 > the real mountpoint.

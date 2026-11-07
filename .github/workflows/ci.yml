@@ -35,3 +35,15 @@ jobs:
           make help >/dev/null
           make -n ps >/dev/null
           echo "Makefile OK"
+
+  # Packs and unpacks synthetic Hugging Face caches (both blob layouts, a
+  # dangling link, an archive without its weights) through the model-transfer
+  # scripts. No network, no real model.
+  model-transfer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Pack/unpack round trip
+        run: |
+          command -v zstd >/dev/null || { sudo apt-get update && sudo apt-get install -y zstd; }
+          bash tests/model-transfer.test.sh
