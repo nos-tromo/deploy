@@ -103,7 +103,7 @@ help:
 	@echo
 	@echo "  make clone    clone every missing federation member repo under INFRA_ROOT"
 	@echo "  make setup    create external networks + volumes for every tier (idempotent)"
-	@echo "  make up       bring the stack up in order (inference -> data -> obs -> apps -> edge), health-gated; state tier in data-plane's plain production shape (admin ports only on demand: data-plane 'up-admin')"
+	@echo "  make up       bring the stack up in order (inference -> data -> obs -> apps -> edge), health-gated; state tier in data-plane's plain production shape (admin port only on demand: data-plane 'up-admin')"
 	@echo "  make up-dev   like 'up', but state + obs + app tiers publish host ports (inference & edge stay production)"
 	@echo "  make down     stop the stack in reverse order (never removes data volumes)"
 	@echo "  make ps       service status across all tiers"
@@ -131,8 +131,8 @@ setup:
 # — its production shape already publishes the entry ports, and its `up-dev` overlay only
 # adds a repo-local test container. The state tier has its own selector, $(DATA_UP):
 # production `up` delegates to data-plane's plain `up` (no published ports; the
-# loopback-only admin ports open only on demand, recorded, via data-plane's
-# `up-admin`), while `up-dev` uses data-plane's `up-dev`, which publishes them for dev.
+# loopback-only admin port opens only on demand, recorded, via data-plane's
+# `up-admin`), while `up-dev` uses data-plane's `up-dev`, which publishes it for dev.
 up:     MODE_UP := up
 up:     DATA_UP := up
 up-dev: MODE_UP := up-dev

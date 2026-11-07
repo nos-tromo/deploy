@@ -54,7 +54,7 @@ the rest.
 
 `inference (vllm-service) → state (data-plane) → obs (obs-plane) → apps → edge (edge-plane)`,
 each tier **healthy before the next starts**. `down` is the exact reverse. This is not a
-preference — the apps assume the router (`inference-net`) and the databases (`data-net`) are
+preference — the apps assume the router (`inference-net`) and the database (`data-net`) are
 already reachable when they start, and the edge tier assumes the apps it fronts are already up.
 `make up` enforces it by health-gating each tier with `wait-healthy.sh` before starting the next.
 The obs tier is gated on `prometheus:9090` over `data-net`; it is optional (`OBS_DIR` empty skips

@@ -54,10 +54,14 @@ project, as ADR 0017 proposed.
   database any more, so backups need no maintenance window.
 - The federation has three Python apps (docint, Nextext and translator) and
   eleven repositories.
-- ADR 0003 continues to apply without chorus: chorus' backend is no longer an
-  audit source, and docint and Nextext are the apps that require a stated
-  purpose for queries and disclosures. chorus' events already in the trail
-  stay there until the trail's retention period deletes them.
+- ADR 0003 continues to apply without chorus: chorus' backend is no longer a
+  listed audit source, and docint and Nextext are the apps that require a
+  stated purpose for queries and disclosures. data-plane's records of Neo4j
+  stay in the trail until `AUDIT_RETENTION` (one year by default) deletes
+  them: `backup.neo4j`, `restore.neo4j` and `backup.prune.neo4j`, and the
+  `db.shell.*` and `db.ports.*` records that name the store `neo4j`. The
+  verifier still accepts them, since `data-plane/admin-audit` stays a listed
+  emitter.
 - ADRs 0001–0003 keep their text. Where they name chorus or Neo4j, they
   describe the federation at the time they were written.
 - chorus' and Neo4j's data on the hosts is deleted, with no way back.

@@ -35,7 +35,7 @@ start**).
 
 `inference (vllm-service) → state (data-plane) → obs (obs-plane) → apps → edge (edge-plane)`.
 Each tier must be healthy before the next starts — the apps assume the router and
-the databases are already reachable on `inference-net` / `data-net`. See
+the database are already reachable on `inference-net` / `data-net`. See
 `../CLAUDE.md` for the invariant.
 
 `make up` enforces this, health-gating each tier before starting the next, and
