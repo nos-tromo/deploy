@@ -4,7 +4,7 @@ import unittest
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from envsync_helpers import assert_no_sentinel
-from envsync.dotenv import parse, parse_line
+from envsync.dotenv import parse
 from envsync.example import Example, load_example
 from envsync.plan import (
     MARKER,
@@ -16,33 +16,7 @@ from envsync.plan import (
     placeholder_event,
     plan_file,
 )
-
-ORPHAN_HEADER = (
-    f"{MARKER} Not in .env.example: kept as they were. Delete what is obsolete."
-)
-
-
-def render(example: Example, plan: FilePlan) -> str:
-    """The text Task 4's renderer writes for a plan, as its brief specifies."""
-    at: Dict[int, str] = {}
-    for key, entry in plan.entries.items():
-        anchor = example.anchor_for(key, parse_line(entry.raw, plan.syntax))
-        assert anchor is not None
-        at[anchor.lineno] = entry.raw
-    for key, raw in plan.unset.items():
-        at[example.active()[key].lineno] = raw
-    lines = [at.get(line.lineno, line.raw) for line in example.env.lines]
-    if plan.orphans:
-        if lines and lines[-1].strip():
-            lines.append("")
-        lines.append(ORPHAN_HEADER)
-        for orphan in plan.orphans:
-            lines.extend(orphan.comments)
-            if orphan.note:
-                lines.append(f"{MARKER} {orphan.note}")
-            lines.append(orphan.line.raw)
-    return "\n".join(lines) + "\n"
-
+from envsync.render import render
 
 def plan_texts(
     e: str,
