@@ -116,13 +116,18 @@ class _Planner:
         self.syntax = example.env.syntax
         self.shared_keys = shared_keys
         self.ops = env.settings()
-        self.opc: Dict[str, Line] = {}
-        for line in env.lines:
-            if line.kind == "commented" and line.key and line.key not in self.opc:
-                self.opc[line.key] = line
         self.e_active = example.active()
         self.e_documented = example.documented()
         self.e_raw = example.raw_lines()
+        self.opc: Dict[str, Line] = {}
+        for line in env.lines:
+            if (
+                line.kind == "commented"
+                and line.key
+                and line.key not in self.opc
+                and line.raw not in self.e_raw
+            ):
+                self.opc[line.key] = line
         self.b_active = base.active() if base is not None else {}
         self.b_documented = base.documented() if base is not None else set()
         self.b_raw = base.raw_lines() if base is not None else set()
@@ -212,7 +217,7 @@ class _Planner:
                     f"renamed to {new} together with another key; value not carried",
                 )
                 self.items["rename_conflict"].append(f"{old} -> {new}")
-            elif new in self.ops and not self.inherited(new):
+            elif new in self.ops and (not self.inherited(new) or self.inherited(old)):
                 self.orphan(old, not_carried)
                 self.items["rename_conflict"].append(f"{old} -> {new}")
             elif self.base is None or old not in self.b_documented:
@@ -267,7 +272,11 @@ class _Planner:
             if key in self.entries:
                 continue
             commented = self.opc.get(key)
-            if key in self.b_active or (self.base is None and commented is not None):
+            if (
+                key in self.b_active
+                or self.removed_before_rename(key)
+                or (self.base is None and commented is not None)
+            ):
                 if commented is not None:
                     self.unset[key] = commented.raw
                     self.reused.add(commented.lineno)
@@ -279,6 +288,13 @@ class _Planner:
                 self.items["added"].append(
                     key if is_secret_like(key) else f"{key}={_value(line)}"
                 )
+
+    def removed_before_rename(self, key: str) -> bool:
+        """B had an OLD of this key active, and the operator has neither line."""
+        return key not in self.ops and any(
+            new == key and old in self.b_active and old not in self.ops
+            for old, new in self.example.renames.items()
+        )
 
     def report_differs(self) -> None:
         if self.base is not None:
@@ -332,7 +348,7 @@ def plan_file(
     shared_keys: FrozenSet[str] = frozenset(),
 ) -> FilePlan:
     """Plan one file against its example and the copy it was last synced with."""
-    if env is None:
+    if env is None or all(line.kind == "blank" for line in env.lines):
         entries = {
             key: Entry(key, line.raw, _value(line), "added")
             for key, line in example.active().items()
@@ -341,7 +357,7 @@ def plan_file(
             file_id,
             display,
             example.env.syntax,
-            True,
+            env is None,
             entries,
             {},
             [],
@@ -361,9 +377,12 @@ def placeholder_event(
     for key, value in plan.effective().items():
         if not value or key in plan.shared_keys or not is_secret_like(key):
             continue
-        known = example.values(key)
-        if base is not None:
-            known = known | base.values(key)
+        names = [key] + [old for old, new in example.renames.items() if new == key]
+        known: Set[str] = set()
+        for name in names:
+            known |= example.values(name)
+            if base is not None:
+                known |= base.values(name)
         if value in known or _PLACEHOLDER.search(value):
             found.append(key)
     return Event("placeholder", found, "warn") if found else None

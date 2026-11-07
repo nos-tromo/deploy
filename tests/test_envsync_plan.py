@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import unittest
-from typing import Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from envsync_helpers import assert_no_sentinel
-from envsync.dotenv import parse
-from envsync.example import load_example
+from envsync.dotenv import parse, parse_line
+from envsync.example import Example, load_example
 from envsync.plan import (
+    MARKER,
     Entry,
     Event,
     FilePlan,
@@ -15,6 +16,48 @@ from envsync.plan import (
     placeholder_event,
     plan_file,
 )
+
+ORPHAN_HEADER = (
+    f"{MARKER} Not in .env.example: kept as they were. Delete what is obsolete."
+)
+
+
+def render(example: Example, plan: FilePlan) -> str:
+    """The text Task 4's renderer writes for a plan, as its brief specifies."""
+    at: Dict[int, str] = {}
+    for key, entry in plan.entries.items():
+        anchor = example.anchor_for(key, parse_line(entry.raw, plan.syntax))
+        assert anchor is not None
+        at[anchor.lineno] = entry.raw
+    for key, raw in plan.unset.items():
+        at[example.active()[key].lineno] = raw
+    lines = [at.get(line.lineno, line.raw) for line in example.env.lines]
+    if plan.orphans:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.append(ORPHAN_HEADER)
+        for orphan in plan.orphans:
+            lines.extend(orphan.comments)
+            if orphan.note:
+                lines.append(f"{MARKER} {orphan.note}")
+            lines.append(orphan.line.raw)
+    return "\n".join(lines) + "\n"
+
+
+def plan_texts(
+    e: str,
+    env: Optional[str],
+    base: Optional[str] = None,
+    shared: Iterable[str] = frozenset(),
+    syntax: str = "dotenv",
+) -> Tuple[Example, FilePlan]:
+    example = load_example(e, syntax)
+    base_ex = load_example(base, syntax) if base is not None else None
+    env_file = parse(env, syntax) if env is not None else None
+    result = plan_file(
+        "member", "member/.env", example, base_ex, env_file, frozenset(shared)
+    )
+    return example, result
 
 
 def event(plan: FilePlan, kind: str) -> Optional[Event]:
@@ -38,18 +81,21 @@ class PlanCase(unittest.TestCase):
         shared: Iterable[str] = frozenset(),
         syntax: str = "dotenv",
     ) -> FilePlan:
-        """Plan inline texts; every plan has one event per kind and no sentinel."""
-        example = load_example(e, syntax)
-        base_ex = load_example(base, syntax) if base is not None else None
-        env_file = parse(env, syntax) if env is not None else None
-        result = plan_file(
-            "member", "member/.env", example, base_ex, env_file, frozenset(shared)
-        )
+        """Plan inline texts and check what every plan must satisfy: one event per
+        kind, no sentinel in any event item, and a stable re-plan: the rendered
+        text, planned again with base = the example, renders the same text."""
+        example, result = plan_texts(e, env, base, shared, syntax)
         kinds = [found.kind for found in result.events]
         self.assertEqual(len(kinds), len(set(kinds)))
         for found in result.events:
             assert_no_sentinel(self, *found.items)
+        text = render(example, result)
+        _, again = plan_texts(e, text, e, shared, syntax)
+        self.assertEqual(render(example, again), text, "re-plan of the rendered text")
         return result
+
+    def rendered(self, e: str, plan: FilePlan) -> str:
+        return render(load_example(e, plan.syntax), plan)
 
 
 class CreateAndKeepTests(PlanCase):
@@ -85,6 +131,25 @@ class CreateAndKeepTests(PlanCase):
         self.assertEqual(items(p, "differs"), ["A"])
         self.assertIsNone(items(self.plan("A=1\n", "A=1\n", base="A=1\n"), "differs"))
 
+    def test_empty_env_rebuilt_from_example(self) -> None:
+        e = "# Doc\nA=1\nX_SECRET=change-me\n"
+        for env in ("", "\n \n\t\n"):
+            with self.subTest(env=env):
+                p = self.plan(e, env, base=e)
+                self.assertFalse(p.created)
+                self.assertTrue(p.has_base)
+                self.assertEqual(
+                    p.entries,
+                    {
+                        "A": Entry("A", "A=1", "1", "added"),
+                        "X_SECRET": Entry(
+                            "X_SECRET", "X_SECRET=change-me", "change-me", "added"
+                        ),
+                    },
+                )
+                self.assertEqual(p.events, [])
+                self.assertEqual((p.unset, p.orphans, p.dropped_comments), ({}, [], 0))
+
 
 class AddAndUnsetTests(PlanCase):
     def test_new_key_added(self) -> None:
@@ -116,6 +181,33 @@ class AddAndUnsetTests(PlanCase):
         self.assertEqual(p.entries["B"], Entry("B", "B=2", "2", "added"))
         self.assertEqual(p.unset, {})
         self.assertEqual(items(p, "added"), ["B=2"])
+
+    DEVICE = "# DEVICE=cuda\nDEVICE=cpu\nA=1\n"
+
+    def test_unset_line_stable_with_base(self) -> None:
+        p = self.plan(self.DEVICE, "A=1\n", base="DEVICE=cpu\nA=1\n")
+        self.assertEqual(p.unset, {"DEVICE": "# DEVICE=cpu"})
+        self.assertEqual(
+            self.rendered(self.DEVICE, p), "# DEVICE=cuda\n# DEVICE=cpu\nA=1\n"
+        )
+        log = "# LOG_LEVEL=debug\nLOG_LEVEL=info\n"
+        p = self.plan(log, "# LOG_LEVEL=info\n", base="LOG_LEVEL=info\n")
+        self.assertEqual(p.unset, {"LOG_LEVEL": "# LOG_LEVEL=info"})
+        self.assertEqual(self.rendered(log, p), "# LOG_LEVEL=debug\n# LOG_LEVEL=info\n")
+
+    def test_unset_line_stable_on_first_run(self) -> None:
+        p = self.plan(self.DEVICE, "# DEVICE=cpu\nA=1\n")
+        self.assertEqual(p.unset, {"DEVICE": "# DEVICE=cpu"})
+        self.assertEqual(items(p, "kept_unset"), ["DEVICE"])
+        self.assertEqual(
+            self.rendered(self.DEVICE, p), "# DEVICE=cuda\n# DEVICE=cpu\nA=1\n"
+        )
+        example_line_only = self.plan(self.DEVICE, "# DEVICE=cuda\nA=1\n")
+        self.assertEqual(example_line_only.unset, {})
+        self.assertEqual(
+            example_line_only.entries["DEVICE"],
+            Entry("DEVICE", "DEVICE=cpu", "cpu", "added"),
+        )
 
 
 class FollowTests(PlanCase):
@@ -385,6 +477,58 @@ class RenameTests(PlanCase):
                     items(p, "renamed"), [f"{old} -> {new} (value carried)"]
                 )
 
+    def test_held_inherited_old_yields_to_set_new(self) -> None:
+        both = "OLD_RETENTION=7d\nNEW_RETENTION=30d\n"
+        p = self.plan(
+            "# renamed: OLD_RETENTION -> NEW_RETENTION\nNEW_RETENTION=30d\n",
+            both,
+            base=both,
+        )
+        self.assertEqual(
+            p.entries["NEW_RETENTION"],
+            Entry("NEW_RETENTION", "NEW_RETENTION=30d", "30d", "kept"),
+        )
+        self.assertEqual(
+            [(o.line.key, o.note) for o in p.orphans],
+            [
+                (
+                    "OLD_RETENTION",
+                    "renamed to NEW_RETENTION in the example; value not carried",
+                )
+            ],
+        )
+        self.assertEqual(
+            event(p, "rename_conflict"),
+            Event("rename_conflict", ["OLD_RETENTION -> NEW_RETENTION"], "warn"),
+        )
+        dirs = "OLD_DIRS=a b c\nAPP_DIRS=a b\n"
+        p = self.plan(
+            "# renamed: OLD_DIRS -> APP_DIRS\nAPP_DIRS=a b\n",
+            dirs,
+            base=dirs,
+            syntax="make",
+        )
+        self.assertEqual(
+            p.entries["APP_DIRS"], Entry("APP_DIRS", "APP_DIRS=a b", "a b", "kept")
+        )
+        self.assertEqual([o.line.key for o in p.orphans], ["OLD_DIRS"])
+        self.assertEqual(items(p, "rename_conflict"), ["OLD_DIRS -> APP_DIRS"])
+
+    def test_removed_old_keeps_new_unset(self) -> None:
+        e = "# renamed: OLD -> NEW\nNEW=on\nA=1\n"
+        for env in ("A=1\n", "# OLD=on\nA=1\n"):
+            with self.subTest(env=env):
+                p = self.plan(e, env, base="OLD=on\nA=1\n")
+                self.assertEqual(p.unset, {"NEW": "# NEW=on"})
+                self.assertNotIn("NEW", p.entries)
+                self.assertEqual(items(p, "kept_unset"), ["NEW"])
+                self.assertIsNone(items(p, "added"))
+                self.assertEqual(
+                    self.rendered(e, p), "# renamed: OLD -> NEW\n# NEW=on\nA=1\n"
+                )
+        never_active = self.plan(e, "A=1\n", base="# OLD=on\nA=1\n")
+        self.assertEqual(never_active.entries["NEW"].origin, "added")
+
     def test_old_replaces_inherited_new(self) -> None:
         p = self.plan(
             "# renamed: OLD -> NEW\nNEW=e\n",
@@ -573,6 +717,16 @@ class EffectiveAndPlaceholderTests(PlanCase):
         self.assertIsNone(self.placeholders(e, e, shared={"AUTH_SECRET"}))
         self.assertIsNone(self.placeholders(e, "AUTH_SECRET=SENTINEL-real\n"))
         self.assertIsNone(self.placeholders("PORT=8080\n", "PORT=8080\n"))
+
+    def test_placeholder_carried_through_rename(self) -> None:
+        self.assertEqual(
+            self.placeholders(
+                "# renamed: OLD_TOKEN -> NEW_TOKEN\nNEW_TOKEN=replace-me\n",
+                "OLD_TOKEN=change-me\n",
+                base="OLD_TOKEN=change-me\n",
+            ),
+            ["NEW_TOKEN"],
+        )
 
 
 if __name__ == "__main__":
