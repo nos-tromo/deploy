@@ -170,5 +170,7 @@ can be reverted, with four limits:
 - Older data-plane scripts cannot read the new encrypted backups; use the
   plaintext ones from B1.
 - What reached the audit trail stays there.
-- What [retire-chorus.md](retire-chorus.md) deletes is not kept for a way
-  back.
+- deploy and data-plane stay on v0.6.0 and v0.9.0: their older releases need
+  Neo4j and chorus, which [retire-chorus.md](retire-chorus.md) removes with
+  their data. Older data-plane would try to pull the neo4j image, and older
+  deploy waits on `neo4j:7687` and runs `make` in chorus' checkout.

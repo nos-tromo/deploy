@@ -15,6 +15,10 @@ that runbook says.
 Commands run from `deploy/`. `..` stands for `INFRA_ROOT`; use its path if
 `federation.env` sets another.
 
+On a host that both builds and runs the federation, A1's `make pull` would
+bring the new files before B1. There the order is B1 first, then A1 and A2
+(no transfer), then B2 to B6, and from B7 only `make setup` and `make up`.
+
 ## A. On the build host
 
 1. If `federation.env` sets `APP_DIRS`, take `chorus` out of it. Then
@@ -113,7 +117,7 @@ files.
    set. Then this prints nothing:
 
    ```bash
-   grep -s -n -E '^[^#]*(chorus|NEO4J_)' ../edge-plane/.env ../data-plane/.env ../obs-plane/.env federation.env
+   grep -s -n -i -E '^[^#]*(chorus|neo4j)' ../edge-plane/.env ../data-plane/.env ../obs-plane/.env federation.env
    ```
 
 7. **Bring in the new releases.**
