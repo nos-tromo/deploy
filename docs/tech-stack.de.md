@@ -54,7 +54,7 @@ leben nur in den Images).
 |---|---|
 | Router | `litellm/litellm:main-v1.83.10-stable` (Digest-gepinnt), Routing per Konfigurationsdatei, Alias `vllm-router` auf `inference-net` |
 | Modellserver (vLLM) | `vllm/vllm-openai:v0.20.1` — `chat`, `embed`, `rerank`, `asr` (Whisper large-v3 via `vllm serve`) |
-| Eigene Server | `clip`, `diarize` (pyannote.audio 3.x im Prod-Image), `vad` (silero-vad) — FastAPI + Uvicorn |
+| Eigene Server | `clip`, `diarize` (pyannote.audio 3.x im Prod-Image), `vad` (silero-vad), `faces` (YuNet-Erkennung + SFace-Gruppierung über OpenCV, CPU) — FastAPI + Uvicorn |
 | NER | `gliner` — GLiNER auf Ray Serve (nicht vLLM); erreichbar über den `/gliner`-Pass-through des Routers |
 | Basis-Images | CPU: `ghcr.io/astral-sh/uv:*-trixie-slim`; CUDA: `pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime` |
 | Profile | Eigenes `media`-Profil; CPU-/CUDA-Dockerfile-Varianten pro eigenem Service |
@@ -181,7 +181,7 @@ den `FROM`-Zeilen Digest-gepinnt und per Dependabot aktualisiert.
 | Version / Python | 1.1.3 · `>=3.12,<3.13` (nur 3.12) |
 | Backend | FastAPI + SSE (`sse-starlette`), Typer-CLI, watchdog; setuptools-Build |
 | NLP / Analyse | spaCy 3.8, NLTK, langdetect, camel-tools + pyarabic + arabic-reshaper + python-bidi (Arabisch-Support), wordcloud, matplotlib |
-| Inference-Clients | `openai`-SDK; dedizierte Endpunkte pro Dienst `WHISPER_API_BASE`, `NER_API_BASE`, `DIARIZE_API_BASE`, `VAD_API_BASE`, jeweils mit Fallback auf das zentrale `OPENAI_API_BASE` |
+| Inference-Clients | `openai`-SDK; dedizierte Endpunkte pro Dienst `WHISPER_API_BASE`, `NER_API_BASE`, `DIARIZE_API_BASE`, `VAD_API_BASE`, `FACES_API_BASE`, jeweils mit Fallback auf das zentrale `OPENAI_API_BASE` |
 | Frontend | React 19, TanStack Query/Table/Virtual, Zustand 5, Recharts 3 |
 | Tests | pytest + pytest-asyncio + respx |
 

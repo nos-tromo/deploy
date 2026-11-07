@@ -34,6 +34,16 @@ directory that actually sits in your cache.
 - `<model-id>` is the Hugging Face repo id, `<org>/<name>` — the same string
   you would put in `TEXT_MODEL` (or another `*_MODEL` var) in vllm-service's
   `.env`.
+- `--file <name>` (repeatable, before the model id) downloads only those files
+  of the repo instead of the whole snapshot. Use it for a repo that ships more
+  than the weights — the two face models (`FACE_DETECT_MODEL`,
+  `FACE_EMBED_MODEL`) also hold `example_outputs/` with photos of people,
+  which an airgapped host should not receive:
+
+  ```sh
+  ./fetch-model.sh --file face_detection_yunet_2023mar.onnx --file LICENSE opencv/face_detection_yunet
+  ./fetch-model.sh --file face_recognition_sface_2021dec.onnx --file LICENSE opencv/face_recognition_sface
+  ```
 - `[cache-dir]` overrides where the download lands. Omitted, the CLI's own
   resolution applies: `HF_HUB_CACHE`, else `$HF_HOME/hub`, else
   `~/.cache/huggingface/hub`.
@@ -137,7 +147,9 @@ revision variable in vllm-service's `.env`:
 - `TEXT_MODEL_REVISION`, `EMBED_MODEL_REVISION`, `RERANK_MODEL_REVISION` and
   `WHISPER_MODEL_REVISION` for the vLLM backends;
 - `CLIP_MODEL_REVISION` and `DIARIZE_MODEL_REVISION` for the CLIP and
-  diarization servers.
+  diarization servers;
+- `FACE_DETECT_MODEL_REVISION` and `FACE_EMBED_MODEL_REVISION` for the faces
+  server's detector and embedder.
 
 Each backend then loads exactly that snapshot, and the router's audit events
 record the same commit (vllm-service `docs/configuration.md`). A pinned

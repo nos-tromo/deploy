@@ -53,7 +53,7 @@ small FastAPI servers bundled into images (typed against `fastapi`,
 |---|---|
 | Router | `litellm/litellm:main-v1.83.10-stable` (digest-pinned), config-file routed, alias `vllm-router` on `inference-net` |
 | Model servers (vLLM) | `vllm/vllm-openai:v0.20.1` — `chat`, `embed`, `rerank`, `asr` (Whisper large-v3 via `vllm serve`) |
-| Bespoke servers | `clip`, `diarize` (pyannote.audio 3.x in prod image), `vad` (silero-vad) — FastAPI + Uvicorn |
+| Bespoke servers | `clip`, `diarize` (pyannote.audio 3.x in prod image), `vad` (silero-vad), `faces` (YuNet detection + SFace grouping via OpenCV, CPU) — FastAPI + Uvicorn |
 | NER | `gliner` — GLiNER on Ray Serve (not vLLM); reached through the router's `/gliner` pass-through |
 | Base images | CPU: `ghcr.io/astral-sh/uv:*-trixie-slim`; CUDA: `pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime` |
 | Profiles | Own `media` profile; CPU/CUDA Dockerfile variants per bespoke service |
@@ -176,7 +176,7 @@ Dependabot-bumped.
 | Version / Python | 1.1.3 · `>=3.12,<3.13` (3.12 only) |
 | Backend | FastAPI + SSE (`sse-starlette`), Typer CLI, watchdog; setuptools build |
 | NLP / analysis | spaCy 3.8, NLTK, langdetect, camel-tools + pyarabic + arabic-reshaper + python-bidi (Arabic support), wordcloud, matplotlib |
-| Inference clients | `openai` SDK; per-service dedicated endpoints `WHISPER_API_BASE`, `NER_API_BASE`, `DIARIZE_API_BASE`, `VAD_API_BASE`, each falling back to the central `OPENAI_API_BASE` |
+| Inference clients | `openai` SDK; per-service dedicated endpoints `WHISPER_API_BASE`, `NER_API_BASE`, `DIARIZE_API_BASE`, `VAD_API_BASE`, `FACES_API_BASE`, each falling back to the central `OPENAI_API_BASE` |
 | Frontend | React 19, TanStack Query/Table/Virtual, Zustand 5, Recharts 3 |
 | Tests | pytest + pytest-asyncio + respx |
 
