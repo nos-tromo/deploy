@@ -4,13 +4,26 @@ set -euo pipefail
 # Download a Hugging Face model into this machine's HF hub cache.
 # The front half of the model-weights flow: fetch here, then pack-model.sh the
 # resulting directory for transfer to an airgapped host.
-# Usage: ./fetch-model.sh <model-id> [cache-dir]
+# Usage: ./fetch-model.sh [--file <name>]... <model-id> [cache-dir]
 # Example:
 #   ./fetch-model.sh example-org/example-model-fp8
+#   ./fetch-model.sh --file model.onnx --file LICENSE example-org/example-detector
+# --file (repeatable) downloads only the named files of the repo instead of the
+# whole snapshot, for a repo that also ships files the host must not hold.
 # Env: HF_TOKEN for gated or private repos.
 
+FILES=()
+while [[ $# -gt 0 && "$1" == "--file" ]]; do
+    if [[ $# -lt 2 || -z "$2" ]]; then
+        echo "error: --file needs a file name" >&2
+        exit 1
+    fi
+    FILES+=("$2")
+    shift 2
+done
+
 if [[ $# -lt 1 ]]; then
-    echo "usage: $0 <model-id> [cache-dir]" >&2
+    echo "usage: $0 [--file <name>]... <model-id> [cache-dir]" >&2
     exit 1
 fi
 
@@ -33,11 +46,12 @@ echo "Downloading $MODEL_ID -> $CACHE_DIR"
 
 # The federation runs HF_HUB_OFFLINE=1 by default; inheriting that here would
 # fail the one thing this script does.
-SNAPSHOT=$(HF_HUB_OFFLINE=0 "$HF" download "$MODEL_ID")
+SNAPSHOT=$(HF_HUB_OFFLINE=0 "$HF" download "$MODEL_ID" ${FILES[@]+"${FILES[@]}"})
 
 # hf prints the snapshot path (<cache>/models--org--name/snapshots/<rev>) — bare
-# on huggingface_hub 0.x, "path=" prefixed on 1.x. The models--... root above it
-# is what pack-model.sh takes.
+# on huggingface_hub 0.x, "path=" prefixed on 1.x; for a single --file, the
+# file's path inside that snapshot. The models--... root above it is what
+# pack-model.sh takes.
 SNAPSHOT="${SNAPSHOT#path=}"
 MODEL_DIR="${SNAPSHOT%%/snapshots/*}"
 if [[ ! -d "$MODEL_DIR" ]]; then
