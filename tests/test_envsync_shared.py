@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 import unittest
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, FrozenSet, List, Optional
 
 from envsync_helpers import ROOT, assert_no_sentinel
 from envsync.dotenv import EnvFile, parse, parse_line
@@ -18,6 +18,7 @@ from envsync.shared import (
     apply_shared,
     fill_line,
     load_table,
+    placeholder_values,
     shared_keys_for,
 )
 
@@ -201,6 +202,34 @@ class TableTests(unittest.TestCase):
         )
         self.assertEqual(shared_keys_for(groups, "deploy"), frozenset())
 
+    def test_placeholder_values(self) -> None:
+        groups = load_table(AUDIT + HOST)
+        example = load_example(
+            "# renamed: AUDIT_OLDEST_SECRET -> AUDIT_SHARED_SECRET\n"
+            "# renamed: AUDIT_SHARED_SECRET -> AUDIT_EDGE_SECRET\n"
+            "AUDIT_EDGE_SECRET=change-me\n"
+            "# AUDIT_EDGE_SECRET=<generate one>\n"
+            "EDGE_HOST=127.0.0.1\n"
+            "GRAFANA_ADMIN_PASSWORD=not-shared\n"
+        )
+        base = load_example(
+            "AUDIT_SHARED_SECRET=old-placeholder\n"
+            "# AUDIT_OLDEST_SECRET=oldest-placeholder\n"
+            "EDGE_HOST=\n"
+            "GRAFANA_ADMIN_PASSWORD=old-not-shared\n"
+        )
+        current = {"change-me", "<generate one>", "127.0.0.1"}
+        self.assertEqual(
+            placeholder_values(groups, "obs-plane", example, base),
+            frozenset(current | {"old-placeholder", "oldest-placeholder"}),
+        )
+        self.assertEqual(
+            placeholder_values(groups, "obs-plane", example, None), frozenset(current)
+        )
+        self.assertEqual(
+            placeholder_values(groups, "deploy", example, base), frozenset()
+        )
+
 
 class FillLineTests(unittest.TestCase):
     def test_fill_line(self) -> None:
@@ -268,7 +297,12 @@ class SharedCase(unittest.TestCase):
         self.originals: Dict[str, Optional[EnvFile]] = {}
 
     def member(
-        self, name: str, example: str, env: Optional[str], base: Optional[str] = None
+        self,
+        name: str,
+        example: str,
+        env: Optional[str],
+        base: Optional[str] = None,
+        remembered: FrozenSet[str] = frozenset(),
     ) -> FilePlan:
         ex = load_example(example)
         base_ex = load_example(base) if base is not None else None
@@ -281,7 +315,7 @@ class SharedCase(unittest.TestCase):
             parsed,
             shared_keys_for(self.groups, name),
         )
-        self.files[name] = SharedFile(plan, ex, base_ex)
+        self.files[name] = SharedFile(plan, ex, base_ex, remembered)
         self.originals[name] = parsed
         return plan
 
@@ -906,6 +940,101 @@ class GenerateTests(SharedCase):
                 for item in found.items:
                     self.assertNotIn("a" * 64, item)
                     self.assertNotIn("b" * 64, item)
+
+
+class RememberedTests(SharedCase):
+    """Placeholders of examples older than the synced copy, kept per file."""
+
+    NEW = "AUDIT_EDGE_SECRET=change-me\n"
+
+    def old_placeholder(self, remembered: FrozenSet[str]) -> None:
+        # The run after the sync: the synced copy is already the new example,
+        # whose placeholder text changed; obs-plane still holds the old one.
+        self.start(AUDIT)
+        self.member("edge-plane", "AUDIT_EDGE_SECRET=\n", "AUDIT_EDGE_SECRET=\n")
+        self.member(
+            "obs-plane",
+            self.NEW,
+            "AUDIT_EDGE_SECRET=old-placeholder\n",
+            base=self.NEW,
+            remembered=remembered,
+        )
+
+    def test_remembered_placeholder_does_not_spread(self) -> None:
+        self.old_placeholder(frozenset({"old-placeholder"}))
+        before = self.snapshot()
+        self.assertEqual(
+            self.apply(),
+            [unset_everywhere("AUDIT_EDGE_SECRET (edge-plane, obs-plane)")],
+        )
+        self.assertEqual(self.snapshot(), before)
+        # Without the memory, the old placeholder reads as a real value and
+        # spreads: the one-run-late case the memory exists for.
+        self.old_placeholder(frozenset())
+        self.assertEqual(self.apply(), [])
+        self.assertEqual(
+            self.plan("edge-plane").entries["AUDIT_EDGE_SECRET"].origin, "filled"
+        )
+
+    def test_remembered_value_is_filled_from_the_other_side(self) -> None:
+        remembered = frozenset({"Lk2-old-default"})
+        for holder in ("obs-plane", "edge-plane"):
+            with self.subTest(remembered_by=holder):
+                self.start(AUDIT)
+                self.member(
+                    "edge-plane",
+                    "AUDIT_EDGE_SECRET=\n",
+                    "AUDIT_EDGE_SECRET=SENTINEL-s\n",
+                    remembered=remembered if holder == "edge-plane" else frozenset(),
+                )
+                obs = self.member(
+                    "obs-plane",
+                    self.NEW,
+                    "AUDIT_EDGE_SECRET=Lk2-old-default\n",
+                    remembered=remembered if holder == "obs-plane" else frozenset(),
+                )
+                self.assertEqual(self.apply(), [])
+                self.assertEqual(
+                    obs.entries["AUDIT_EDGE_SECRET"],
+                    Entry(
+                        "AUDIT_EDGE_SECRET",
+                        "AUDIT_EDGE_SECRET=SENTINEL-s",
+                        "SENTINEL-s",
+                        "filled",
+                    ),
+                )
+                self.assertEqual(
+                    items(obs, "filled"), ["AUDIT_EDGE_SECRET (from edge-plane)"]
+                )
+        # Not remembered, the same value is real: two set values conflict.
+        self.start(AUDIT)
+        self.member(
+            "edge-plane", "AUDIT_EDGE_SECRET=\n", "AUDIT_EDGE_SECRET=SENTINEL-s\n"
+        )
+        self.member("obs-plane", self.NEW, "AUDIT_EDGE_SECRET=Lk2-old-default\n")
+        self.assertEqual(
+            self.apply(),
+            [conflict("AUDIT_EDGE_SECRET: obs-plane differs from edge-plane")],
+        )
+
+    def test_remembered_list_tokens_are_placeholders(self) -> None:
+        # An older Nextext example's list keeps its token a placeholder on
+        # docint's side too.
+        self.start(TOKENS)
+        self.member(
+            "docint", "# NEXTEXT_API_KEY=\nOTHER=1\n", "NEXTEXT_API_KEY=old-token\n"
+        )
+        self.member(
+            "Nextext",
+            TOKENS_EXAMPLE,
+            None,
+            remembered=frozenset({"docint=old-token"}),
+        )
+        before = self.snapshot()
+        self.assertEqual(
+            self.apply(), [unset_everywhere("NEXTEXT_API_KEY (docint, Nextext)")]
+        )
+        self.assertEqual(self.snapshot(), before)
 
 
 class RoundTripTests(SharedCase):

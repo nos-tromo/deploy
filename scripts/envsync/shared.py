@@ -54,6 +54,9 @@ class SharedFile:
     plan: FilePlan
     example: Example
     base: Optional[Example]
+    # Placeholder values of examples older than the synced copy, kept per file
+    # in the state directory, so an old placeholder never spreads.
+    remembered: FrozenSet[str] = frozenset()
 
 
 def _row(lineno: int, fields: List[str]) -> Row:
@@ -123,6 +126,23 @@ def shared_keys_for(groups: List[Group], member: str) -> FrozenSet[str]:
     )
 
 
+def placeholder_values(
+    groups: List[Group], member: str, example: Example, base: Optional[Example]
+) -> FrozenSet[str]:
+    """Every value, active or commented, that the example or the synced copy
+    gives this member's shared keys or the names renamed to them; empty
+    values excluded."""
+    found: Set[str] = set()
+    for key in shared_keys_for(groups, member):
+        names = [key] + [old for old, new in example.renames.items() if new == key]
+        for model in (example, base):
+            if model is not None:
+                for name in names:
+                    found |= model.values(name)
+    found.discard("")
+    return frozenset(found)
+
+
 def _comment(line: Line) -> Optional[str]:
     """The inline comment a setting carries, as compose reads the line."""
     if line.kind != "setting":
@@ -185,11 +205,20 @@ class _Side:
 
 class _Pass:
     def __init__(
-        self, files: Dict[str, SharedFile], generate: bool, token: Callable[[], str]
+        self,
+        groups: List[Group],
+        files: Dict[str, SharedFile],
+        generate: bool,
+        token: Callable[[], str],
     ) -> None:
         self.files = files
         self.generate = generate
         self.token = token
+        self.known: Dict[str, FrozenSet[str]] = {
+            member: placeholder_values(groups, member, shared.example, shared.base)
+            | shared.remembered
+            for member, shared in files.items()
+        }
         self.found: Dict[str, List[Event]] = {
             "conflict": [],
             "unset_everywhere": [],
@@ -238,26 +267,19 @@ class _Pass:
         return rows
 
     def placeholders(self, rows: List[Row]) -> Set[str]:
-        """Every example value of every row, current or synced, active or
-        commented, under the key or a name renamed to it."""
+        """The placeholder values of every member with a row here (current,
+        synced or remembered); in a group with a list, also the token of each
+        name=token item among them."""
         found: Set[str] = set()
         for row in rows:
-            shared = self.files[row.member]
-            names = [row.key] + [
-                old for old, new in shared.example.renames.items() if new == row.key
-            ]
-            values: Set[str] = set()
-            for model in (shared.example, shared.base):
-                if model is not None:
-                    for name in names:
-                        values |= model.values(name)
-            found |= values
-            if row.entry is not None:
-                found |= {
-                    item.partition("=")[2].strip()
-                    for value in values
-                    for item in value.split(",")
-                }
+            found |= self.known[row.member]
+        if any(row.entry is not None for row in rows):
+            found |= {
+                item.partition("=")[2].strip()
+                for value in list(found)
+                for item in value.split(",")
+            }
+            found.discard("")
         return found
 
     def read(self, row: Row, placeholders: Set[str]) -> _Side:
@@ -360,7 +382,7 @@ def apply_shared(
     Fills unset rows into plan.entries and puts the per-file events (filled,
     generated, kept_unset, unsafe) on each plan; returns the cross-member ones
     (conflict, unset_everywhere, table)."""
-    run = _Pass(files, generate, token)
+    run = _Pass(groups, files, generate, token)
     for group in groups:
         run.group(group)
     run.merge_notes()
