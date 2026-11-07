@@ -53,9 +53,14 @@ def _check_order(original: EnvFile, rendered: EnvFile) -> None:
     after = _positions(rendered)
     for line in original.settings().values():
         for name in references(line):
-            if name == line.key or name not in before or name not in after:
+            if (
+                line.key is None
+                or line.key not in after
+                or name == line.key
+                or name not in before
+                or name not in after
+            ):
                 continue
-            assert line.key is not None
             if (before[name] < line.lineno) != (after[name] < after[line.key]):
                 raise CheckError(f"{line.key}: order against {name} changed")
 

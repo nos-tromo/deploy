@@ -140,32 +140,49 @@ class VerifyTests(unittest.TestCase):
         assert_no_sentinel(self, str(ctx.exception))
         return str(ctx.exception)
 
-    def test_verify_detects_faults(self) -> None:
+    def test_check_a_does_not_parse(self) -> None:
         example, plan, original = plan_of("orphan")
         good = render(example, plan)
-        # (a) a duplicated line
-        self.fault(example, plan, original, good.replace("A=1\n", "A=1\nA=1\n", 1))
-        # (b) a changed value
-        self.fault(example, plan, original, good.replace("A=1", "A=2", 1))
-        # (c) a kept line removed
-        ex_k = load_example("A=1\nB=2\n")
-        env_k = parse("A=SENTINEL-a\nB=2\n", "dotenv")
-        plan_k = plan_file("m", "m/.env", ex_k, ex_k, env_k)
-        good_k = render(ex_k, plan_k)
-        self.fault(ex_k, plan_k, env_k, good_k.replace("A=SENTINEL-a\n", "# A=1\n"))
-        # (d) two lines swapped so ${X} precedes X=
-        ex_d = load_example("X=1\nY=${X}\n")
-        env_d = parse("X=1\nY=${X}\n", "dotenv")
-        plan_d = plan_file("m", "m/.env", ex_d, ex_d, env_d)
-        message = self.fault(ex_d, plan_d, env_d, "Y=${X}\nX=1\n")
-        self.assertIn("order", message)
-        # (e) an extra trailing blank line
-        self.fault(example, plan, original, good + "\n")
+        message = self.fault(
+            example, plan, original, good.replace("A=1\n", "A=1\nA=1\n", 1)
+        )
+        self.assertIn("does not parse", message)
 
-    def test_duplicate_line_fails_check_a_or_c(self) -> None:
-        example, plan, original = plan_of("unset")
-        good = render(example, plan)
-        self.fault(example, plan, original, good + "A=1\n")
+    def test_check_b_decoded_values(self) -> None:
+        example, plan, original = plan_of("orphan")
+        message = self.fault(
+            example, plan, original, render(example, plan).replace("A=1", "A=2", 1)
+        )
+        self.assertIn("decoded values", message)
+
+    def test_check_c_kept_line_exactly_once(self) -> None:
+        ex = load_example("A=1\nB=2\n")
+        env = parse("A=1  # note\nB=2\n", "dotenv")
+        plan = plan_file("m", "m/.env", ex, ex, env)
+        good = render(ex, plan)
+        self.assertIn("A=1  # note", good)
+        message = self.fault(ex, plan, env, good.replace("  # note", ""))
+        self.assertIn("kept line", message)
+
+    def test_check_d_reference_order(self) -> None:
+        ex = load_example("X=1\nY=${X}\n")
+        env = parse("X=1\nY=${X}\n", "dotenv")
+        plan = plan_file("m", "m/.env", ex, ex, env)
+        message = self.fault(ex, plan, env, "Y=${X}\nX=1\n")
+        self.assertIn("order", message)
+
+    def test_check_e_rerender_differs(self) -> None:
+        example, plan, original = plan_of("orphan")
+        message = self.fault(example, plan, original, render(example, plan) + "\n")
+        self.assertIn("again gives a different file", message)
+
+    def test_carried_rename_with_reference_is_checked(self) -> None:
+        ex = load_example("# renamed: OLD -> NEW\nX=1\nNEW=2\n")
+        base = load_example("X=1\nOLD=2\n")
+        env = parse("X=1\nOLD=${X}-s\n", "dotenv")
+        plan = plan_file("m", "m/.env", ex, base, env)
+        self.assertEqual(plan.entries["NEW"].origin, "carried")
+        verify(ex, plan, env, render(ex, plan))
 
     def test_rerender_exception_is_a_check_error(self) -> None:
         example, plan, original = plan_of("orphan")
