@@ -133,6 +133,21 @@ else
     cat "$WORK/pack-dangling.log" >&2
 fi
 
+# A link out of the model directory that does not land in the cache's shared
+# blob store (here: a file elsewhere on the host) must never be packed.
+make_per_repo_cache "$WORK/cache-escape" "weights-escape"
+printf 'host-secret' > "$WORK/host-file"
+ln -s "$WORK/host-file" "$WORK/cache-escape/$MODEL/snapshots/$REV/extra.txt"
+mkdir -p "$WORK/out-escape"
+if bash "$PACK" "$WORK/cache-escape/$MODEL" "$WORK/out-escape" > "$WORK/pack-escape.log" 2>&1; then
+    fail "escape: pack-model.sh packed a link to a file outside the cache's blob store"
+elif grep -q "outside the cache's blob store" "$WORK/pack-escape.log"; then
+    pass "escape: a link out of the cache's blob store is refused"
+else
+    fail "escape: pack-model.sh failed without naming the escaping link"
+    cat "$WORK/pack-escape.log" >&2
+fi
+
 # --- unpack -------------------------------------------------------------------
 
 if stat -c '%u' / > /dev/null 2>&1; then

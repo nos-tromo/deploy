@@ -56,16 +56,25 @@ first_hop() {
 # a link out of the model directory. Archived as is, that link would arrive
 # without the file it points to — an archive without the weights. Find such
 # links, and refuse a link that points nowhere (an incomplete cache).
+# Only links into that store are followed: the script runs as root on a volume
+# that containers can write to, so a link to anywhere else (another repo, a
+# host file) is refused rather than packed.
 PARENT_DIR=$(dirname "$MODEL_DIR")
 MODEL_REAL=$(cd "$MODEL_DIR" && pwd -P)
+BLOB_STORE="$(cd "$PARENT_DIR" && pwd -P)/blobs"
 OUTSIDE=0
 while IFS= read -r -d '' link; do
-    if ! resolve "$link" > /dev/null; then
+    if ! real=$(resolve "$link"); then
         echo "error: $link points nowhere — the cache is incomplete; fetch the model again" >&2
         exit 1
     fi
     hop=$(first_hop "$link")
-    [[ "$hop" == "$MODEL_REAL"/* ]] || OUTSIDE=$((OUTSIDE + 1))
+    [[ "$hop" == "$MODEL_REAL"/* ]] && continue
+    if [[ "$real" != "$BLOB_STORE"/* || ! -f "$real" || -L "$real" ]]; then
+        echo "error: $link points outside the cache's blob store ($BLOB_STORE); refusing to pack it" >&2
+        exit 1
+    fi
+    OUTSIDE=$((OUTSIDE + 1))
 done < <(find "$MODEL_DIR" -type l -print0)
 
 # With links out of the model directory, pack a staged mirror of it instead, in
