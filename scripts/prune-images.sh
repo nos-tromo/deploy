@@ -17,7 +17,7 @@
 #             superseded dev build and untagged rebuild leftover. <name> is the
 #             file's `name:`, resolved without .env.
 #   upstream  (PRUNE_UPSTREAM=<non-empty>) every version of the images the
-#             members pull (neo4j, qdrant, grafana, ...). They carry no
+#             members pull (qdrant, grafana, ...). They carry no
 #             federation label, so they match by repository — each project's
 #             image list, read with the member's .env: for each image no
 #             container uses, the tag and digest references in a listed
@@ -117,7 +117,7 @@ if [ -n "$upstream" ] && [ -n "$repos" ]; then
     echo ">> upstream images (PRUNE_UPSTREAM)"
 
     # Images any container uses, by ID. Their references stay untouched: a
-    # running neo4j that lost its @digest reference would try to pull on the
+    # running qdrant that lost its @digest reference would try to pull on the
     # next `up` — fatal on an airgap host. Fail closed: if either lookup
     # fails, set -e stops here, before anything is removed.
     cids_raw="$(docker ps -aq --no-trunc)"

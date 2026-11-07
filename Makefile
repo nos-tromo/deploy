@@ -17,9 +17,9 @@
 # bring-up the same way (state + obs + app tiers via `up-dev` to publish host ports;
 # inference stays on production `up`). Production `up` brings the state tier up
 # in its plain production shape: no published ports, so direct database access
-# goes through data-plane's recorded targets (db-shell, qdrant-shell). An admin
-# who needs the Neo4j Browser or the Qdrant dashboard opens the loopback-only
-# ports on demand with data-plane's `up-admin`, which records it in the audit
+# goes through data-plane's recorded target (qdrant-shell). An admin who
+# needs the Qdrant dashboard opens the loopback-only port on demand with
+# data-plane's `up-admin`, which records it in the audit
 # trail. Only `ps`/`logs` still use the compose
 # helper below (there is no uniform `ps` target, and `make logs` follows with
 # -f, which a sequencer can't chain).
@@ -33,7 +33,7 @@ INFRA_ROOT   ?= ..
 VLLM_DIR     ?= vllm-service
 DATA_DIR     ?= data-plane
 # The first-party (common.mk) apps — built locally, brought up in the app tier.
-APP_DIRS     ?= chorus docint Nextext translator
+APP_DIRS     ?= docint Nextext translator
 # open-webui-service is the upstream chat UI (pulled image, bespoke Makefile),
 # kept in its own variable rather than folded into APP_DIRS because it is a
 # distinct pulled-image member. It still participates in every app-tier loop
@@ -111,7 +111,7 @@ help:
 	@echo "  make pull     switch every federation repo (deploy + members) to main and pull from GitHub"
 	@echo "  make bundle   run 'make bundle' in every image-bearing member repo (members already bundled at their current tag are switched to it, not rebuilt; BUNDLE_FORCE=1 rebuilds) + save the health-probe image; leaves members on their release tags"
 	@echo "  make load     docker load every *.tar.gz found under deploy + the member repos"
-	@echo "  make prune    remove federation-built images no container uses (old versions, rebuild leftovers); PRUNE_UPSTREAM=1 also removes unused upstream images (neo4j, qdrant, grafana, ...)"
+	@echo "  make prune    remove federation-built images no container uses (old versions, rebuild leftovers); PRUNE_UPSTREAM=1 also removes unused upstream images (qdrant, grafana, ...)"
 	@echo
 	@echo "Apps on this host: $(APP_DIRS) $(OPENWEBUI_DIR)   obs: $(if $(OBS_DIR),$(OBS_DIR),disabled)   edge: $(if $(EDGE_DIR),$(EDGE_DIR),disabled)   data-plane profile: $(DATA_PROFILE)"
 
@@ -143,7 +143,7 @@ up up-dev: setup
 	./scripts/wait-healthy.sh inference-net vllm-router:4000
 	@echo "== state tier (data-plane $(DATA_UP), profile=$(DATA_PROFILE)) =="
 	$(MAKE) -C $(INFRA_ROOT)/$(DATA_DIR) $(DATA_UP) PROFILE=$(DATA_PROFILE)
-	./scripts/wait-healthy.sh data-net neo4j:7687 qdrant:6333
+	./scripts/wait-healthy.sh data-net qdrant:6333
 	@[ -z "$(OBS_DIR)" ] || echo "== obs tier ($(OBS_DIR) $(MODE_UP)) =="
 	[ -z "$(OBS_DIR)" ] || $(MAKE) -C $(INFRA_ROOT)/$(OBS_DIR) $(MODE_UP)
 	[ -z "$(OBS_DIR)" ] || ./scripts/wait-healthy.sh data-net prometheus:9090

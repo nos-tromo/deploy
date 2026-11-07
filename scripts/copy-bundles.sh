@@ -185,10 +185,6 @@ if [ -d "$INFRA_ROOT/vllm-service/docker/router" ]; then
     echo -e "  ${GREEN}✓${NC} docker/router/ (audit callback) copied."
 fi
 
-copy_project "$INFRA_ROOT/chorus" chorus \
-    "$INFRA_ROOT/chorus/.chorus-version" \
-    "$INFRA_ROOT/chorus/.env.example"
-
 copy_project "$INFRA_ROOT/translator" translator \
     "$INFRA_ROOT/translator/.translator-version" \
     "$INFRA_ROOT/translator/.env.example"

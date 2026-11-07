@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Wait until one or more services are reachable on a shared Docker network, by
-# probing <service>:<port> from a throwaway container on that network. This
-# generalizes chorus's scripts/check_dataplane_health.sh to the whole
-# federation — it checks cross-project reachability via network alias, which is
-# exactly how the app backends find inference + state at runtime.
+# probing <service>:<port> from a throwaway container on that network. It
+# checks cross-project reachability via network alias, which is exactly how
+# the app backends find inference + state at runtime.
 #
 # Usage: wait-healthy.sh <network> <service:port> [<service:port> ...]
+#   e.g. wait-healthy.sh data-net qdrant:6333
 # Env:   WAIT_TIMEOUT (seconds per target, default 180)
 #        WAIT_PROBE_IMAGE (default busybox:1.37; must be loaded on airgap hosts)
 
