@@ -78,6 +78,29 @@ headers. A `.env` that exists but has no stored copy fails `env-check` with
 | `not copied` | A shared value with characters outside the safe set. | Set it by hand in each member. |
 | `table` | `env-sync.conf` names a key the member's example does not know. | Fix `env-sync.conf` or the example. |
 
+### When a rename carries its value
+
+The example records a rename as `# renamed: OLD -> NEW`. For a file that still
+has an OLD line:
+
+- **Carried.** The stored copy of the last synced example still documents OLD
+  (the rename is new to this host) and the OLD line is your own, not the old
+  default left untouched. Only the key name changes; the rest of the line stays
+  byte for byte.
+- **Dropped.** An OLD line still at its old default is dropped and NEW takes the
+  example's value (`old default dropped`). The exception is a held key (secret-like,
+  `*RETENTION*`, a shared key, anything in `federation.env`, on either name):
+  it carries its old value, so a retention is never lowered through a rename.
+- **NEW already set.** NEW applies, and OLD goes to the end of the file
+  (`both set; the new name applies`). The same happens when two OLD keys name the
+  same NEW.
+- **Not carried.** The rename predates the last sync, or there is no sync record
+  yet: OLD stays at the end of the file with
+  `# [env-sync] renamed to NEW in the example; value not carried`, so a value
+  ignored for months does not start to apply. Move it by hand if you still want it.
+- **Removed before the rename.** A setting you removed stays removed under its
+  new name: NEW is written commented out (`kept unset`).
+
 A `refused` file is left untouched with its line number and the reason (a
 duplicate key, CRLF line ends, a byte-order mark, a multi-line value, a
 symlink, ...). The other files still sync. Fix the file and run again.
@@ -202,7 +225,8 @@ How a member's `.env.example` must be written for the sync to read it:
 - Prose and alternatives never start with `KEY=` right after `# `.
 - Never `KEY=   # comment`: compose reads the comment as the value. Put the
   comment on its own line.
-- Record a rename as `# renamed: OLD -> NEW`, and keep the line forever. OLD
+- Record a rename as `# renamed: OLD -> NEW`, and keep the line forever (what
+  it does to an operator's value: [When a rename carries its value](#when-a-rename-carries-its-value)). OLD
   must no longer be a key of the example, a chain must end in a key the example
   has, and no file may reference `${OLD}`.
 - A new or renamed shared key means an edit to deploy's `env-sync.conf`.
