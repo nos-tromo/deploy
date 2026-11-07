@@ -88,6 +88,12 @@ export BUNDLE_FORCE
 # A command-line value reaches it anyway; the export is for a federation.env one.
 export PRUNE_UPSTREAM
 
+# make env / env-check (scripts/env_sync.py): every .env this host uses —
+# deploy's own federation.env plus each member's. Neither recipe may mention
+# $(MAKE): `make -n` executes such lines, and env-check must never write.
+ENV_DIRS = . $(addprefix $(INFRA_ROOT)/,$(VLLM_DIR) $(DATA_DIR) $(OBS_DIR) $(EDGE_DIR) $(APP_DIRS) $(OPENWEBUI_DIR))
+ENV_SYNC = python3 -B ./scripts/env_sync.py
+
 # bundle-exists.sh switches a skipped member to its tag. `make -n` still runs
 # recipe lines that mention $(MAKE) — every bundle line does — so tell the
 # script when this is a dry run and it reports the switch instead.
@@ -96,7 +102,7 @@ BUNDLE_EXISTS = $(if $(findstring n,$(firstword -$(MAKEFLAGS))),BUNDLE_EXISTS_DR
 # Production-shape compose invocation for a member repo. $(1) = repo dir.
 compose = docker compose --env-file $(INFRA_ROOT)/$(1)/.env -f $(INFRA_ROOT)/$(1)/docker/compose.yaml
 
-.PHONY: help setup up up-dev down ps logs clone pull bundle load prune
+.PHONY: help setup up up-dev down ps logs clone pull bundle load prune env env-check
 
 help:
 	@echo "Federation lifecycle (single host). Member repos under INFRA_ROOT=$(INFRA_ROOT)."
@@ -112,6 +118,8 @@ help:
 	@echo "  make bundle   run 'make bundle' in every image-bearing member repo (members already bundled at their current tag are switched to it, not rebuilt; BUNDLE_FORCE=1 rebuilds) + save the health-probe image; leaves members on their release tags"
 	@echo "  make load     docker load every *.tar.gz found under deploy + the member repos"
 	@echo "  make prune    remove federation-built images no container uses (old versions, rebuild leftovers); PRUNE_UPSTREAM=1 also removes unused upstream images (qdrant, grafana, ...)"
+	@echo "  make env       bring every .env (and federation.env) in step with its example; prints what changed (ENV_GENERATE=1 also generates missing shared secrets)"
+	@echo "  make env-check show what 'make env' would change, without writing; 'up' runs it first and stops while a .env is behind (ENV_ALLOW_DRIFT=1 overrides)"
 	@echo
 	@echo "Apps on this host: $(APP_DIRS) $(OPENWEBUI_DIR)   obs: $(if $(OBS_DIR),$(OBS_DIR),disabled)   edge: $(if $(EDGE_DIR),$(EDGE_DIR),disabled)   data-plane profile: $(DATA_PROFILE)"
 
@@ -132,12 +140,13 @@ setup:
 # adds a repo-local test container. The state tier has its own selector, $(DATA_UP):
 # production `up` delegates to data-plane's plain `up` (no published ports; the
 # loopback-only admin port opens only on demand, recorded, via data-plane's
-# `up-admin`), while `up-dev` uses data-plane's `up-dev`, which publishes it for dev.
+# `up-admin`), while `up-dev` uses data-plane's `up-dev`, which publishes it for dev. env-check runs first and stops the bring-up
+# before any tier when a `.env` is behind.
 up:     MODE_UP := up
 up:     DATA_UP := up
 up-dev: MODE_UP := up-dev
 up-dev: DATA_UP := up-dev
-up up-dev: setup
+up up-dev: env-check setup
 	@echo "== inference tier (vllm-service) =="
 	$(MAKE) -C $(INFRA_ROOT)/$(VLLM_DIR) up
 	./scripts/wait-healthy.sh inference-net vllm-router:4000
@@ -253,3 +262,9 @@ load:
 # scripts/prune-images.sh. Afterwards `make load` (or rebuild) before `make up`.
 prune:
 	./scripts/prune-images.sh $(addprefix $(INFRA_ROOT)/,$(VLLM_DIR) $(DATA_DIR) $(OBS_DIR) $(EDGE_DIR) $(APP_DIRS) $(OPENWEBUI_DIR))
+
+env:
+	$(ENV_SYNC) $(if $(filter 1,$(ENV_GENERATE)),--generate) $(ENV_DIRS)
+
+env-check:
+	$(ENV_SYNC) --check $(if $(filter 1,$(ENV_ALLOW_DRIFT)),--allow-drift) $(ENV_DIRS)

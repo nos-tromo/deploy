@@ -263,7 +263,7 @@ for script in client-setup.sh audit-admin.sh; do
 done
 
 # deploy (this repo): only what production needs — scripts/,
-# federation.env.example, Makefile.
+# federation.env.example, env-sync.conf, Makefile.
 echo -e "\n${BLUE}Processing: [deploy]${NC}"
 DEPLOY_DEST="$DEST_BASE/deploy"
 mkdir -p "$DEPLOY_DEST"
@@ -288,7 +288,7 @@ else
     echo -e "  ${YELLOW}⚠ deploy: scripts/ not found — skipped.${NC}"
 fi
 
-for deploy_file in federation.env.example Makefile; do
+for deploy_file in federation.env.example env-sync.conf Makefile; do
     if [ -f "$DEPLOY_SRC/$deploy_file" ]; then
         cp "$DEPLOY_SRC/$deploy_file" "$DEPLOY_DEST/"
         echo -e "  ${GREEN}✓${NC} deploy: $deploy_file copied."
