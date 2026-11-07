@@ -9,6 +9,7 @@ set from leaving the build host.
 build host (online)                 airgap host (offline)
 ──────────────────                  ─────────────────────
 make bundle  ──▶ *.tar.gz  ──copy──▶  make load   (docker load all tarballs)
+                                      make env    (sync every .env with its example)
                                       make setup
                                       make up
 ```
@@ -49,6 +50,15 @@ airgap side.
 
 Run it right after `make bundle`, while the members still sit on their release
 tags; afterwards `make pull` returns every repo to `main`.
+
+## `env` — the `.env` files
+
+`make env` after `make load` brings each `.env` in step with the example that
+arrived in the transfer set. The copy carries deploy's `env-sync.conf` but never
+the state directory `.env-sync/` or a real `.env`: the airgap host keeps its
+own. The first `make env` on a host follows a two-step adoption (deploy's files
+first, then the member files), described in
+[env-sync.md](env-sync.md#first-run-on-a-host).
 
 ## The version-skew guard
 

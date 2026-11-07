@@ -105,8 +105,9 @@ v2.10+).
    [retire-chorus.md](retire-chorus.md#b-on-the-host-in-the-window), then
    delete data-plane's older tarballs as in its step B7.
 4. `make load`.
-5. **Edit every `.env`:**
-   - Enter the values from B2.
+5. **Edit every `.env`:** run `make env` first
+   ([env-sync.md](env-sync.md)); then enter the values from B2 that it reports
+   as unset or placeholders.
    - edge-plane: `EDGE_AUTH_POLICY=one_factor` for now. Logins otherwise need
      a TOTP code, and no user has one yet.
    - Remove what is no longer read: docint `COLLECTION_RETENTION`,

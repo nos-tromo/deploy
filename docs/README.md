@@ -16,6 +16,7 @@ Step-by-step procedures, in the order an operator meets them.
 | [runbooks/releasing.md](runbooks/releasing.md) | The release ritual: version bump → auto-minted tag → `make bundle` → staging soak → promote |
 | [runbooks/airgap-transfer.md](runbooks/airgap-transfer.md) | Moving a release to an offline host: `bundle`/`load`, `copy-bundles.sh`, the version-skew guard |
 | [model-transfer.md](model-transfer.md) | `fetch-model.sh` / `pack-model.sh` / `unpack-model.sh` — downloading Hugging Face model weights and moving them between hosts |
+| [runbooks/env-sync.md](runbooks/env-sync.md) | `make env` / `make env-check`: keeping every `.env` in step with its example, the report, shared values, first run and airgap adoption, restoring a backup, the conventions for member examples |
 | [runbooks/audit.md](runbooks/audit.md) | The audit trail: setup, the daily signed anchor, the verifier's alerts, exports for a review, retention |
 | [runbooks/backups.md](runbooks/backups.md) | Scheduled, age-encrypted data-plane backups: the key pair kept offline, the recipients file, the systemd timer with its stated purpose, moving the files off the host |
 | [runbooks/host-audit.md](runbooks/host-audit.md) | One-time host procedure: auditd rules that name who edited the account file or a `.env`, read a backup, or ran `docker` by hand; keeping those records; clock sync |
@@ -51,7 +52,9 @@ at the time and are not maintained as current reference. The retention period
 across the federation, for one, is
 [2026-11-05-retention-deadline-design.md](2026-11-05-retention-deadline-design.md);
 its operating side is in [runbooks/bring-up.md](runbooks/bring-up.md#retention-periods)
-and [runbooks/backups.md](runbooks/backups.md).
+and [runbooks/backups.md](runbooks/backups.md). The `.env` sync is
+[superpowers/specs/2026-11-07-env-sync-design.md](superpowers/specs/2026-11-07-env-sync-design.md);
+its operating side is [runbooks/env-sync.md](runbooks/env-sync.md).
 
 ## Who this is for
 

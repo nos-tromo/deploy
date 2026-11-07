@@ -45,6 +45,8 @@ the trail itself.
    -w $root/edge-plane/.env -p wa -k fed-config
    -w $root/open-webui-service/.env -p wa -k fed-config
    -w $root/deploy/federation.env -p wa -k fed-config
+   # make env's state directory: it holds .env backups, so secrets.
+   -w $root/deploy/.env-sync -p rwa -k fed-config
    # data-plane's backups (its BACKUP_DIR, if set elsewhere): copying one
    # off the host reads the whole database.
    -w $root/data-plane/backup/snapshots -p rwa -k fed-backup
@@ -74,6 +76,10 @@ the trail itself.
    the host's time. Point chrony or systemd-timesyncd at the site's time source
    (on an airgapped host, an internal NTP server), and check
    `timedatectl show -p NTPSynchronized --value` answers `yes`.
+
+`make env` replaces each `.env` it changes with a new file, which shows as
+`fed-config` records under the operator's login user, as does a read of a
+backup in `deploy/.env-sync`.
 
 ## Reading the records
 

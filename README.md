@@ -48,12 +48,25 @@ missing network. For the per-tier probes and the reverse-order `down`, see
 ```bash
 cp federation.env.example federation.env   # then edit (GIT_REMOTE, INFRA_ROOT, apps, profile)
 make clone     # bare host: clone every missing member repo under INFRA_ROOT
+make env       # create/update every .env from its .env.example (instead of copying them by hand)
 make setup     # one-time: external networks + volumes for every tier
 make up        # ordered, health-gated bring-up (detached; state tier without published ports)
 make up-dev    # dev bring-up: state + obs + app tiers publish host ports (inference & edge stay production)
 make ps        # status across all tiers
 make down      # reverse-order stop (never removes data volumes)
 ```
+
+`make env` creates a missing `.env` from its example and reports the values you
+still have to set (placeholders, secrets). Enter those, then `make up`.
+
+## Keeping `.env` files in step
+
+After a release, `make env-check` shows what each `.env` is missing or still
+carries from a renamed key, and `make env` writes it: new keys arrive, renames
+carry over, values you set never change, and values that must be equal across
+members are filled in (or generated with `ENV_GENERATE=1`). `make up` runs
+`env-check` first and stops while a `.env` is behind. Detail, the report and
+the first run on an airgap host: [env-sync.md](docs/runbooks/env-sync.md).
 
 ## Targets
 
@@ -66,6 +79,8 @@ for every target — flags, skip rules, exit codes — is in
 | `setup` | Delegates `make network volumes` to every tier (idempotent). |
 | `up` | Ordered, health-gated bring-up via each member's own `make up` (detached, `--no-build`; data-plane without published ports) |
 | `up-dev` | Same order + gates, but state + obs + apps publish host ports; inference and edge stay production. |
+| `env` | Bring every `.env` and `federation.env` in step with its example and print what changed. `ENV_GENERATE=1` also generates missing shared secrets. |
+| `env-check` | The same, without writing. `up` / `up-dev` run it first and stop while a `.env` is behind (`ENV_ALLOW_DRIFT=1` overrides). |
 | `down` | Reverse order, via each repo's `make down`. Never `-v`. |
 | `ps` / `logs` | Fan out across all tiers. |
 | `clone` | Clone every missing member repo under `INFRA_ROOT` from `$(GIT_REMOTE)/<dir>.git` (never shallow). |
@@ -90,6 +105,7 @@ promotion. Step-by-step: [releasing.md](docs/runbooks/releasing.md).
 build host (online)                 airgap host (offline)
 ──────────────────                  ─────────────────────
 make bundle  ──▶ *.tar.gz  ──copy──▶  make load   (docker load all tarballs)
+                                      make env    (sync every .env with its example)
                                       make setup
                                       make up
 ```
@@ -98,7 +114,8 @@ The copy step is `scripts/copy-bundles.sh <dest-dir>`, which also refuses to
 assemble a version-skewed transfer set. Run it right after `make bundle`, which
 leaves every member on its release tag, then `make pull` to return to `main`. See
 [airgap-transfer.md](docs/runbooks/airgap-transfer.md) for what each step
-moves, the probe-image handling, and the skew guard.
+moves, the probe-image handling, and the skew guard. On a host's first
+`make env`, follow the two-step adoption in [env-sync.md](docs/runbooks/env-sync.md#first-run-on-a-host).
 
 ### What else must travel
 
