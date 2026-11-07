@@ -65,6 +65,19 @@ fi
 echo "Extracting $TARBALL -> $DEST/$MODEL_ROOT"
 zstd -dc "$TARBALL" | tar -xf - -C "$DEST"
 
+# Every link must now point at a file. An archive that an older pack-model.sh
+# made from a huggingface_hub >= 2 cache holds links into that cache's shared
+# blob store (<cache>/blobs/), which the archive does not contain: it arrives
+# without the weights, and the service would fail at startup.
+DANGLING=$(find "$DEST/$MODEL_ROOT" -type l ! -exec test -e {} \; -print)
+if [[ -n "$DANGLING" ]]; then
+    echo "error: the archive holds links to files it does not contain (the model's weights are missing):" >&2
+    printf '%s\n' "$DANGLING" | head -n 5 >&2 || true
+    echo "hint: re-pack the model on the source machine with this repo's scripts/pack-model.sh," >&2
+    echo "      which stores those files themselves, then unpack the new archive here." >&2
+    exit 1
+fi
+
 # Make the extracted files owned by whoever owns the cache dir (i.e. the UID
 # the container runs as). Override with e.g. CHOWN=1000:1000 if needed.
 OWNER="${CHOWN:-$(stat -c '%u:%g' "$DEST")}"
