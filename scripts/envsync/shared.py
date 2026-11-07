@@ -21,6 +21,7 @@ _ENTRY = re.compile(r"^entry=([A-Za-z0-9._-]+)$")
 _PLACEHOLDER = re.compile(r"<[^>]*>")
 _QUOTED = re.compile(r"'[^']*'|\"(?:\\.|[^\"\\])*\"")
 _FILE_KINDS = ("filled", "generated", "kept_unset", "unsafe")
+_REPLACED_KINDS = ("added", "held", "differs")
 
 
 class TableError(Exception):
@@ -177,7 +178,25 @@ def _placeholder(value: str, placeholders: Set[str]) -> bool:
 
 def _item_unset(item: str, placeholders: Set[str]) -> bool:
     _, sep, token = item.partition("=")
-    return not item.strip() or (bool(sep) and _placeholder(token.strip(), placeholders))
+    return _placeholder((token if sep else item).strip(), placeholders)
+
+
+def _forget(plan: FilePlan, key: str) -> None:
+    """Drop the planner's added, held and differs items about a key a fill has
+    just written, and any of those events left empty."""
+    mine = (key + "=", key + ": ")
+    kept: List[Event] = []
+    for event in plan.events:
+        if event.kind in _REPLACED_KINDS:
+            event.items = [
+                item
+                for item in event.items
+                if item != key and not item.startswith(mine)
+            ]
+            if not event.items:
+                continue
+        kept.append(event)
+    plan.events[:] = kept
 
 
 def _list_unset(value: str, placeholders: Set[str]) -> bool:
@@ -347,6 +366,7 @@ class _Pass:
         plan.entries[row.key] = Entry(
             row.key, fill_line(existing, row.key, target), target, origin
         )
+        _forget(plan, row.key)
         self.note(
             row.member, origin, f"{row.key} (from {source})" if source else row.key
         )

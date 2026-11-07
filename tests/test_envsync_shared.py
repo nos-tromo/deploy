@@ -776,12 +776,37 @@ class EntryRowTests(SharedCase):
                 "NEXTEXT_SERVICE_TOKENS=   # docint's token goes here\n",
                 filled + " # docint's token goes here",
             ),
+            "the trap, with name=token in its comment": (
+                "NEXTEXT_SERVICE_TOKENS=   # docint=the token docint sends\n",
+                filled + " # docint=the token docint sends",
+            ),
         }.items():
             with self.subTest(name):
                 self.assertEqual(self.tokens("NEXTEXT_API_KEY=SENTINEL-t\n", raw), [])
                 self.assertEqual(
                     self.plan("Nextext").entries["NEXTEXT_SERVICE_TOKENS"].raw, expected
                 )
+
+    def test_a_bare_placeholder_item_is_unset(self) -> None:
+        self.assertEqual(
+            self.tokens(
+                "NEXTEXT_API_KEY=SENTINEL-t\n", "NEXTEXT_SERVICE_TOKENS=<your-token>\n"
+            ),
+            [],
+        )
+        nextext = self.plan("Nextext")
+        self.assertEqual(
+            nextext.entries["NEXTEXT_SERVICE_TOKENS"],
+            Entry(
+                "NEXTEXT_SERVICE_TOKENS",
+                "NEXTEXT_SERVICE_TOKENS=docint=SENTINEL-t",
+                "docint=SENTINEL-t",
+                "filled",
+            ),
+        )
+        self.assertEqual(
+            items(nextext, "filled"), ["NEXTEXT_SERVICE_TOKENS (from docint)"]
+        )
 
     def test_a_comma_never_enters_a_list(self) -> None:
         # The list separator inside the shared token would add an item to the
@@ -940,6 +965,101 @@ class GenerateTests(SharedCase):
                 for item in found.items:
                     self.assertNotIn("a" * 64, item)
                     self.assertNotIn("b" * 64, item)
+
+
+class PlannerNotesTests(SharedCase):
+    """A fill replaces the planner's notes about its key, and only those."""
+
+    def test_added_default_gives_way_to_the_fill(self) -> None:
+        self.start(HOST)
+        self.member(
+            "edge-plane", "EDGE_HOST=127.0.0.1\n", "EDGE_HOST=gw.example.invalid\n"
+        )
+        obs = self.member("obs-plane", "OTHER=1\nEDGE_HOST=127.0.0.1\n", "OTHER=1\n")
+        self.assertEqual(items(obs, "added"), ["EDGE_HOST=127.0.0.1"])
+        self.assertEqual(self.apply(), [])
+        self.assertEqual(obs.events, [Event("filled", ["EDGE_HOST (from edge-plane)"])])
+
+    def test_held_placeholder_gives_way_to_the_fill(self) -> None:
+        self.start(AUDIT)
+        self.member(
+            "edge-plane", "AUDIT_EDGE_SECRET=\n", "AUDIT_EDGE_SECRET=SENTINEL-s\n"
+        )
+        obs = self.member(
+            "obs-plane",
+            "AUDIT_EDGE_SECRET=change-me\n",
+            "AUDIT_EDGE_SECRET=old-placeholder\n",
+            base="AUDIT_EDGE_SECRET=old-placeholder\n",
+        )
+        self.assertEqual(items(obs, "held"), ["AUDIT_EDGE_SECRET"])
+        self.assertEqual(self.apply(), [])
+        self.assertEqual(obs.entries["AUDIT_EDGE_SECRET"].origin, "filled")
+        self.assertEqual(
+            obs.events, [Event("filled", ["AUDIT_EDGE_SECRET (from edge-plane)"])]
+        )
+
+    def test_other_keys_keep_their_notes(self) -> None:
+        self.start(HOST)
+        self.member(
+            "edge-plane", "EDGE_HOST=127.0.0.1\n", "EDGE_HOST=gw.example.invalid\n"
+        )
+        obs = self.member(
+            "obs-plane",
+            "OTHER=1\nEDGE_HOST=127.0.0.1\nEDGE_HOST_2=127.0.0.2\nLOG_LEVEL=info\n",
+            "OTHER=1\n",
+        )
+        self.assertEqual(self.apply(), [])
+        self.assertEqual(
+            obs.events,
+            [
+                Event("added", ["EDGE_HOST_2=127.0.0.2", "LOG_LEVEL=info"]),
+                Event("filled", ["EDGE_HOST (from edge-plane)"]),
+            ],
+        )
+
+    def test_held_change_and_differs_give_way_to_the_fill(self) -> None:
+        # held: "KEY: old -> new"; differs: "KEY", next to a key it prefixes.
+        for name, (example, base, env, kind, others) in {
+            "held": (
+                "EDGE_HOST=10.0.0.1\n",
+                "EDGE_HOST=127.0.0.1\n",
+                "EDGE_HOST=127.0.0.1\n",
+                "held",
+                None,
+            ),
+            "differs": (
+                "EDGE_HOST=127.0.0.1\nEDGE_HOST_2=127.0.0.2\n",
+                None,
+                "EDGE_HOST=<your host>\nEDGE_HOST_2=gw2.example.invalid\n",
+                "differs",
+                ["EDGE_HOST_2"],
+            ),
+        }.items():
+            with self.subTest(name):
+                self.start(HOST)
+                edge = self.member(
+                    "edge-plane",
+                    "EDGE_HOST=127.0.0.1\n",
+                    "EDGE_HOST=gw.example.invalid\n",
+                )
+                obs = self.member("obs-plane", example, env, base=base)
+                self.assertIsNotNone(items(obs, kind))
+                self.assertEqual(self.apply(), [])
+                self.assertEqual(items(obs, kind), others)
+                self.assertEqual(items(obs, "filled"), ["EDGE_HOST (from edge-plane)"])
+                self.assertEqual(items(edge, "differs"), ["EDGE_HOST"])
+
+    def test_generation_replaces_the_added_note(self) -> None:
+        self.start(AUDIT)
+        for name in ("edge-plane", "obs-plane"):
+            self.member(name, "OTHER=1\nAUDIT_EDGE_SECRET=\n", "OTHER=1\n")
+        self.assertEqual(self.apply(generate=True, token=Tokens("a" * 64)), [])
+        for name in ("edge-plane", "obs-plane"):
+            with self.subTest(name):
+                self.assertEqual(
+                    self.plan(name).events,
+                    [Event("generated", ["AUDIT_EDGE_SECRET"])],
+                )
 
 
 class RememberedTests(SharedCase):
