@@ -53,12 +53,17 @@ v2.10+).
 
 ## B. On the host, while the old releases still run
 
-1. **Back up with the old releases.** The new data-plane never restores
-   plaintext backups, so these are the way back:
+1. **Back up with the old releases:**
    - `make backup` in data-plane (plaintext under `backup/snapshots/`); move
-     the files to the offline medium.
+     the files to the offline medium. They are a safety copy of the data, not
+     a way back: the new data-plane never restores plaintext backups, and
+     data-plane stays on its new release ([Going back](#going-back)). They
+     hold Qdrant's collections and Neo4j's dump; C3 deletes Neo4j's volumes
+     and then this dump, the last copy of its data
+     ([retire-chorus.md](retire-chorus.md), steps B3 and B4).
    - A copy of the volumes `sessions-storage` (docint) and `open-webui-data`
-     (Open WebUI v0.13.0 migrates its database on first start).
+     (Open WebUI v0.13.0 migrates its database on first start): the way back
+     for those two apps.
 2. **Generate the secrets.** `make secret` in edge-plane; every value its own,
    at least 32 characters. `openssl rand -hex 32` for the Qdrant key and the
    Open WebUI token secret.
@@ -145,8 +150,8 @@ v2.10+).
 
 ## E. Afterwards
 
-- Delete the plaintext backups from B1 once the new releases have proven
-  themselves; until then they are the way back.
+- Delete data-plane's plaintext backups from B1 once the new releases have
+  proven themselves; until then they are a safety copy of Qdrant's data.
 - Nextext: remove CLI leftovers from before the upgrade with
   `make cli-clean LEGACY=1`; CLI inputs go to `/tmp/nextext-cli/` from now on.
 - open-webui-service: vectors of uploads from before the upgrade stay in its
@@ -163,14 +168,12 @@ v2.10+).
 
 ## Going back
 
-Retention deletes nothing for 30 days, so within that time images and `.env`
-can be reverted, with four limits:
+Retention deletes nothing for 30 days. deploy and data-plane stay on v0.6.0
+and v0.9.0: their older releases need Neo4j and chorus, which
+[retire-chorus.md](retire-chorus.md) removes with their data. Older
+data-plane would try to pull the neo4j image, and older deploy waits on
+`neo4j:7687` and runs `make` in chorus' checkout. Within those 30 days the
+other members' images and `.env` can be reverted, with two limits:
 
 - Open WebUI needs its volume copy from B1 (database migration).
-- Older data-plane scripts cannot read the new encrypted backups; use the
-  plaintext ones from B1.
 - What reached the audit trail stays there.
-- deploy and data-plane stay on v0.6.0 and v0.9.0: their older releases need
-  Neo4j and chorus, which [retire-chorus.md](retire-chorus.md) removes with
-  their data. Older data-plane would try to pull the neo4j image, and older
-  deploy waits on `neo4j:7687` and runs `make` in chorus' checkout.
