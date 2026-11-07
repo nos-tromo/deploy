@@ -35,7 +35,7 @@ shell scripts (`scripts/wait-healthy.sh` the health gate, `scripts/bundle-exists
 bundle-skip check, `scripts/copy-bundles.sh` the airgap transfer set, `scripts/prune-images.sh`
 the image cleanup, and the `scripts/fetch-model.sh` / `scripts/pack-model.sh` /
 `scripts/unpack-model.sh` model-weight trio), and two workflows
-(`.github/workflows/ci.yml`, lint-only, plus `release-tag.yml`) — but the blast radius is
+(`.github/workflows/ci.yml` — lint, plus the model-transfer round trip `tests/model-transfer.test.sh`; and `release-tag.yml`) — but the blast radius is
 cross-repo: editing anything here changes how the entire federation boots. The
 documentation is split three ways, and each part has its own lane: `README.md` is the entry
 point (what this layer is, on-host layout, quick start, and pointers), `docs/runbooks/` holds the
@@ -249,6 +249,10 @@ member's lifecycle: `pack`/`unpack` run under `sudo` against `/var/lib/docker` o
 holds the model, while `fetch` is unprivileged and deliberately writes to the *host* HF cache rather
 than the `huggingface-cache` volume — `pack-model.sh` takes any model directory, so the volume is
 only ever touched on the restore side.
+`pack-model.sh` stores the files a `huggingface_hub` 2.x cache keeps in its shared blob store
+(`<cache>/blobs/`, outside the model directory) as real files, packing from a temporary hard-link
+mirror; `unpack-model.sh` refuses an archive whose links point at files it lacks. Both are pinned
+by `tests/model-transfer.test.sh` (synthetic caches, no network; CI job `model-transfer`).
 
 ## Scope boundary
 
