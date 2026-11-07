@@ -220,6 +220,32 @@ class CliCase(unittest.TestCase):
     def assertExit(self, proc: subprocess.CompletedProcess, code: int) -> None:
         self.assertEqual(proc.returncode, code, proc.stdout + proc.stderr)
 
+    def placeholder_history(self, first_table: str) -> Tuple[Path, Path]:
+        """Run 1 against obs-plane's placeholder `change-me` (edge-plane
+        leaves the key empty); then the example changes it to `change-me-2`
+        and the table is the full one."""
+        self.table.write_text(first_table, encoding="utf-8")
+        edge = make_member(
+            self.infra,
+            "edge-plane",
+            "EDGE_HOST=edge.example.invalid\nAUDIT_EDGE_SECRET=\n",
+            "EDGE_HOST=SENTINEL-gw.example.invalid\nAUDIT_EDGE_SECRET=\n",
+        )
+        obs = make_member(
+            self.infra,
+            "obs-plane",
+            "EDGE_HOST=edge.example.invalid\nAUDIT_EDGE_SECRET=change-me\n",
+            "EDGE_HOST=SENTINEL-gw.example.invalid\nAUDIT_EDGE_SECRET=change-me\n",
+        )
+        self.assertExit(self.sync(edge, obs), 0)
+        self.table.write_text(TABLE, encoding="utf-8")
+        make_member(
+            self.infra,
+            "obs-plane",
+            "EDGE_HOST=edge.example.invalid\nAUDIT_EDGE_SECRET=change-me-2\n",
+        )
+        return edge, obs
+
 
 class WriteTests(CliCase):
     def test_first_run_writes_and_records_base(self) -> None:
@@ -458,29 +484,9 @@ class WriteTests(CliCase):
         self.assertEqual(value(obs / ".env", "AUDIT_EDGE_SECRET"), token)
 
     def placeholder_runs(self, first_table: str) -> None:
-        """Run 1 against obs-plane's placeholder `change-me` (edge-plane
-        leaves the key empty), then the example changes it to `change-me-2`:
-        runs 2 and 3 must not spread the old placeholder to edge-plane."""
-        self.table.write_text(first_table, encoding="utf-8")
-        edge = make_member(
-            self.infra,
-            "edge-plane",
-            "EDGE_HOST=edge.example.invalid\nAUDIT_EDGE_SECRET=\n",
-            "EDGE_HOST=SENTINEL-gw.example.invalid\nAUDIT_EDGE_SECRET=\n",
-        )
-        obs = make_member(
-            self.infra,
-            "obs-plane",
-            "EDGE_HOST=edge.example.invalid\nAUDIT_EDGE_SECRET=change-me\n",
-            "EDGE_HOST=SENTINEL-gw.example.invalid\nAUDIT_EDGE_SECRET=change-me\n",
-        )
-        self.assertExit(self.sync(edge, obs), 0)
-        self.table.write_text(TABLE, encoding="utf-8")
-        make_member(
-            self.infra,
-            "obs-plane",
-            "EDGE_HOST=edge.example.invalid\nAUDIT_EDGE_SECRET=change-me-2\n",
-        )
+        """Runs 2 and 3 after the history must not spread the old
+        placeholder to edge-plane."""
+        edge, obs = self.placeholder_history(first_table)
         for run in (2, 3):
             with self.subTest(run=run):
                 self.assertExit(self.sync(edge, obs), 0)
@@ -724,6 +730,57 @@ class ErrorTests(CliCase):
         self.assertExit(self.sync(edge, obs), 0)
         self.assertEqual(read(self.state / "base" / "obs-plane.example"), OBS_EXAMPLE)
         self.assertExit(self.sync("--check", edge, obs), 0)
+
+    def test_damaged_stored_copy_keeps_the_placeholders(self) -> None:
+        # Only the stored copy is damaged (not UTF-8, or rejected by a
+        # stricter load_example): the remembered placeholders still apply.
+        damages = {
+            "not UTF-8": b"A=\xff\n",
+            "rejected": b"EDGE_HOST=edge.example.invalid\n# renamed: broken\n",
+        }
+        for name, damage in damages.items():
+            with self.subTest(name):
+                shutil.rmtree(self.infra, ignore_errors=True)
+                shutil.rmtree(self.state, ignore_errors=True)
+                edge, obs = self.placeholder_history(TABLE)
+                self.assertExit(self.sync(edge, obs), 0)
+                placeholders = self.state / "base" / "obs-plane.placeholders"
+                self.assertIn("change-me", read(placeholders).split())
+                (self.state / "base" / "obs-plane.example").write_bytes(damage)
+                proc = self.sync(edge, obs)
+                self.assertExit(proc, 0)
+                self.assertIn(
+                    "   state      stored copy unreadable; treated as never synced\n",
+                    proc.stdout,
+                )
+                self.assertNotIn("filled", proc.stdout)
+                self.assertNotIn("change-me", read(edge / ".env"))
+                self.assertIn("change-me", read(placeholders).split())
+                self.assertExit(self.sync("--check", edge, obs), 0)
+
+    def test_damaged_placeholders_are_repaired(self) -> None:
+        # A member without shared keys: a damaged placeholders file is a
+        # warning, not "never synced", and one make env rewrites it.
+        member = make_member(
+            self.infra, "translator", "TEXT_MODEL=m\n", "TEXT_MODEL=m\n"
+        )
+        self.assertExit(self.sync(member), 0)
+        placeholders = self.state / "base" / "translator.placeholders"
+        placeholders.write_bytes(b"\xff\n")
+        proc = self.sync("--check", member)
+        self.assertExit(proc, 0)
+        self.assertEqual(
+            proc.stdout,
+            "env: 1 files in sync\n"
+            + header("translator/.env", "in sync")
+            + "\n   state      stored placeholders unreadable; "
+            "'make env' rewrites them\n",
+        )
+        self.assertExit(self.sync(member), 0)
+        self.assertEqual(placeholders.read_bytes(), b"")
+        proc = self.sync("--check", member)
+        self.assertExit(proc, 0)
+        self.assertEqual(proc.stdout, "env: 1 files in sync\n")
 
     @unittest.skipIf(os.geteuid() == 0, "root writes into a read-only directory")
     def test_state_write_failure_is_reported(self) -> None:

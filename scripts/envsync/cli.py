@@ -51,6 +51,7 @@ DRIFT_WARNING = (
     "are behind their examples."
 )
 STORED_UNREADABLE = "stored copy unreadable; treated as never synced"
+PLACEHOLDERS_UNREADABLE = "stored placeholders unreadable; 'make env' rewrites them"
 STORED_NOT_SAVED = (
     "stored copy not saved ({}); fix the state directory, then run 'make env' again"
 )
@@ -92,12 +93,14 @@ def target_for(dir_arg: str) -> Target:
 
 @dataclass
 class _Stored:
-    """What the state directory holds for one file."""
+    """What the state directory holds for one file. A file that cannot be
+    read counts as absent and is flagged, so the next write replaces it."""
 
     text: Optional[str] = None
     base: Optional[Example] = None
     remembered: FrozenSet[str] = frozenset()
-    unreadable: bool = False
+    base_unreadable: bool = False
+    placeholders_unreadable: bool = False
 
 
 @dataclass
@@ -133,13 +136,20 @@ def _read_example(target: Target) -> Tuple[str, Example]:
 
 
 def _read_stored(state: StateDir, target: Target) -> _Stored:
+    """The stored copy and the remembered placeholders, each read on its own:
+    a damaged one never discards the other."""
+    stored = _Stored()
     try:
         text = state.read_base(target.file_id)
-        remembered = state.read_placeholders(target.file_id)
-        base = None if text is None else load_example(text, target.syntax)
-    except (OSError, ValueError, ExampleError):
-        return _Stored(unreadable=True)
-    return _Stored(text, base, remembered)
+        stored.base = None if text is None else load_example(text, target.syntax)
+        stored.text = text
+    except (OSError, UnicodeDecodeError, ExampleError):
+        stored.base_unreadable = True
+    try:
+        stored.remembered = state.read_placeholders(target.file_id)
+    except (OSError, UnicodeDecodeError):
+        stored.placeholders_unreadable = True
+    return stored
 
 
 def _load(
@@ -164,8 +174,14 @@ def _load(
         return FileResult(display, "refused", error=str(exc))
     except OSError as exc:
         return FileResult(display, "refused", error=f"cannot be read ({exc.strerror})")
-    if stored.unreadable:
-        plan.events.insert(0, Event("state", [STORED_UNREADABLE], "warn"))
+    plan.events[:0] = [
+        Event("state", [note], "warn")
+        for note, damaged in (
+            (STORED_UNREADABLE, stored.base_unreadable),
+            (PLACEHOLDERS_UNREADABLE, stored.placeholders_unreadable),
+        )
+        if damaged
+    ]
     return _Planned(target, example_text, example, stored, snap, env, plan)
 
 
@@ -189,7 +205,7 @@ def _record(p: _Planned, groups: List[Group], state: StateDir) -> None:
         groups, file_id, p.example, p.stored.base
     )
     try:
-        if keep != p.stored.remembered:
+        if keep != p.stored.remembered or p.stored.placeholders_unreadable:
             state.write_placeholders(file_id, keep)
         if p.example_text != p.stored.text:
             state.write_base(file_id, p.example_text)
