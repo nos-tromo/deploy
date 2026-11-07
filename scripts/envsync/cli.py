@@ -4,9 +4,10 @@ reconciled across the planned files; then the files are checked (nothing is
 written anywhere) or written (backup, atomic replace, the example recorded),
 and the report is printed.
 
-Exit codes: 0 ok; 1 a refused or missing file, a shared conflict, or (check)
-a file behind its example or never synced; 2 a usage, table or state
-directory error, with no .env changed."""
+Exit codes: 0 ok; 1 a refused or missing file, a file error (its stored
+copy not saved), a shared conflict, or (check) a file behind its example or
+never synced; 2 a usage, table, lock or state directory error, raised before
+any file is touched."""
 
 from __future__ import annotations
 
@@ -50,6 +51,9 @@ DRIFT_WARNING = (
     "are behind their examples."
 )
 STORED_UNREADABLE = "stored copy unreadable; treated as never synced"
+STORED_NOT_SAVED = (
+    "stored copy not saved ({}); fix the state directory, then run 'make env' again"
+)
 
 
 class UsageError(Exception):
@@ -178,7 +182,8 @@ def _replace(p: _Planned, text: str, state: StateDir) -> Optional[str]:
 
 def _record(p: _Planned, groups: List[Group], state: StateDir) -> None:
     """Remember the placeholders, those of the copy about to be replaced
-    included, then store the example the file is now in step with."""
+    included, then store the example the file is now in step with. A failure
+    is an error on this file only: its .env is written, the run goes on."""
     file_id = p.target.file_id
     keep = p.stored.remembered | placeholder_values(
         groups, file_id, p.example, p.stored.base
@@ -188,10 +193,9 @@ def _record(p: _Planned, groups: List[Group], state: StateDir) -> None:
             state.write_placeholders(file_id, keep)
         if p.example_text != p.stored.text:
             state.write_base(file_id, p.example_text)
-    except OSError as exc:
-        raise StateError(
-            f"cannot record the synced example of {p.target.display}: {exc.strerror}"
-        ) from None
+    except (OSError, StateError) as exc:
+        cause = getattr(exc, "strerror", None) or type(exc).__name__
+        p.plan.events.append(Event("state", [STORED_NOT_SAVED.format(cause)], "error"))
 
 
 def _finish(
@@ -207,7 +211,7 @@ def _finish(
     found = placeholder_event(plan, p.example, p.stored.base)
     if found is not None:
         plan.events.append(found)
-    if world_readable(p.snap):
+    if p.target.syntax == "dotenv" and world_readable(p.snap):
         plan.events.append(Event("readable", [display], "warn"))
     behind = p.env is None or p.env.decoded() != plan.effective()
     old = p.snap.data
@@ -337,6 +341,9 @@ def _exit_code(
     results: List[FileResult], shared: List[Event], check: bool, allow_drift: bool
 ) -> int:
     failed = any(result.status in ("refused", "missing") for result in results)
+    failed = failed or any(
+        event.level == "error" for result in results for event in result.events()
+    )
     failed = failed or any(event.kind == "conflict" for event in shared)
     if check:
         failed = failed or any(r.behind or r.never_synced for r in results)

@@ -1,17 +1,22 @@
 """End to end: the real scripts/env_sync.py runs as a subprocess against a
-temporary infra/ with two synthetic members and a two-group table."""
+temporary infra/ with two synthetic members and a two-group table. One test
+runs main() in-process, to make the state directory fail on cue."""
 
 from __future__ import annotations
 
+import errno
 import fcntl
+import io
 import os
 import shutil
 import stat
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from typing import Optional, Tuple
+from unittest import mock
 
 from envsync_helpers import (
     Content,
@@ -21,9 +26,11 @@ from envsync_helpers import (
     run_sync,
     tree_digest,
 )
+from envsync.cli import main
 from envsync.plan import _KINDS, Event
 from envsync.report import LABEL, event_line
 from envsync.shared import _FILE_KINDS
+from envsync.state import StateDir
 
 HOST_ROWS = (
     "edge-host   edge-plane  EDGE_HOST          source\n"
@@ -159,6 +166,13 @@ UNSET_AUDIT = (
 
 def header(display: str, status: str) -> str:
     return f"== {display:<24} {status}"
+
+
+def not_saved(code: int) -> str:
+    return (
+        f"   state      stored copy not saved ({os.strerror(code)}); "
+        "fix the state directory, then run 'make env' again\n"
+    )
 
 
 def read(path: Path) -> str:
@@ -492,18 +506,27 @@ class WriteTests(CliCase):
         self.assertNotIn("edge-link", proc.stdout)
         self.assertTrue(proc.stdout.endswith(SUMMARY_WRITTEN), proc.stdout)
 
-    def test_world_readable_warns(self) -> None:
+    def test_readable_warning_for_member_env_only(self) -> None:
+        # federation.env holds no secrets and is usually 0644: no warning.
+        deploy = make_deploy(self.infra, FED_EXAMPLE_OLD, "INFRA_ROOT=..\n")
+        os.chmod(deploy / "federation.env", 0o644)
         edge = make_member(self.infra, "edge-plane", EDGE_EXAMPLE, EDGE_ENV, 0o644)
         obs = make_member(self.infra, "obs-plane", OBS_EXAMPLE, OBS_ENV)
-        self.assertExit(self.sync(edge, obs), 0)
+        readable = "   readable   edge-plane/.env (readable by every user; chmod 600)\n"
+        proc = self.sync(deploy, edge, obs)
+        self.assertExit(proc, 0)
+        self.assertIn(readable, proc.stdout)
+        self.assertNotIn("deploy/federation.env (readable", proc.stdout)
         self.assertEqual(mode(edge / ".env"), 0o644)
-        proc = self.sync("--check", edge, obs)
+        self.assertEqual(mode(deploy / "federation.env"), 0o644)
+        proc = self.sync("--check", deploy, edge, obs)
         self.assertExit(proc, 0)
         self.assertEqual(
             proc.stdout,
-            "env: 2 files in sync\n"
+            "env: 3 files in sync\n"
             + header("edge-plane/.env", "in sync")
-            + "\n   readable   edge-plane/.env (readable by every user; chmod 600)\n",
+            + "\n"
+            + readable,
         )
 
     def test_member_dirs_stay_clean(self) -> None:
@@ -711,14 +734,57 @@ class ErrorTests(CliCase):
         os.chmod(base, 0o500)
         self.addCleanup(os.chmod, base, 0o700)
         proc = self.sync(edge, obs)
-        self.assertExit(proc, 2)
+        self.assertExit(proc, 1)
+        self.assertEqual(proc.stderr, "")
+        self.assertIn(header("edge-plane/.env", "unchanged") + "\n", proc.stdout)
         self.assertIn(
-            "env_sync.py: error: cannot record the synced example of obs-plane/.env",
-            proc.stderr,
+            header("obs-plane/.env", "written") + " (backup: state/backup/obs-plane/",
+            proc.stdout,
+        )
+        self.assertIn(
+            "   added      RETRY_LIMIT=3\n" + not_saved(errno.EACCES), proc.stdout
+        )
+        self.assertTrue(
+            proc.stdout.endswith(
+                "summary: 1 written, 1 unchanged, 0 refused, 0 conflict(s). "
+                "Changes apply with the next 'make up'.\n"
+            ),
+            proc.stdout,
         )
         self.assertIn("RETRY_LIMIT=3\n", read(obs / ".env"))
         self.assertEqual(len(os.listdir(self.state / "backup" / "obs-plane")), 2)
         self.assertEqual(os.listdir(self.state / "tmp"), [])
+
+    def test_stored_copy_failure_is_a_file_error(self) -> None:
+        # In-process: StateDir.write_base fails for the first file only.
+        edge, obs = self.members()
+        write_base = StateDir.write_base
+
+        def failing(state: StateDir, file_id: str, text: str) -> None:
+            if file_id == "edge-plane":
+                raise OSError(errno.ENOSPC, os.strerror(errno.ENOSPC))
+            write_base(state, file_id, text)
+
+        argv = ["--state", str(self.state), "--table", str(self.table)]
+        out, err = io.StringIO(), io.StringIO()
+        patch = mock.patch.object(StateDir, "write_base", failing)
+        with patch, redirect_stdout(out), redirect_stderr(err):
+            code = main(argv + [str(edge), str(obs)])
+        report = out.getvalue()
+        assert_no_sentinel(self, report, err.getvalue())
+        self.assertEqual(code, 1, report)
+        self.assertEqual(err.getvalue(), "")
+        self.assertEqual(read(edge / ".env"), EDGE_SYNCED)
+        self.assertEqual(read(obs / ".env"), OBS_SYNCED)
+        start, end = report.index("== edge-plane/.env"), report.index("== obs-plane/")
+        block = report[start:end]
+        self.assertTrue(block.startswith(header("edge-plane/.env", "written")))
+        self.assertTrue(block.endswith(not_saved(errno.ENOSPC)), block)
+        self.assertIn(header("obs-plane/.env", "written"), report)
+        self.assertNotIn("   state      ", report[end:])
+        self.assertTrue(report.endswith(SUMMARY_WRITTEN), report)
+        self.assertFalse((self.state / "base" / "edge-plane.example").exists())
+        self.assertEqual(read(self.state / "base" / "obs-plane.example"), OBS_EXAMPLE)
 
     def test_unusable_state_dir(self) -> None:
         edge, obs = self.members()
