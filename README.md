@@ -59,6 +59,10 @@ make down      # reverse-order stop (never removes data volumes)
 `make env` creates a missing `.env` from its example and reports the values you
 still have to set (placeholders, secrets). Enter those, then `make up`.
 
+`make env` and `make env-check`, and so `make up` / `make up-dev`, need
+`python3` 3.9 or newer on the host; the standard library is enough, nothing is
+installed.
+
 ## Keeping `.env` files in step
 
 After a release, `make env-check` shows what each `.env` is missing or still

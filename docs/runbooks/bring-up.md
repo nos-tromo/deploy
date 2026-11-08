@@ -96,7 +96,8 @@ edge-plane's docs:
 | `prune` | Removes the federation images that no container uses — an image any container holds, running or stopped, stays — via `scripts/prune-images.sh`. By default: every image a member's compose projects built. Compose stamps `com.docker.compose.project=<name>` on each image it builds, and `<name>` is the `name:` of each standalone compose file of the member — `docker/compose.yaml` plus any `docker/compose.*.yaml` declaring its own `name:`, such as vllm-service's CPU-only shapes (`vllm-service-<shape>-only`); overlays declare none and are skipped — so every old release tag, superseded dev build and untagged rebuild leftover goes. `PRUNE_UPSTREAM=1` also removes every unused version of the upstream images the members pull (qdrant, grafana, open-webui, litellm, …). Those carry no federation label, so they match by repository (each member's image list, read with its `.env`): an unused image of the same upstream repository pulled by another project goes too, while a reference outside the federation (say `mycorp/x:1`) keeps its image alive. Never touched: the health-probe image, other projects' images, containers, networks, volumes. No confirm prompt. Removed images come back with `make load`; `make prune bundle BUNDLE_FORCE=1` is a full rebuild (a plain `bundle` skips members whose tarball already exists, so nothing would be rebuilt). Preview: `docker image ls --filter label=com.docker.compose.project=<name>` (built) or `docker image ls <repo>` (upstream). A member whose compose file can't be read is skipped with a warning, and the target exits non-zero at the end. |
 
 `up` and `up-dev` run `env-check` first, before `setup` and before any tier
-starts.
+starts. `env` and `env-check` run `scripts/env_sync.py`, so `make up` needs
+`python3` 3.9 or newer on the host (standard library only).
 
 ## Tier wiring
 

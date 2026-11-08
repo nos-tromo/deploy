@@ -45,7 +45,8 @@ v2.10+).
    sidecar mounts.
 3. Download the `age` package for the host's distribution
    (`apt-get download age`, `dnf download age`): backups now encrypt with it,
-   and it is not part of any bundle.
+   and it is not part of any bundle. The same goes for `python3`, 3.9 or newer,
+   where the host lacks it: `make env`, and so `make up`, now need it.
 4. Optional: to pin model revisions (`*_MODEL_REVISION` in vllm-service), note
    the revision `fetch-model.sh` prints for each model transferred
    ([model-transfer.md](../model-transfer.md)). A pinned revision missing from
@@ -58,7 +59,7 @@ v2.10+).
      the files to the offline medium. They are a safety copy of the data, not
      a way back: the new data-plane never restores plaintext backups, and
      data-plane stays on its new release ([Going back](#going-back)). They
-     hold Qdrant's collections and Neo4j's dump; C3 deletes Neo4j's volumes
+     hold Qdrant's collections and Neo4j's dump; C4 deletes Neo4j's volumes
      and then this dump, the last copy of its data
      ([retire-chorus.md](retire-chorus.md), steps B3 and B4).
    - A copy of the volumes `sessions-storage` (docint) and `open-webui-data`
@@ -98,14 +99,22 @@ v2.10+).
 
 1. `make down`, with the old files
    ([retire-chorus.md](retire-chorus.md#b-on-the-host-in-the-window), step B1).
-2. Replace the member files with the transfer set. Leave every `.env`,
+2. **Record the old examples**
+   ([env-sync.md](env-sync.md#first-run-on-a-host), airgap adoption). Replace
+   deploy's files with the transfer set's, and only deploy's. Take `chorus` out
+   of `APP_DIRS` in `federation.env` (retire-chorus step B6 asks for it
+   anyway), so `make env` neither rewrites chorus' `.env` nor keeps a copy of
+   it. Then run `make env`, against the members' still-old examples: it stores
+   the example each `.env` is in step with, which is what lets step 6 follow
+   untouched defaults and carry renames.
+3. Replace the member files with the transfer set. Leave every `.env`,
    edge-plane's `authelia/users.yml` and `certs/`, and data-plane's `backup/`
    as they are.
-3. Steps B2 to B6 of
+4. Steps B2 to B6 of
    [retire-chorus.md](retire-chorus.md#b-on-the-host-in-the-window), then
    delete data-plane's older tarballs as in its step B7.
-4. `make load`.
-5. **Edit every `.env`:** run `make env` first
+5. `make load`.
+6. **Edit every `.env`:** run `make env` again
    ([env-sync.md](env-sync.md)); then enter the values from B2 that it reports
    as unset or placeholders.
    - edge-plane: `EDGE_AUTH_POLICY=one_factor` for now. Logins otherwise need
@@ -115,17 +124,17 @@ v2.10+).
    - Leave `AUDIT_REQUIRE_PURPOSE` unset (docint and Nextext then require a
      purpose for `query` and `disclose`) and every `*_DEFAULT_IDENTITY`
      empty.
-6. In `authelia/users.yml`, give the group `audit` to the people who review
+7. In `authelia/users.yml`, give the group `audit` to the people who review
    data access, and only to them; `admins` does not grant it.
-7. `make setup`. It creates the new external volumes (`edge-audit-state`,
+8. `make setup`. It creates the new external volumes (`edge-audit-state`,
    `loki-audit-data`, `grafana-audit-data`, `audit-verifier-state`); run it
    after `make load`, since obs-plane needs its python image to set their
    ownership.
-8. `make up`.
-9. **Second factors.** `make totp U=<user>` in edge-plane for every user,
-   handed over in person (edge-plane `docs/user-accounts.md`). Then set
-   `EDGE_AUTH_POLICY=two_factor` and run `make up` in edge-plane; a restart
-   alone keeps the old environment.
+9. `make up`.
+10. **Second factors.** `make totp U=<user>` in edge-plane for every user,
+    handed over in person (edge-plane `docs/user-accounts.md`). Then set
+    `EDGE_AUTH_POLICY=two_factor` and run `make up` in edge-plane; a restart
+    alone keeps the old environment.
 
 ## D. Checks
 

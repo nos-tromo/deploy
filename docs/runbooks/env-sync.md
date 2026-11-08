@@ -62,14 +62,14 @@ headers. A `.env` that exists but has no stored copy fails `env-check` with
 | `generated` | A shared secret generated because of `ENV_GENERATE=1`. | Nothing; it is written to every member of the group. |
 | `followed` | A default you never touched moved with the example (new value). | Nothing. |
 | `unset` (first form) | The example now only comments the key out; your inherited default no longer applies. | Nothing; set it yourself to keep a value. |
-| `unset` (second form) | A shared key is unset in every member (shown as `KEY (members)`). | Set it, or run `make env ENV_GENERATE=1`. |
+| `unset` (second form) | A shared key is unset in every member (shown as `KEY (members)`). A list (`entry=`) that is set without its entry counts as unset too. | Set it, or run `make env ENV_GENERATE=1`. A list you set is never generated into: add its entry by hand. |
 | `removed` | The key is gone from the example and your line was its old default; the line is dropped. | Nothing. |
 | `held` | The example's default changed, but the key is secret-like, a retention, a shared key or in `federation.env`. Yours is kept. | Compare with the example and decide. |
 | `renamed` | The example renames a key. Three notes: the value is carried to the new name; the value is not carried (the old line stays at the end of the file with `# [env-sync] renamed to NEW in the example; value not carried`); or both names were set and the new name applies. | When not carried, copy the value by hand if you still want it, then delete the old line. |
 | `unknown` | Keys the example does not have; kept at the end of the file. | Delete them once you are sure nothing reads them. |
 | `kept unset` | A key you commented out on purpose stays commented. | Nothing. |
 | `differs` | First run: keys whose value differs from the example's default. By name only. | Nothing; this is the baseline. |
-| `lint` | A line that reads differently than it looks, for example `KEY=   # text`, whose value is `# text`. | Fix the line. |
+| `lint` | A line that reads differently than it looks, for example `KEY=   # text`, whose value is `# text`; or one whose `${KEY}` now reads a line the sync added above it (`now reads ${KEY} from a line the sync added`). | Fix the line; for `now reads`, check the value it gets now. |
 | `placeholder` | A key still holding the example's placeholder. | Set a real value. |
 | `comments` | Your comment lines that were not carried (comments come from the example). | Recover them from the backup if needed. |
 | `readable` | The `.env` is readable by every user (member `.env` files only). | `chmod 600` it. |
@@ -91,9 +91,12 @@ has an OLD line:
   example's value (`old default dropped`). The exception is a held key (secret-like,
   `*RETENTION*`, a shared key, anything in `federation.env`, on either name):
   it carries its old value, so a retention is never lowered through a rename.
-- **NEW already set.** NEW applies, and OLD goes to the end of the file
-  (`both set; the new name applies`). The same happens when two OLD keys name the
-  same NEW.
+- **NEW already set.** When NEW holds your own value, NEW applies and OLD goes
+  to the end of the file (`both set; the new name applies`). The same happens
+  when a held OLD is still at its old default, and when two OLD keys name the
+  same NEW. An untouched NEW, still at the example's default, is no conflict
+  for your own OLD: OLD's value is carried over it, under the same conditions
+  as **Carried**.
 - **Not carried.** The rename predates the last sync, or there is no sync record
   yet: OLD stays at the end of the file with
   `# [env-sync] renamed to NEW in the example; value not carried`, so a value
@@ -104,6 +107,13 @@ has an OLD line:
 A `refused` file is left untouched with its line number and the reason (a
 duplicate key, CRLF line ends, a byte-order mark, a multi-line value, a
 symlink, ...). The other files still sync. Fix the file and run again.
+
+`federation.env` is read as make reads it, and only these forms are accepted:
+`KEY=value`, `KEY = value`, `# KEY=value`, other comments and blank lines. Forms
+that make itself accepts are refused: `export`, `?=`, `:=`, `+=`, conditionals,
+and a `KEY=` line (set or commented out) that ends in `\`, which continues it
+onto the next line. A refused `federation.env` stops `make up` like any other
+refused file. Such lines belong in the Makefile, not in `federation.env`.
 
 ## First run on a host
 
@@ -126,8 +136,8 @@ or blank-only one is rebuilt from the example after a backup.
 should be the `main` examples you will work from.
 
 **Airgap host, adoption.** The members' examples arrive with the transfer set,
-so adopt in two steps, so the first upgrade already follows defaults and carries
-renames:
+so adopt with two passes of `make env`, so the first upgrade already follows
+defaults and carries renames:
 
 1. Replace deploy's files first.
 2. `make env`, against the still-old member examples. This records them.
@@ -149,6 +159,14 @@ SOME_SETTING=30  # pinned
 Any edit, an added comment included, makes the value yours. Secret-like keys,
 `*RETENTION*` keys, shared keys and everything in `federation.env` never follow
 in any case.
+
+Do not pin with a comment a key that a member's Makefile reads straight from
+its `.env` (`grep -E '^KEY=' .env | cut -d= -f2`): the comment ends up in the
+value. These are data-plane's `PROFILE`, `DATA_NET`, `BACKUP_RECIPIENTS`,
+`BACKUP_RETENTION_DAYS` and `RETENTION_NOTICE_DAYS`, and the `*_NET` keys of
+obs-plane (`INFERENCE_NET`, `DATA_NET`, `EDGE_NET`), edge-plane (`EDGE_NET`) and
+open-webui-service (`INFERENCE_NET`, `EDGE_NET`). Their defaults rarely change,
+and the `*RETENTION*` ones are held anyway.
 
 ## Shared values
 
@@ -175,6 +193,13 @@ and key. Per group:
   `NEXTEXT_SERVICE_TOKENS`); only the `docint` entry is shared. A list you set
   is never appended to.
 
+The `router-key` group rests on an assumption that holds on these hosts: every
+app reaches inference only through `vllm-router`, so vllm-service's
+`OPENAI_API_KEY` (LiteLLM's master key) is the source for the apps. If a host
+points an app at another provider, remove that app's `router-key` row from
+`env-sync.conf`. Otherwise the tool reports a conflict for the app's own key,
+or, while that key is unset or a placeholder, writes the router key into it.
+
 `ENV_GENERATE=1 make env` generates a fresh 64-hex value for each group that is
 unset in every present member, and only when all its rows can take it. Secrets
 that belong to one member (Authelia's keys) are never generated; they show up
@@ -186,16 +211,31 @@ A new or renamed shared key in a member's example needs an edit to
 ## Restoring a backup
 
 Every write first copies the old file into the state directory, the last five
-per file:
+per file. To restore one, copy it back and delete the file's stored copy, from
+deploy:
 
 ```bash
 ls .env-sync/backup/<member>/
 cp -p .env-sync/backup/<member>/<stamp>.env ../<member>/.env
+rm .env-sync/base/<member>.example
 ```
 
-`<member>` is the directory name; `federation.env` is stored under `deploy`, and its restore target is `federation.env` in deploy.
-The stamp is UTC, `YYYYmmddTHHMMSSZ`. The report names the backup in the file's
-header line.
+The stored copy is the example the replaced file was in step with, and the
+backup is older. Kept, it makes the next `make env` read every key the example
+gained since the backup as one you commented out on purpose, and comment it
+out (`kept unset`). Deleted, the next run treats the file as never synced:
+missing keys come back with their defaults, keys whose value differs from the
+example are listed as `differs`, and renames are reported rather than carried.
+Until that `make env`, `make env-check` fails with `never synced`, so nothing
+drifts unnoticed. Keep `base/<member>.placeholders`: it only remembers example
+values, so that a placeholder never spreads.
+
+The same applies to any `.env` you replace with an older copy by hand.
+
+`<member>` is the directory name. `federation.env` is stored under `deploy`
+(`backup/deploy/`, `base/deploy.example`), and its restore target is
+`federation.env` in deploy. The stamp is UTC, `YYYYmmddTHHMMSSZ`. The report
+names the backup in the file's header line.
 
 ## Keep the state directory
 
