@@ -279,6 +279,14 @@ class FileRuleTests(unittest.TestCase):
         self.assertGreater(len(f"# PROBE_PIN={DIGEST}"), 79)
         self.assertEqual(check(text, "obs-plane", groups=GROUPS), [])
 
+    def test_f3_long_inline_comment(self) -> None:
+        line = "# DATA_NET=data-net  # " + "the network the scrapers join " * 3
+        self.assertGreater(len(line), 79)
+        text = mutate(VALID, "# DATA_NET=data-net", line)
+        self.assertIn(("F3", "DATA_NET"), found(text))
+        text = mutate(VALID, "# DATA_NET=data-net", f"# DATA_NET={DIGEST}  # pin")
+        self.assertIn(("F3", "DATA_NET"), found(text))
+
     def test_f3_long_value_with_blank(self) -> None:
         title = "# DASHBOARD_TITLE=" + '"' + "a b " * 20 + '"'
         text = mutate(VALID, '# DASHBOARD_TITLE="Synthetic federation"', title)
@@ -345,9 +353,28 @@ class SectionRuleTests(unittest.TestCase):
         text = mutate(VALID, "# --- metrics ---\n", "# --- metrics ---\n# ==========\n")
         self.assertIn(("S3", None), found(text))
 
+    def test_s4_prose_starting_with_dashes(self) -> None:
+        for prose in (
+            "# --no-diarize). The VAD guard skips silence.",
+            "#   --enforce-eager",
+        ):
+            with self.subTest(prose=prose):
+                text = mutate(
+                    VALID, "# --- metrics ---\n", f"# --- metrics ---\n{prose}\n"
+                )
+                self.assertEqual(found(text), set())
+
     def test_s4_subsection_form(self) -> None:
-        text = mutate(VALID, "# --- metrics ---\n", "# -- metrics --\n")
-        self.assertIn(("S4", None), found(text))
+        for bad in (
+            "# -- metrics --",
+            "# ---- metrics ------------",
+            "# --- metrics (no closing dashes",
+            "#--- metrics ---",
+            "# ---",
+        ):
+            with self.subTest(bad=bad):
+                text = mutate(VALID, "# --- metrics ---\n", bad + "\n")
+                self.assertIn(("S4", None), found(text))
 
     def test_s5_section_is_nearest_banner_above(self) -> None:
         dev_key = (
@@ -398,6 +425,10 @@ class TagRuleTests(unittest.TestCase):
     def test_t3_commented_inside_required(self) -> None:
         text = mutate(VALID, "\nAUDIT_EDGE_SECRET=\n", "\n# AUDIT_EDGE_SECRET=\n")
         self.assertIn(("T3", "AUDIT_EDGE_SECRET"), found(text))
+
+    def test_t3_required_outside_required_section(self) -> None:
+        text = mutate(VALID, "# DATA_NET=data-net\n", "# [required]\nDATA_NET=\n")
+        self.assertIn(("T3", "DATA_NET"), found(text))
 
     def test_t3_active_without_required_tag(self) -> None:
         text = mutate(VALID, "# [required] [secret]", "# [secret]")

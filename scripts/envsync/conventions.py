@@ -64,7 +64,7 @@ _TEMPLATE = (
 MESSAGES: Dict[str, str] = {
     "F1": "the line must parse, and compose or make must read its value as written",
     "F2": "a line starts with '#' or is KEY=... at column 0; no tab, no trailing blank",
-    "F3": "longer than 79 columns; only a value without a blank may run longer",
+    "F3": "longer than 79 columns; only a value with no blank and no comment may",
     "F4": "a key is written [A-Z][A-Z0-9_]*",
     "H1": "the file must start with the standard header",
     "H2": "the header holds no setting",
@@ -108,7 +108,7 @@ _COLUMN0 = re.compile(rf"^{KEY}=")
 _PROSE_EXAMPLE = re.compile(rf"^# {{2,}}{KEY}=(.*)$")
 _TITLE = re.compile(r"^# [^\s=]")
 _RULE_LIKE = re.compile(r"^#\s*==")
-_SUBSECTION_LIKE = re.compile(r"^#\s*--")
+_SUBSECTION_LIKE = re.compile(r"^# ?-{2,}(\s|$)")
 _SUBSECTION = re.compile(r"^# --- \S.* ---+$")
 _LEGEND_LIKE = re.compile(rf"^# ?(?:\[|# ?{KEY}=)")
 _TAG_LIKE = re.compile(r"^# ?\[")
@@ -313,13 +313,18 @@ class _Check:
                 self.add(self.error_index(str(err)), "F1")
 
     def long_allowed(self, raw: str, line: Optional[Line]) -> bool:
+        """A setting, commented setting or indented prose example may run
+        past 79 columns only for a value without a blank and with no inline
+        comment; a long value's comment goes on the line above."""
         if line is not None and line.kind in _SETTINGS:
-            return _blankless(line.value or "")
-        match = _PROSE_EXAMPLE.match(raw)
-        if match is None:
-            return False
-        value, _, _ = _split(match.group(1), self.syntax)
-        return _blankless(value)
+            rest = raw.split("=", 1)[1]
+        else:
+            match = _PROSE_EXAMPLE.match(raw)
+            if match is None:
+                return False
+            rest = match.group(1)
+        value, comment, _ = _split(rest, self.syntax)
+        return not comment and _blankless(value)
 
     def error_index(self, message: str) -> int:
         match = _LINE_IN_ERROR.match(message)
@@ -411,7 +416,9 @@ class _Check:
         for i, line in self.settings():
             key, tags, section = line.key, self.tags[i], self.section[i]
             active = line.kind == "setting"
-            if not active == ("required" in tags.names) == (section == required):
+            tagged = "required" in tags.names
+            in_required = section == required
+            if tagged != active or in_required != active:
                 self.add(i, "T3", key)
             if ("secret" in tags.names) != is_secret_like(key or ""):
                 self.add(i, "T4", key)
