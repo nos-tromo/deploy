@@ -25,7 +25,7 @@ runbook targets. Check what a host actually runs in each member's
 | Nextext | v1.12.12 | v1.17.0 |
 | translator | v1.5.11 | v1.8.1 |
 | open-webui-service | v0.4.4 | v0.11.0 |
-| deploy | v0.3.5 | v0.6.0 |
+| deploy | v0.3.5 | v0.7.0 |
 
 Upgrade every member in the same window. `make up` starts the gateway last,
 so no app enforces its edge secret while the gateway does not send it yet;
@@ -178,11 +178,12 @@ v2.10+).
 
 ## Going back
 
-Retention deletes nothing for 30 days. deploy and data-plane stay on v0.6.0
-and v0.9.0: their older releases need Neo4j and chorus, which
-[retire-chorus.md](retire-chorus.md) removes with their data. Older
+Retention deletes nothing for 30 days. deploy and data-plane stay on v0.7.0
+and v0.9.0 or later: their releases before v0.6.0 and v0.9.0 need Neo4j and
+chorus, which [retire-chorus.md](retire-chorus.md) removes with their data. Older
 data-plane would try to pull the neo4j image, and older deploy waits on
-`neo4j:7687` and runs `make` in chorus' checkout. Within those 30 days the
+`neo4j:7687` and runs `make` in chorus' checkout. deploy v0.6.0 itself works,
+but has no `make env`. Within those 30 days the
 other members' images and `.env` can be reverted, with two limits:
 
 - Open WebUI needs its volume copy from B1 (database migration).

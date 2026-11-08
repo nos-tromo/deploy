@@ -45,10 +45,6 @@ the trail itself.
    -w $root/edge-plane/.env -p wa -k fed-config
    -w $root/open-webui-service/.env -p wa -k fed-config
    -w $root/deploy/federation.env -p wa -k fed-config
-   # make env's state directory: its backups are .env copies, so a read
-   # counts; the stored examples are read at every make up, so writes only.
-   -w $root/deploy/.env-sync/backup -p rwa -k fed-config
-   -w $root/deploy/.env-sync -p wa -k fed-config
    # data-plane's backups (its BACKUP_DIR, if set elsewhere): copying one
    # off the host reads the whole database.
    -w $root/data-plane/backup/snapshots -p rwa -k fed-backup
@@ -63,11 +59,26 @@ the trail itself.
 
    A watch on a file survives the file being replaced, and one on a missing
    file starts when the file is created; the parent directory must exist. A
-   directory watch covers everything below it. Whether a path is watched as a
-   directory or as a file is decided when the rules load, so the two
-   `.env-sync` directories must exist by then. The first `make env` creates
-   them: on a host that has not run it yet, load the rules again after it
-   (`sudo augenrules --load`), or reboot once they are locked (step 3).
+   directory watch covers everything below it. A watch on a missing
+   directory is refused, and `augenrules --load` stops at that line: every
+   later rule and the lock (step 3) are not loaded.
+
+   **`make env`'s state directory is therefore not in this file yet.** On a
+   host that has not run `make env`, `deploy/.env-sync/backup` does not exist.
+   Write the rules as above, without those two lines. After the host's first
+   `make env`, add them and load the rules again (`sudo augenrules --load`),
+   or reboot once the rules are locked with `-e 2` (step 3):
+
+   ```bash
+   root=$(cd .. && pwd)   # as in step 2
+   test -d "$root/deploy/.env-sync/backup" || { echo 'run make env first' >&2; false; }
+   sudo tee -a /etc/audit/rules.d/60-federation.rules >/dev/null <<EOF
+   # make env's state directory: its backups are .env copies, so a read
+   # counts; the stored examples are read at every make up, so writes only.
+   -w $root/deploy/.env-sync/backup -p rwa -k fed-config
+   -w $root/deploy/.env-sync -p wa -k fed-config
+   EOF
+   ```
 3. **Lock the rules (recommended).** Add `-e 2` as the very last rule, e.g.
    `echo '-e 2' | sudo tee /etc/audit/rules.d/99-finalize.rules`, and load
    again. From then on no rule can be removed or changed until the next
@@ -88,9 +99,7 @@ the trail itself.
 backup in `deploy/.env-sync/backup`.
 
 A host that ran this setup before the two `.env-sync` lines existed adds them
-to `/etc/audit/rules.d/60-federation.rules` after its first `make env`, then
-loads the rules again (`sudo augenrules --load`). With the rules locked
-(`-e 2`, step 3), the lines apply after the next reboot.
+the same way, as above, once it has run `make env`.
 
 ## Reading the records
 
