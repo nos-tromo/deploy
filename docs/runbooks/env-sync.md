@@ -274,6 +274,8 @@ python3 -B ../deploy/scripts/check_env_examples.py .
 Each finding is `<file>:<line>: <rule> <key> <message>`; the exit status is 0
 when clean, 1 on findings, 2 on a usage error. The rule ids are the spec's.
 
+Member notes follow the header template after a bare `#` line.
+
 - Record a rename as `# renamed: OLD -> NEW`, and keep the line forever (what
   it does to an operator's value: [When a rename carries its value](#when-a-rename-carries-its-value)). OLD
   must no longer be a key of the example, a chain must end in a key the example
