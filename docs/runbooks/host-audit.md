@@ -71,13 +71,20 @@ the trail itself.
 
    ```bash
    root=$(cd .. && pwd)   # as in step 2
-   test -d "$root/deploy/.env-sync/backup" || { echo 'run make env first' >&2; false; }
-   sudo tee -a /etc/audit/rules.d/60-federation.rules >/dev/null <<EOF
+   rules=/etc/audit/rules.d/60-federation.rules
+   if ! test -d "$root/deploy/.env-sync/backup"; then
+     echo "deploy/.env-sync/backup is missing: run make env first"
+   elif sudo grep -q -- "-w $root/deploy/.env-sync " "$rules"; then
+     echo "the .env-sync watches are already in $rules"
+   else
+     sudo tee -a "$rules" >/dev/null <<EOF
    # make env's state directory: its backups are .env copies, so a read
    # counts; the stored examples are read at every make up, so writes only.
    -w $root/deploy/.env-sync/backup -p rwa -k fed-config
    -w $root/deploy/.env-sync -p wa -k fed-config
    EOF
+     sudo augenrules --load   # if the rules are locked (-e 2), reboot instead
+   fi
    ```
 3. **Lock the rules (recommended).** Add `-e 2` as the very last rule, e.g.
    `echo '-e 2' | sudo tee /etc/audit/rules.d/99-finalize.rules`, and load
