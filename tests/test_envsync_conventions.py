@@ -675,9 +675,10 @@ class ComposeRuleTests(unittest.TestCase):
             "#   METRICS_URL=http://proxy.example.invalid/metrics\n"
             "#   SHAPE_ONLY=a\n",
         )
-        extra = "      - S=${SHAPE_ONLY:-b}\n"
-        pairs = compose_pairs(COMPOSE + extra, text=text)
-        self.assertNotIn(("X3", "SHAPE_ONLY"), pairs)
+        pairs = compose_pairs(COMPOSE + "      - S=${SHAPE_ONLY:-x}\n", text=text)
+        self.assertEqual(pairs, set())
+        pairs = compose_pairs(COMPOSE + "      - S=${NOWHERE:-x}\n", text=text)
+        self.assertEqual(pairs, {("X5", "NOWHERE")})
 
     def test_dev_key_is_compared_to_the_override(self) -> None:
         pairs = compose_pairs(COMPOSE, mutate(OVERRIDE, "-3000}", "-3001}"))

@@ -569,6 +569,9 @@ _COMPOSE_REF = re.compile(
 )
 
 
+_PROSE_KEY = re.compile(r"^# {2,}([A-Z][A-Z0-9_]*)=")
+
+
 def _compose_body(text: str) -> str:
     """The compose text without comments and without `$$` escapes."""
     kept = []
@@ -612,6 +615,11 @@ def check_compose(
     settings = _example_settings(example_text)
     base = _compose_body(compose_text)
     over = _compose_body(override_text) if override_text is not None else ""
+    prose = {
+        m.group(1)
+        for m in (_PROSE_KEY.match(raw) for raw in example_text.split("\n"))
+        if m
+    }
     found: Set[Finding] = set()
 
     def is_dev(key: str) -> bool:
@@ -635,7 +643,7 @@ def check_compose(
     for source in (base, over):
         for match in _COMPOSE_REF.finditer(source):
             key = match.group(1) or match.group(2)
-            if not key.endswith("_VERSION") and key not in settings:
+            if not key.endswith("_VERSION") and key not in settings and key not in prose:
                 found.add(Finding(1, "X5", key))
     return sorted(found, key=lambda f: (f.lineno, _ORDER[f.rule], f.key or ""))
 
