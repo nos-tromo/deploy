@@ -184,7 +184,7 @@ and key. Per group:
   placeholder: the tool remembers every example value of the shared keys it has
   seen.
 - A set value fills the unset rows (`filled`). A row marked `source` counts as
-  set whenever it has an active line; the router key's authority is
+  set only when its active line has a non-empty value; the router key's authority is
   vllm-service, `EDGE_HOST`'s is edge-plane.
 - Two different set values are a **conflict**: nothing in the group changes and
   `env-check` fails. Decide which value is right, put it in the other `.env` by
@@ -262,12 +262,20 @@ following and `env-check` fails until the next `make env`.
 
 ## For member authors
 
-How a member's `.env.example` must be written for the sync to read it:
+A member's `.env.example` follows one shared format, specified in
+[2026-11-08-env-example-format-design.md](../superpowers/specs/2026-11-08-env-example-format-design.md)
+(header, banners, setting forms, tags, ordering, and the rules each is checked
+by). Check yours from the member repo before committing:
 
-- Settings are commented as `# KEY=value`.
-- Prose and alternatives never start with `KEY=` right after `# `.
-- Never `KEY=   # comment`: compose reads the comment as the value. Put the
-  comment on its own line.
+```bash
+python3 -B ../deploy/scripts/check_env_examples.py .
+```
+
+Each finding is `<file>:<line>: <rule> <key> <message>`; the exit status is 0
+when clean, 1 on findings, 2 on a usage error. The rule ids are the spec's.
+
+Member notes follow the header template after a bare `#` line.
+
 - Record a rename as `# renamed: OLD -> NEW`, and keep the line forever (what
   it does to an operator's value: [When a rename carries its value](#when-a-rename-carries-its-value)). OLD
   must no longer be a key of the example, a chain must end in a key the example

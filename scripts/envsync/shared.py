@@ -307,7 +307,11 @@ class _Pass:
         if entry is None:
             return _Side(row, shared, False, None)
         if row.entry is None:
-            if row.source or not _placeholder(entry.value, placeholders):
+            if row.source:
+                if entry.value == "":
+                    return _Side(row, shared, False, None)
+                return _Side(row, shared, True, entry.value)
+            if not _placeholder(entry.value, placeholders):
                 return _Side(row, shared, True, entry.value)
             return _Side(row, shared, False, None)
         if not row.source and _list_unset(entry.value, placeholders):

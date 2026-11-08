@@ -234,6 +234,7 @@ class HelperTests(unittest.TestCase):
             "HF_TOKEN",
             "QDRANT_API_KEY",
             "KEY",
+            "AUDIT_EDGE_SECRET",
         ):
             with self.subTest(key=key):
                 self.assertTrue(dotenv.is_secret_like(key))
@@ -246,6 +247,11 @@ class HelperTests(unittest.TestCase):
             "CHAT_MAX_NUM_BATCHED_TOKENS",
             "MAX_TOKENS",
             "TOKEN_LIMIT",
+            "TOKENIZERS_PARALLELISM",
+            "EMBED_TOKENIZER_REPO",
+            "HATE_SPEECH_WINDOW_TOKENS",
+            "HATE_SPEECH_CONTEXT_TOKENS",
+            "EMBED_CTX_TOKENS",
         ):
             with self.subTest(key=key):
                 self.assertFalse(dotenv.is_secret_like(key))

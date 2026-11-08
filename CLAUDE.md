@@ -36,7 +36,9 @@ bundle-skip check, `scripts/copy-bundles.sh` the airgap transfer set, `scripts/p
 the image cleanup, and the `scripts/fetch-model.sh` / `scripts/pack-model.sh` /
 `scripts/unpack-model.sh` model-weight trio), the stdlib-only Python `.env` sync
 (`scripts/env_sync.py` with the `scripts/envsync/` package, and `env-sync.conf` its table of
-shared values), the tests (`tests/model-transfer.test.sh` and `tests/test_envsync_*.py`), and
+shared values), the example-format checker (`scripts/check_env_examples.py`), the tests
+(`tests/model-transfer.test.sh`, `tests/test_envsync_*.py` including
+`tests/test_envsync_conventions.py` and `tests/test_envsync_examples.py`), and
 two workflows (`.github/workflows/ci.yml` — lint, the Makefile parse check, the
 model-transfer round trip (job `model-transfer`) and the env-sync tests on Python 3.9 and 3.12
 (job `env-sync`); and `release-tag.yml`) — but the blast radius is
@@ -168,17 +170,10 @@ Makefile** rather than `common.mk`: `data-plane`, `obs-plane`, `edge-plane`, and
 `include make/common.mk`. Delegation here must therefore never assume a `common.mk`-only
 target exists on a member.
 
-Every member's `.env.example` is read by the `.env` sync, so it follows these conventions
-(the operator-facing copy is in `docs/runbooks/env-sync.md`):
-
-- Settings are commented as `# KEY=value`; an example value equals the default the member's
-  Makefile `?=` or compose file applies.
-- Prose and alternatives never start with `KEY=` right after `# `.
-- Never `KEY=   # comment` (compose reads the comment as the value); the comment goes on its
-  own line.
-- A rename is recorded as `# renamed: OLD -> NEW`, kept forever.
-- A new or renamed key that must hold the same value in two members is an edit to deploy's
-  `env-sync.conf` in the same change.
+Every member's `.env.example` is read by the `.env` sync and follows one shared format:
+`docs/superpowers/specs/2026-11-08-env-example-format-design.md` (the standard) and
+`docs/runbooks/env-sync.md` (the author-facing side). A member checks its example with
+`python3 -B ../deploy/scripts/check_env_examples.py .`.
 
 `open-webui-service` is kept in its **own variable** (`OPENWEBUI_DIR`) rather than `APP_DIRS`
 because it is a distinct member — the upstream chat UI, a pulled image with a bespoke Makefile.
