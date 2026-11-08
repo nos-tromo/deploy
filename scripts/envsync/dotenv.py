@@ -226,12 +226,13 @@ def lint(env: EnvFile) -> List[Tuple[int, str]]:
 
 
 def is_secret_like(key: str) -> bool:
-    """A count of tokens (MAX, NUM or LIMIT as a name segment) is no secret."""
+    """A count of tokens (MAX, NUM, LIMIT, CTX, CONTEXT or WINDOW as a name
+    segment) is no secret, and neither is a TOKEN that is not a whole segment."""
     return bool(
         re.search(r"SECRET|PASSWORD|PASSPHRASE", key)
         or (
-            re.search(r"TOKEN", key)
-            and not re.search(r"(^|_)(MAX|NUM|LIMIT)(_|$)", key)
+            re.search(r"(^|_)TOKENS?(_|$)", key)
+            and not re.search(r"(^|_)(MAX|NUM|LIMIT|CTX|CONTEXT|WINDOW)(_|$)", key)
         )
         or re.search(r"(^|_)KEY$", key)
     )

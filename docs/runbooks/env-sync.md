@@ -184,7 +184,7 @@ and key. Per group:
   placeholder: the tool remembers every example value of the shared keys it has
   seen.
 - A set value fills the unset rows (`filled`). A row marked `source` counts as
-  set whenever it has an active line; the router key's authority is
+  set only when its active line has a non-empty value; the router key's authority is
   vllm-service, `EDGE_HOST`'s is edge-plane.
 - Two different set values are a **conflict**: nothing in the group changes and
   `env-check` fails. Decide which value is right, put it in the other `.env` by

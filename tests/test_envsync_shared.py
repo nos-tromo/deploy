@@ -529,6 +529,33 @@ class FillTests(SharedCase):
         self.assertEqual(self.apply(), [])
         self.assertEqual(self.snapshot(), before)
 
+    def test_empty_source_counts_as_unset(self) -> None:
+        self.start(HOST)
+        self.member("edge-plane", "EDGE_HOST=\n", "EDGE_HOST=\n")
+        self.member(
+            "obs-plane", "EDGE_HOST=\n", "EDGE_HOST=gw.example.invalid\n"
+        )
+        self.assertEqual(self.apply(), [])
+        self.assertEqual(
+            self.plan("edge-plane").entries["EDGE_HOST"].value, "gw.example.invalid"
+        )
+        self.assertEqual(
+            items(self.plan("edge-plane"), "filled"), ["EDGE_HOST (from obs-plane)"]
+        )
+
+    def test_empty_source_with_generate(self) -> None:
+        self.start(
+            "audit-edge  edge-plane  AUDIT_EDGE_SECRET  source  gen\n"
+            "audit-edge  obs-plane   AUDIT_EDGE_SECRET  gen\n"
+        )
+        self.member("edge-plane", "AUDIT_EDGE_SECRET=\n", "AUDIT_EDGE_SECRET=\n")
+        self.member("obs-plane", "AUDIT_EDGE_SECRET=\n", "AUDIT_EDGE_SECRET=\n")
+        self.assertEqual(self.apply(True, Tokens("a" * 64)), [])
+        for name in ("edge-plane", "obs-plane"):
+            with self.subTest(name):
+                entry = self.plan(name).entries["AUDIT_EDGE_SECRET"]
+                self.assertEqual((entry.value, entry.origin), ("a" * 64, "generated"))
+
     def test_source_is_the_reference_wherever_it_stands(self) -> None:
         self.start(
             "edge-host  obs-plane   EDGE_HOST\n"
