@@ -36,7 +36,9 @@ bundle-skip check, `scripts/copy-bundles.sh` the airgap transfer set, `scripts/p
 the image cleanup, and the `scripts/fetch-model.sh` / `scripts/pack-model.sh` /
 `scripts/unpack-model.sh` model-weight trio), the stdlib-only Python `.env` sync
 (`scripts/env_sync.py` with the `scripts/envsync/` package, and `env-sync.conf` its table of
-shared values), the example-format checker (`scripts/check_env_examples.py`), the tests (`tests/model-transfer.test.sh`, `tests/test_envsync_*.py` including `tests/test_envsync_conventions.py` and `tests/test_envsync_examples.py`), and
+shared values), the example-format checker (`scripts/check_env_examples.py`), the tests
+(`tests/model-transfer.test.sh`, `tests/test_envsync_*.py` including
+`tests/test_envsync_conventions.py` and `tests/test_envsync_examples.py`), and
 two workflows (`.github/workflows/ci.yml` — lint, the Makefile parse check, the
 model-transfer round trip (job `model-transfer`) and the env-sync tests on Python 3.9 and 3.12
 (job `env-sync`); and `release-tag.yml`) — but the blast radius is
