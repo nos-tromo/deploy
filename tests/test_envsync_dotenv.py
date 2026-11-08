@@ -149,6 +149,22 @@ class ParseTests(unittest.TestCase):
                 with self.assertRaises(ParseError):
                     parse(bad, "make")
 
+    def test_make_line_continuation_refused(self):
+        # make would swallow the next line into the value, and the sync may
+        # place any line there.
+        for text in ("A=1\nX=SENTINEL-v \\\n", "A=1\n# X=SENTINEL-v\\\n"):
+            with self.subTest(text=text):
+                with self.assertRaises(ParseError) as cm:
+                    parse(text, "make")
+                self.assertEqual(cm.exception.lineno, 2)
+                self.assertEqual(
+                    cm.exception.reason,
+                    "line continuation (\\) not supported in federation.env",
+                )
+                assert_no_sentinel(self, str(cm.exception))
+        self.assertEqual(parse("X=a\\b\n", "make").decoded(), {"X": "a\\b"})
+        self.assertEqual(parse("X=a\\\n").decoded(), {"X": "a\\"})
+
     def test_settings_and_commented(self):
         env = parse("A=1\n# D=4\nB='x y'\n# D=5\n")
         self.assertEqual(list(env.settings()), ["A", "B"])
@@ -215,12 +231,22 @@ class HelperTests(unittest.TestCase):
             "AUDIT_EDGE_SECRET",
             "GRAFANA_ADMIN_PASSWORD",
             "NEXTEXT_SERVICE_TOKENS",
+            "HF_TOKEN",
             "QDRANT_API_KEY",
             "KEY",
         ):
             with self.subTest(key=key):
                 self.assertTrue(dotenv.is_secret_like(key))
-        for key in ("EDGE_HOST", "AUDIT_RETENTION", "MONKEY", "KEYBOARD"):
+        for key in (
+            "EDGE_HOST",
+            "AUDIT_RETENTION",
+            "MONKEY",
+            "KEYBOARD",
+            # A count of tokens is no secret.
+            "CHAT_MAX_NUM_BATCHED_TOKENS",
+            "MAX_TOKENS",
+            "TOKEN_LIMIT",
+        ):
             with self.subTest(key=key):
                 self.assertFalse(dotenv.is_secret_like(key))
 

@@ -14,6 +14,7 @@ _COMMENTED = re.compile(rf"^# ?({KEY})=(.*)$")
 _REFERENCE = re.compile(rf"\$\$|\$\{{({KEY})|\$({KEY})")
 _UNESCAPED_HASH = re.compile(r"(?<!\\)#")
 _ESCAPES = {"\\": "\\", '"': '"', "n": "\n", "t": "\t"}
+_CONTINUATION = "line continuation (\\) not supported in federation.env"
 
 
 class ParseError(Exception):
@@ -114,6 +115,8 @@ def _classify(lineno: int, raw: str, syntax: str) -> Line:
         match = _COMMENTED.match(raw)
         if not match:
             return Line(lineno, raw, "comment", None, None, False)
+        if syntax == "make" and raw.endswith("\\"):
+            raise ParseError(lineno, _CONTINUATION)
         key, rest = match.group(1), match.group(2)
         try:
             value = decode(rest, syntax)
@@ -129,6 +132,8 @@ def _classify(lineno: int, raw: str, syntax: str) -> Line:
         key, rest = (m.group(2), m.group(3)) if m else (None, "")
     if key is None:
         raise ParseError(lineno, "unsupported syntax")
+    if syntax == "make" and raw.endswith("\\"):
+        raise ParseError(lineno, _CONTINUATION)
     try:
         value = decode(rest, syntax)
     except ValueError as err:
@@ -221,7 +226,12 @@ def lint(env: EnvFile) -> List[Tuple[int, str]]:
 
 
 def is_secret_like(key: str) -> bool:
+    """A count of tokens (MAX, NUM or LIMIT as a name segment) is no secret."""
     return bool(
-        re.search(r"SECRET|PASSWORD|PASSPHRASE|TOKEN", key)
+        re.search(r"SECRET|PASSWORD|PASSPHRASE", key)
+        or (
+            re.search(r"TOKEN", key)
+            and not re.search(r"(^|_)(MAX|NUM|LIMIT)(_|$)", key)
+        )
         or re.search(r"(^|_)KEY$", key)
     )
