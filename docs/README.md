@@ -54,7 +54,9 @@ across the federation, for one, is
 its operating side is in [runbooks/bring-up.md](runbooks/bring-up.md#retention-periods)
 and [runbooks/backups.md](runbooks/backups.md). The `.env` sync is
 [superpowers/specs/2026-11-07-env-sync-design.md](superpowers/specs/2026-11-07-env-sync-design.md);
-its operating side is [runbooks/env-sync.md](runbooks/env-sync.md).
+its operating side is [runbooks/env-sync.md](runbooks/env-sync.md). The shared
+`.env.example` format is
+[superpowers/specs/2026-11-08-env-example-format-design.md](superpowers/specs/2026-11-08-env-example-format-design.md).
 
 ## Who this is for
 
