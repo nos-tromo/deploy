@@ -34,6 +34,9 @@ jobs:
         run: |
           make help >/dev/null
           make -n ps >/dev/null
+          make -n env >/dev/null
+          make -n env-check >/dev/null
+          test ! -e .env-sync
           echo "Makefile OK"
 
   # Packs and unpacks synthetic Hugging Face caches (both blob layouts, a
@@ -47,3 +50,20 @@ jobs:
         run: |
           command -v zstd >/dev/null || { sudo apt-get update && sudo apt-get install -y zstd; }
           bash tests/model-transfer.test.sh
+
+  # The env sync (scripts/env_sync.py): unit and end-to-end tests on the
+  # Python floor (3.9, RHEL 9's system Python) and a current one.
+  env-sync:
+    runs-on: ubuntu-24.04  # newest image with a Python 3.9 build
+    strategy:
+      matrix:
+        python: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Compile and test
+        run: |
+          python -m py_compile scripts/env_sync.py scripts/envsync/*.py
+          python -B -m unittest discover -s tests -p 'test_*.py' -v

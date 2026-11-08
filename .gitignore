@@ -8,3 +8,5 @@ federation.env
 *.code-workspace
 
 .DS_STORE
+.env-sync/
+__pycache__/

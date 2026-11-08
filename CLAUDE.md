@@ -34,8 +34,12 @@ It is its own git repo but operates on **sibling repos** under `INFRA_ROOT` (def
 shell scripts (`scripts/wait-healthy.sh` the health gate, `scripts/bundle-exists.sh` the
 bundle-skip check, `scripts/copy-bundles.sh` the airgap transfer set, `scripts/prune-images.sh`
 the image cleanup, and the `scripts/fetch-model.sh` / `scripts/pack-model.sh` /
-`scripts/unpack-model.sh` model-weight trio), and two workflows
-(`.github/workflows/ci.yml` — lint, plus the model-transfer round trip `tests/model-transfer.test.sh`; and `release-tag.yml`) — but the blast radius is
+`scripts/unpack-model.sh` model-weight trio), the stdlib-only Python `.env` sync
+(`scripts/env_sync.py` with the `scripts/envsync/` package, and `env-sync.conf` its table of
+shared values), the tests (`tests/model-transfer.test.sh` and `tests/test_envsync_*.py`), and
+two workflows (`.github/workflows/ci.yml` — lint, the Makefile parse check, the
+model-transfer round trip (job `model-transfer`) and the env-sync tests on Python 3.9 and 3.12
+(job `env-sync`); and `release-tag.yml`) — but the blast radius is
 cross-repo: editing anything here changes how the entire federation boots. The
 documentation is split three ways, and each part has its own lane: `README.md` is the entry
 point (what this layer is, on-host layout, quick start, and pointers), `docs/runbooks/` holds the
@@ -130,9 +134,16 @@ drive compose directly. Keep this split:
    interpolated with the member's `.env` — typed fields like `mem_limit` don't decode otherwise),
    removing only the federation references of images no container uses.
 
+5. **`env`/`env-check`: drive the `.env` files directly** via `scripts/env_sync.py`. Same reason
+   as `prune`: no member has such a target, and the `.env` files are host state, not a member
+   lifecycle step. The recipes never mention `$(MAKE)` (`make -n` would execute the line), and
+   `up`/`up-dev` depend on `env-check` before `setup`. Operator doc: `docs/runbooks/env-sync.md`;
+   design: `docs/superpowers/specs/2026-11-07-env-sync-design.md`.
+
 Rule of thumb: ordered/health-gated bring-up and every uniform target → delegate to the member's Make
 target; only the aggregate read-only views (`ps`/`logs`), the repo-level git targets
-(`clone`/`pull`), and the host-level image cleanup (`prune`) are driven directly.
+(`clone`/`pull`), the host-level image cleanup (`prune`) and the `.env` sync (`env`/`env-check`)
+are driven directly.
 
 ## Cross-repo contract (not visible from this repo alone)
 
@@ -156,6 +167,18 @@ Makefile** rather than `common.mk`: `data-plane`, `obs-plane`, `edge-plane`, and
 `open-webui-service`. Only `docint`, `Nextext`, `translator`, and `vllm-service`
 `include make/common.mk`. Delegation here must therefore never assume a `common.mk`-only
 target exists on a member.
+
+Every member's `.env.example` is read by the `.env` sync, so it follows these conventions
+(the operator-facing copy is in `docs/runbooks/env-sync.md`):
+
+- Settings are commented as `# KEY=value`; an example value equals the default the member's
+  Makefile `?=` or compose file applies.
+- Prose and alternatives never start with `KEY=` right after `# `.
+- Never `KEY=   # comment` (compose reads the comment as the value); the comment goes on its
+  own line.
+- A rename is recorded as `# renamed: OLD -> NEW`, kept forever.
+- A new or renamed key that must hold the same value in two members is an edit to deploy's
+  `env-sync.conf` in the same change.
 
 `open-webui-service` is kept in its **own variable** (`OPENWEBUI_DIR`) rather than `APP_DIRS`
 because it is a distinct member — the upstream chat UI, a pulled image with a bespoke Makefile.
@@ -181,6 +204,10 @@ loop + `bundle`/`load`), `OBS_DIR` (the observability plane; set empty to disabl
 derives each member's URL as `$(GIT_REMOTE)/<dir>.git`, so one edit repoints the
 whole federation at SSH or an internal mirror.
 
+Two optional knobs belong to the `.env` sync: `ENV_GENERATE=1` (`make env` generates a fresh
+value for each shared secret group unset in every member) and `ENV_ALLOW_DRIFT=1` (`env-check`,
+so `make up`, continues past a failure with a loud warning).
+
 ## Commands
 
 ```bash
@@ -196,19 +223,30 @@ make down      # reverse-order stop (never removes data volumes)
 make pull      # switch every federation repo (deploy + members) to main, git pull --ff-only
 make bundle    # build every image-bearing member's airgap tarball(s), leaving each on its release tag; already-bundled members are switched there, not rebuilt — BUNDLE_FORCE=1 rebuilds (online build host)
 make load      # docker load every *.tar.gz under deploy + the member repos (offline host)
+make env       # bring every .env (and federation.env) in step with its example; ENV_GENERATE=1 also generates missing shared secrets
+make env-check # the same, writing nothing; up/up-dev run it first; ENV_ALLOW_DRIFT=1 overrides
 make prune     # remove federation-built images no container uses (old versions, rebuild leftovers); PRUNE_UPSTREAM=1 also removes unused upstream images
 ```
 
 ### Develop / validate this repo in isolation
 
-There is **no test suite** — CI is lint-only, and that IS the gate. Run the same three checks
+The shell side has no test suite beyond `tests/model-transfer.test.sh`; the `.env` sync has
+unit and end-to-end tests. CI is lint plus those, and that IS the gate. Run the same checks
 locally before pushing:
 
 ```bash
 shellcheck scripts/*.sh                                    # shell lint
 make help >/dev/null && make -n ps >/dev/null              # Makefile parses + compose helper expands
 yamllint -d "{extends: relaxed, rules: {line-length: disable, document-start: disable}}" .github/
+python3 -B -m unittest discover -s tests -p 'test_*.py' -v # the .env sync tests (Python >= 3.9, stdlib only)
 ```
+
+Invariants of the `.env` sync — keep them in any edit: example values equal the Makefile `?=`
+defaults; nothing is written under `make -n` or by `env-check`; values are never printed (a value
+shows only when it comes from an example and the key is not secret-like); nothing is ever created
+in a member directory except its `.env` (state, backups and the atomic-write temp file live in the
+gitignored `.env-sync/`); the planner never changes a value the operator set. Tests use synthetic
+fixtures only, secrets written as `SENTINEL-...` and asserted absent from all output.
 
 `make -n ps` is the key trick: it dry-runs the `$(call compose,…)` helper and prints the exact
 `docker compose` lines **without needing the member repos on disk** (`ps` has no sub-make
@@ -216,8 +254,8 @@ prerequisites). Use `make -n <target>` to inspect what any change will actually 
 
 ## Airgap flow
 
-`make bundle` (online build host) → copy the `*.tar.gz` → `make load` (offline host) → `make setup`
-→ `make up`. `make bundle` leaves every member on its release tag (bundle-lib's
+`make bundle` (online build host) → copy the `*.tar.gz` → `make load` (offline host) → `make env`
+→ `make setup` → `make up`. `make bundle` leaves every member on its release tag (bundle-lib's
 `bundle_checkout_release` stays there on success), so the repo files copied next match the
 images. A member whose bundle for that tag already exists is switched to the tag without a
 rebuild, judged by the same `.<slug>-version` record `copy-bundles.sh` uses for its skew check;
@@ -232,7 +270,8 @@ Swapping the probe image means overriding `WAIT_PROBE_IMAGE` **and** `WAIT_PROBE
 The copy step is `scripts/copy-bundles.sh <dest-dir>` — per member it collects the tarballs plus
 compose files, Makefile (+ vendored `make/`), version files, `.env.example`, and repo-mounted
 config dirs. Paths derive from the script's own location (members are siblings of `deploy/`;
-`INFRA_ROOT` env overrides). It deliberately never copies secrets (edge-plane `authelia/users.yml`,
+`INFRA_ROOT` env overrides). It ships deploy's `env-sync.conf` and never `.env-sync/` (the state
+directory holds `.env` backups). It deliberately never copies secrets (edge-plane `authelia/users.yml`,
 `certs/`, real `.env` files — provisioned fresh on the airgap side); keep that property in any edit.
 It also fails (listing the skewed members) when a member repo has moved past the version its
 tarball was built from — recorded in the member's `.<slug>-version` file — since bundles come from
@@ -240,6 +279,11 @@ the latest release tag while the copied repo files come from the working tree, a
 the airgap host's first `up` pull from the internet. With `make bundle` leaving members on their
 tags this trips only when a member moved on afterwards (e.g. `make pull` before copying); re-running
 `make bundle` fixes it. `COPY_BUNDLES_ALLOW_SKEW=1` overrides.
+
+The first `make env` on the airgap host adopts in two steps — deploy's files, `make env` against
+the still-old member examples (records the stored copies), then the member files and `make env`
+again — so the first upgrade already follows defaults and carries renames; on the build host run
+it after `make pull`. Procedure: `docs/runbooks/env-sync.md`.
 
 `bundle`/`load` move only images; the inference tier's **model weights** travel separately via
 `scripts/fetch-model.sh` / `scripts/pack-model.sh` / `scripts/unpack-model.sh` (download a HF model

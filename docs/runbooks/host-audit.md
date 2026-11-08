@@ -59,7 +59,33 @@ the trail itself.
 
    A watch on a file survives the file being replaced, and one on a missing
    file starts when the file is created; the parent directory must exist. A
-   directory watch covers everything below it.
+   directory watch covers everything below it. A watch on a missing
+   directory is refused, and `augenrules --load` stops at that line: every
+   later rule and the lock (step 3) are not loaded.
+
+   **`make env`'s state directory is therefore not in this file yet.** On a
+   host that has not run `make env`, `deploy/.env-sync/backup` does not exist.
+   Write the rules as above, without those two lines. After the host's first
+   `make env`, add them and load the rules again (`sudo augenrules --load`),
+   or reboot once the rules are locked with `-e 2` (step 3):
+
+   ```bash
+   root=$(cd .. && pwd)   # as in step 2
+   rules=/etc/audit/rules.d/60-federation.rules
+   if ! test -d "$root/deploy/.env-sync/backup"; then
+     echo "deploy/.env-sync/backup is missing: run make env first"
+   elif sudo grep -q -- "-w $root/deploy/.env-sync " "$rules"; then
+     echo "the .env-sync watches are already in $rules"
+   else
+     sudo tee -a "$rules" >/dev/null <<EOF
+   # make env's state directory: its backups are .env copies, so a read
+   # counts; the stored examples are read at every make up, so writes only.
+   -w $root/deploy/.env-sync/backup -p rwa -k fed-config
+   -w $root/deploy/.env-sync -p wa -k fed-config
+   EOF
+     sudo augenrules --load   # if the rules are locked (-e 2), reboot instead
+   fi
+   ```
 3. **Lock the rules (recommended).** Add `-e 2` as the very last rule, e.g.
    `echo '-e 2' | sudo tee /etc/audit/rules.d/99-finalize.rules`, and load
    again. From then on no rule can be removed or changed until the next
@@ -74,6 +100,13 @@ the trail itself.
    the host's time. Point chrony or systemd-timesyncd at the site's time source
    (on an airgapped host, an internal NTP server), and check
    `timedatectl show -p NTPSynchronized --value` answers `yes`.
+
+`make env` replaces each `.env` it changes with a new file, which shows as
+`fed-config` records under the operator's login user, as does a read of a
+backup in `deploy/.env-sync/backup`.
+
+A host that ran this setup before the two `.env-sync` lines existed adds them
+the same way, as above, once it has run `make env`.
 
 ## Reading the records
 
