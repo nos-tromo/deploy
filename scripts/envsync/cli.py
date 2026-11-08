@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import stat
 import sys
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -185,13 +186,17 @@ def _load(
     return _Planned(target, example_text, example, stored, snap, env, plan)
 
 
-def _replace(p: _Planned, text: str, state: StateDir) -> Optional[str]:
+def _replace(
+    p: _Planned, text: str, state: StateDir, strip_other: bool = False
+) -> Optional[str]:
     """Replace the file; one that exists is backed up first, once the checks
     that refuse the write have passed. Returns the backup's path relative to
     the state directory's parent."""
     old = p.snap.data
     backup = None if old is None else lambda: state.backup(p.target.file_id, old)
-    path = atomic_replace(p.snap, text, state, p.target.file_id, backup)
+    path = atomic_replace(
+        p.snap, text, state, p.target.file_id, backup, strip_other=strip_other
+    )
     return None if path is None else str(path.relative_to(state.root.parent))
 
 
@@ -226,11 +231,23 @@ def _finish(
     found = placeholder_event(plan, p.example, p.stored.base)
     if found is not None:
         plan.events.append(found)
-    if p.target.syntax == "dotenv" and world_readable(p.snap):
-        plan.events.append(Event("readable", [display], "warn"))
     behind = p.env is None or p.env.decoded() != plan.effective()
     old = p.snap.data
     same = text.encode("utf-8") == old
+    secret_written = any(
+        e.origin in ("filled", "generated") for e in plan.entries.values()
+    )
+    strip = (
+        p.target.syntax == "dotenv"
+        and p.snap.stat is not None
+        and bool(stat.S_IMODE(p.snap.stat.st_mode) & 0o007)
+        and secret_written
+        and not same
+    )
+    if strip:
+        plan.events.append(Event("mode", [display], "info"))
+    if p.target.syntax == "dotenv" and world_readable(p.snap) and (check or not strip):
+        plan.events.append(Event("readable", [display], "warn"))
     if check:
         status = "in sync" if same else "would create" if old is None else "would write"
         never = old is not None and p.stored.base is None
@@ -238,7 +255,7 @@ def _finish(
     backup = None
     if not same:
         try:
-            backup = _replace(p, text, state)
+            backup = _replace(p, text, state, strip)
         except WriteRefused as exc:
             return FileResult(display, "refused", error=str(exc))
         except OSError as exc:

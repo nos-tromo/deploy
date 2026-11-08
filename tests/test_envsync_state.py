@@ -127,6 +127,21 @@ class ReplaceTests(Base):
         self.assertEqual(self.env.read_text(), "A=2\n")
         self.assertEqual(mode(self.env), 0o640)
 
+    def test_strip_other_removes_other_access(self) -> None:
+        self.env.write_text("A=1\n")
+        os.chmod(self.env, 0o644)
+        atomic_replace(
+            read_target(self.env), "A=2\n", self.state(), "m", strip_other=True
+        )
+        self.assertEqual(self.env.read_text(), "A=2\n")
+        self.assertEqual(mode(self.env), 0o640)
+
+    def test_without_strip_other_0644_stays(self) -> None:
+        self.env.write_text("A=1\n")
+        os.chmod(self.env, 0o644)
+        self.replace("A=2\n")
+        self.assertEqual(mode(self.env), 0o644)
+
     def test_replace_new_file_0600(self) -> None:
         self.assertIsNone(read_target(self.env).data)
         self.replace("A=1\n")

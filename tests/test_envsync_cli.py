@@ -535,6 +535,54 @@ class WriteTests(CliCase):
             + readable,
         )
 
+    MODE_LINE = (
+        "   mode       obs-plane/.env (other users' access removed when a "
+        "shared secret is written)\n"
+    )
+    OBS_READABLE = "   readable   obs-plane/.env (readable by every user; chmod 600)\n"
+
+    def fill_members(self) -> Tuple[Path, Path]:
+        """edge-plane holds the audit secret; obs-plane's 0644 .env lacks it."""
+        edge = make_member(self.infra, "edge-plane", EDGE_EXAMPLE, EDGE_ENV)
+        obs = make_member(self.infra, "obs-plane", OBS_EXAMPLE, OBS_ENV, 0o644)
+        return edge, obs
+
+    def test_filled_secret_removes_other_access(self) -> None:
+        edge, obs = self.fill_members()
+        proc = self.sync(edge, obs)
+        self.assertExit(proc, 0)
+        self.assertEqual(mode(obs / ".env"), 0o640)
+        self.assertIn(self.MODE_LINE, proc.stdout)
+        self.assertNotIn(self.OBS_READABLE, proc.stdout)
+
+    def test_readable_file_without_fill_keeps_mode(self) -> None:
+        edge = make_member(self.infra, "edge-plane", EDGE_EXAMPLE, EDGE_ENV)
+        obs = make_member(self.infra, "obs-plane", OBS_EXAMPLE, OBS_SYNCED, 0o644)
+        self.assertExit(self.sync(edge, obs), 0)
+        proc = self.sync(edge, obs)
+        self.assertExit(proc, 0)
+        self.assertEqual(mode(obs / ".env"), 0o644)
+        self.assertIn(self.OBS_READABLE, proc.stdout)
+        self.assertNotIn("   mode ", proc.stdout)
+
+    def test_generate_into_readable_file(self) -> None:
+        edge = make_member(
+            self.infra, "edge-plane", EDGE_EXAMPLE, EDGE_ENV_UNSET, 0o644
+        )
+        obs = make_member(self.infra, "obs-plane", OBS_EXAMPLE, OBS_ENV_UNSET, 0o644)
+        self.assertExit(self.sync("--generate", edge, obs), 0)
+        self.assertEqual(mode(edge / ".env"), 0o640)
+        self.assertEqual(mode(obs / ".env"), 0o640)
+
+    def test_check_previews_mode_without_writing(self) -> None:
+        edge, obs = self.fill_members()
+        proc = self.sync("--check", edge, obs)
+        self.assertExit(proc, 1)
+        self.assertEqual(mode(obs / ".env"), 0o644)
+        self.assertEqual(read(obs / ".env"), OBS_ENV)
+        self.assertIn(self.OBS_READABLE, proc.stdout)
+        self.assertIn(self.MODE_LINE, proc.stdout)
+
     def test_member_dirs_stay_clean(self) -> None:
         edge, obs = self.members(obs_env=OBS_ENV_OLD, obs_example=OBS_EXAMPLE_OLD)
         self.assertExit(self.sync("--check", edge, obs), 1)
@@ -895,7 +943,7 @@ class ReportTests(unittest.TestCase):
     def test_every_event_kind_has_a_label(self) -> None:
         kinds = set(_KINDS) | set(_FILE_KINDS)
         kinds |= {"conflict", "unset_everywhere", "table"}
-        kinds |= {"placeholder", "readable", "state"}
+        kinds |= {"placeholder", "readable", "state", "mode"}
         self.assertEqual(kinds - set(LABEL), set())
 
     def test_event_line(self) -> None:

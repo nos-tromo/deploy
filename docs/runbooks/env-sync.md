@@ -73,6 +73,7 @@ headers. A `.env` that exists but has no stored copy fails `env-check` with
 | `placeholder` | A key still holding the example's placeholder. | Set a real value. |
 | `comments` | Your comment lines that were not carried (comments come from the example). | Recover them from the backup if needed. |
 | `readable` | The `.env` is readable by every user (member `.env` files only). | `chmod 600` it. |
+| `mode` | The write adds a shared secret (filled or generated) to a `.env` that other users can access, so it removes their access (`chmod o-rwx`; the group keeps its rights). | Nothing; check a `.env` that the group may not read. |
 | `state` | The stored copy could not be read or saved. | Fix the cause (see [State directory](#keep-the-state-directory)); an unreadable copy counts as never synced. |
 | `conflict` | A shared group holds two different set values. Nothing in the group changes and `env-check` fails. | See [Shared values](#shared-values). |
 | `not copied` | A shared value with characters outside the safe set. | Set it by hand in each member. |
@@ -209,6 +210,8 @@ A new or renamed shared key in a member's example needs an edit to
 `env-sync.conf`; see [For member authors](#for-member-authors).
 
 ## Restoring a backup
+
+A write that adds a filled or generated shared secret to a `.env` readable by other users also removes their access to it (`mode & ~0o007`); every other write keeps the mode.
 
 Every write first copies the old file into the state directory, the last five
 per file. To restore one, copy it back and delete the file's stored copy, from

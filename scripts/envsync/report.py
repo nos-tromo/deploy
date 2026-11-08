@@ -28,6 +28,7 @@ LABEL: Dict[str, str] = {
     "placeholder": "placeholder",
     "dropped_comments": "comments",
     "readable": "readable",
+    "mode": "mode",
     "state": "state",
     "conflict": "conflict",
     "unset_everywhere": "unset",
@@ -45,6 +46,7 @@ SUFFIX: Dict[str, str] = {
     "differs": " (differ from the example's default; no sync record yet)",
     "placeholder": " (example placeholder; set a real value)",
     "readable": " (readable by every user; chmod 600)",
+    "mode": " (other users' access removed when a shared secret is written)",
     "unset_everywhere": " (unset in every member; ENV_GENERATE=1 generates one)",
     "unsafe": " (characters outside the safe set; set it by hand)",
 }

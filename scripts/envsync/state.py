@@ -179,10 +179,11 @@ def atomic_replace(
     state: StateDir,
     file_id: str,
     backup: Optional[Callable[[], Path]] = None,
+    strip_other: bool = False,
 ) -> Optional[Path]:
-    """Replace the file with text. `backup` runs once the checks that refuse
-    the write have passed, before anything is written; its result is
-    returned."""
+    """Replace the file with text, keeping its mode (less the other users' bits
+    with `strip_other`). `backup` runs once the checks that refuse the write
+    have passed, before anything is written; its result is returned."""
     path = snap.path
     now = read_target(path)
     if now.data != snap.data:
@@ -195,6 +196,8 @@ def atomic_replace(
         raise WriteRefused(f"{path}: state directory on another filesystem")
     taken = backup() if backup is not None else None
     want_mode = stat.S_IMODE(now.stat.st_mode) if now.stat is not None else 0o600
+    if strip_other:
+        want_mode &= ~0o007
     tmp = tmp_dir / f"{file_id}.{os.getpid()}.tmp"
     try:
         _write_private(tmp, text.encode("utf-8"))
