@@ -47,8 +47,8 @@ from .state import (
 DEPLOY_ROOT = Path(__file__).resolve().parents[2]
 
 DRIFT_WARNING = (
-    "WARNING: ENV_ALLOW_DRIFT=1 — 'make up' continues although .env files "
-    "are behind their examples."
+    "WARNING: ENV_ALLOW_DRIFT=1 — 'make up' continues although env-check "
+    "failed (see above)."
 )
 STORED_UNREADABLE = "stored copy unreadable; treated as never synced"
 PLACEHOLDERS_UNREADABLE = "stored placeholders unreadable; 'make env' rewrites them"
@@ -186,14 +186,13 @@ def _load(
 
 
 def _replace(p: _Planned, text: str, state: StateDir) -> Optional[str]:
-    """Back the file up when it exists, then replace it. Returns the backup's
-    path relative to the state directory's parent."""
-    backup = None
-    if p.snap.data is not None:
-        path = state.backup(p.target.file_id, p.snap.data)
-        backup = str(path.relative_to(state.root.parent))
-    atomic_replace(p.snap, text, state, p.target.file_id)
-    return backup
+    """Replace the file; one that exists is backed up first, once the checks
+    that refuse the write have passed. Returns the backup's path relative to
+    the state directory's parent."""
+    old = p.snap.data
+    backup = None if old is None else lambda: state.backup(p.target.file_id, old)
+    path = atomic_replace(p.snap, text, state, p.target.file_id, backup)
+    return None if path is None else str(path.relative_to(state.root.parent))
 
 
 def _record(p: _Planned, groups: List[Group], state: StateDir) -> None:

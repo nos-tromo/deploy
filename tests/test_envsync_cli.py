@@ -626,8 +626,8 @@ class CheckTests(CliCase):
 
     def test_allow_drift(self) -> None:
         warning = (
-            "WARNING: ENV_ALLOW_DRIFT=1 — 'make up' continues although .env "
-            "files are behind their examples.\n"
+            "WARNING: ENV_ALLOW_DRIFT=1 — 'make up' continues although "
+            "env-check failed (see above).\n"
         )
         edge, obs = self.members()
         proc = self.sync("--check", "--allow-drift", edge, obs)
@@ -842,6 +842,40 @@ class ErrorTests(CliCase):
         self.assertTrue(report.endswith(SUMMARY_WRITTEN), report)
         self.assertFalse((self.state / "base" / "edge-plane.example").exists())
         self.assertEqual(read(self.state / "base" / "obs-plane.example"), OBS_EXAMPLE)
+
+    def test_refused_writes_keep_the_backups(self) -> None:
+        # In-process: the state directory reads as another filesystem, so the
+        # replace is refused after the file was read. A refusal takes no
+        # backup: six in a row rotate none of the earlier ones away.
+        edge, obs = self.members()
+        self.assertExit(self.sync(edge, obs), 0)
+        folder = self.state / "backup" / "obs-plane"
+        earlier = sorted(os.listdir(folder))
+        self.assertEqual(len(earlier), 1)
+        make_member(self.infra, "obs-plane", OBS_EXAMPLE + "RETRY_LIMIT=3\n")
+        tmp, real = str(self.state / "tmp"), os.stat
+
+        def elsewhere(path, *args, **kwargs):  # type: ignore[no-untyped-def]
+            found = real(path, *args, **kwargs)
+            if str(path) != tmp:
+                return found
+            fields = list(found)
+            fields[2] = found.st_dev + 1
+            return os.stat_result(fields)
+
+        argv = ["--state", str(self.state), "--table", str(self.table)]
+        for _ in range(6):
+            out, err = io.StringIO(), io.StringIO()
+            patch = mock.patch("envsync.state.os.stat", side_effect=elsewhere)
+            with patch, redirect_stdout(out), redirect_stderr(err):
+                code = main(argv + [str(edge), str(obs)])
+            report = out.getvalue()
+            assert_no_sentinel(self, report, err.getvalue())
+            self.assertEqual(code, 1, report)
+            self.assertIn(header("obs-plane/.env", "refused") + "\n", report)
+            self.assertIn("state directory on another filesystem", report)
+        self.assertEqual(sorted(os.listdir(folder)), earlier)
+        self.assertEqual(read(obs / ".env"), OBS_SYNCED)
 
     def test_unusable_state_dir(self) -> None:
         edge, obs = self.members()

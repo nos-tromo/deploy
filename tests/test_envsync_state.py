@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import errno
 import os
 import stat
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import List
 from unittest import mock
 
 from envsync_helpers import assert_no_sentinel
@@ -166,6 +168,27 @@ class ReplaceTests(Base):
             atomic_replace(snap, "A=2\n", self.state(), "m")
         self.assertEqual(self.env.read_text(), "A=newer\n")
 
+    def test_backup_hook_runs_after_the_checks(self) -> None:
+        self.env.write_text("A=1\n")
+        s = self.state()
+        seen: List[str] = []
+
+        def backup() -> Path:
+            seen.append(self.env.read_text())
+            return self.root / "taken"
+
+        snap = read_target(self.env)
+        self.env.write_text("A=newer\n")
+        with self.assertRaises(WriteRefused):
+            atomic_replace(snap, "A=2\n", s, "m", backup)
+        self.assertEqual(seen, [])
+        snap = read_target(self.env)
+        taken = atomic_replace(snap, "A=2\n", s, "m", backup)
+        self.assertEqual(taken, self.root / "taken")
+        self.assertEqual(seen, ["A=newer\n"])
+        self.assertEqual(self.env.read_text(), "A=2\n")
+        self.assertIsNone(atomic_replace(read_target(self.env), "A=3\n", s, "m"))
+
     def test_no_leftovers_on_failure(self) -> None:
         self.env.write_text("A=1\n")
         s = self.state()
@@ -212,6 +235,53 @@ class ReplaceTests(Base):
         os.chown(self.env, 12345, 12345)
         self.replace("A=2\n")
         self.assertEqual(os.lstat(self.env).st_uid, 12345)
+
+    @unittest.skipUnless(os.geteuid() == 0, "needs root")
+    def test_new_file_as_root_owned_like_its_directory(self) -> None:
+        os.chown(self.member, 12345, 12345)
+        self.replace("A=1\n")
+        st = os.lstat(self.env)
+        self.assertEqual((st.st_uid, st.st_gid), (12345, 12345))
+
+    def test_new_file_as_root_takes_the_directory_owner(self) -> None:
+        # The branch above, run by any user: root is mocked, and so is chown.
+        folder = os.stat(self.member)
+        with mock.patch("envsync.state.os.geteuid", return_value=0):
+            with mock.patch("envsync.state.os.chown") as chown:
+                self.replace("A=1\n")
+        chown.assert_called_once_with(mock.ANY, folder.st_uid, folder.st_gid)
+        self.assertEqual(self.env.read_text(), "A=1\n")
+
+    @unittest.skipIf(os.geteuid() == 0, "root carries the owner")
+    def test_group_carried(self) -> None:
+        self.env.write_text("A=1\n")
+        s = self.state()
+        probe = self.root / "tmp" / "probe"
+        probe.write_text("")
+        fresh = os.lstat(probe).st_gid
+        probe.unlink()
+        for gid in os.getgroups():
+            if gid == fresh:
+                continue
+            try:
+                os.chown(self.env, -1, gid)
+                break
+            except PermissionError:
+                continue
+        group = os.lstat(self.env).st_gid
+        atomic_replace(read_target(self.env), "A=2\n", s, "m")
+        self.assertEqual(os.lstat(self.env).st_gid, group)
+
+    @unittest.skipIf(os.geteuid() == 0, "root carries the owner")
+    def test_group_refused_does_not_fail_the_write(self) -> None:
+        self.env.write_text("A=1\n")
+        snap = read_target(self.env)
+        refused = PermissionError(errno.EPERM, os.strerror(errno.EPERM))
+        with mock.patch("envsync.state.os.chown", side_effect=refused) as chown:
+            atomic_replace(snap, "A=2\n", self.state(), "m")
+        chown.assert_called_once_with(mock.ANY, -1, snap.stat.st_gid)
+        self.assertEqual(self.env.read_text(), "A=2\n")
+        self.assertEqual(os.listdir(self.root / "tmp"), [])
 
     @unittest.skipIf(os.geteuid() == 0, "root may write any owner")
     def test_owner_refused(self) -> None:

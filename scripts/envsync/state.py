@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import FrozenSet, Iterable, Iterator, List, Optional, Tuple
+from typing import Callable, FrozenSet, Iterable, Iterator, List, Optional, Tuple
 
 BACKUPS_KEPT = 5
 _BACKUP_RE = re.compile(r"^(\d{8}T\d{6}Z)(?:-(\d+))?\.env$")
@@ -173,7 +173,16 @@ def world_readable(snap: Snapshot) -> bool:
     return snap.stat is not None and bool(stat.S_IMODE(snap.stat.st_mode) & 0o004)
 
 
-def atomic_replace(snap: Snapshot, text: str, state: StateDir, file_id: str) -> None:
+def atomic_replace(
+    snap: Snapshot,
+    text: str,
+    state: StateDir,
+    file_id: str,
+    backup: Optional[Callable[[], Path]] = None,
+) -> Optional[Path]:
+    """Replace the file with text. `backup` runs once the checks that refuse
+    the write have passed, before anything is written; its result is
+    returned."""
     path = snap.path
     now = read_target(path)
     if now.data != snap.data:
@@ -184,13 +193,21 @@ def atomic_replace(snap: Snapshot, text: str, state: StateDir, file_id: str) -> 
     tmp_dir = state.root / "tmp"
     if os.stat(tmp_dir).st_dev != os.stat(path.parent).st_dev:
         raise WriteRefused(f"{path}: state directory on another filesystem")
+    taken = backup() if backup is not None else None
     want_mode = stat.S_IMODE(now.stat.st_mode) if now.stat is not None else 0o600
     tmp = tmp_dir / f"{file_id}.{os.getpid()}.tmp"
     try:
         _write_private(tmp, text.encode("utf-8"))
         os.chmod(tmp, want_mode)
-        if euid == 0 and now.stat is not None:
-            os.chown(tmp, now.stat.st_uid, now.stat.st_gid)
+        if euid == 0:
+            # A new file belongs to whoever owns the member directory.
+            owner = now.stat if now.stat is not None else os.stat(path.parent)
+            os.chown(tmp, owner.st_uid, owner.st_gid)
+        elif now.stat is not None:
+            try:
+                os.chown(tmp, -1, now.stat.st_gid)
+            except PermissionError:
+                pass  # not a member of that group: the file keeps ours
         os.replace(str(tmp), str(path))
         written = os.lstat(path)
         if (
@@ -204,3 +221,4 @@ def atomic_replace(snap: Snapshot, text: str, state: StateDir, file_id: str) -> 
         except OSError:
             pass
         raise
+    return taken
