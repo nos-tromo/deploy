@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import shutil
 import subprocess
 import tempfile
@@ -11,7 +10,7 @@ from pathlib import Path
 
 from envsync_helpers import ROOT
 
-from envsync import dotenv, example
+from envsync import example
 
 MAKEFILE = ROOT / "Makefile"
 
@@ -55,21 +54,6 @@ class MakeTargetsTest(unittest.TestCase):
         lines = done.stdout.splitlines()
         self.assertIn("up: env-check setup", lines)
         self.assertIn("up-dev: env-check setup", lines)
-
-    def test_example_matches_makefile_defaults(self) -> None:
-        defaults = {}
-        for raw in MAKEFILE.read_text(encoding="utf-8").splitlines():
-            found = re.match(r"^(\w+)\s*\?=\s*(.*)$", raw)
-            if found:
-                defaults[found.group(1)] = found.group(2).strip()
-        text = (ROOT / "federation.env.example").read_text(encoding="utf-8")
-        active = dotenv.parse(text, "make").settings()
-        compared = 0
-        for key, line in active.items():
-            if key in defaults:
-                compared += 1
-                self.assertEqual((line.value or "").strip(), defaults[key], key)
-        self.assertGreater(compared, 0)
 
     def test_table_keys_in_member_examples(self) -> None:
         rows = _table_rows()

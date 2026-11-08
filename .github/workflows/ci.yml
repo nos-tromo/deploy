@@ -65,5 +65,5 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Compile and test
         run: |
-          python -m py_compile scripts/env_sync.py scripts/envsync/*.py
+          python -m py_compile scripts/env_sync.py scripts/check_env_examples.py scripts/envsync/*.py
           python -B -m unittest discover -s tests -p 'test_*.py' -v

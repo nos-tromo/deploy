@@ -95,6 +95,10 @@ MESSAGES: Dict[str, str] = {
     "M2": "a setting is KEY=value, with no blank around '='",
     "M3": "federation.env.example has no active line",
     "M4": "the value shown equals the Makefile's ?= default (empty when it has none)",
+    "M5": "federation.env.example has one section, deploy",
+    "X2": "rows of one env-sync.conf group agree on [required]",
+    "X3": "a compose default equals the value shown; ${K:?} means [required]",
+    "X5": "a variable compose interpolates is documented here, *_VERSION aside",
 }
 _ORDER = {rule: index for index, rule in enumerate(MESSAGES)}
 
@@ -143,8 +147,10 @@ def header(member: str, env_name: str, example_name: str) -> List[str]:
 
 
 def is_migrated(text: str, member: str) -> bool:
-    """True once the example starts with the standard header."""
-    return text.split("\n", 1)[0] == header(member, ".env", ".env.example")[0]
+    """True once the example starts with the standard header (its title and
+    the line naming `make env`; a title alone also fits a hand-written file)."""
+    want = header(member, ".env", ".env.example")[:3]
+    return text.split("\n")[:3] == want
 
 
 def makefile_grep_keys(makefile_text: str) -> FrozenSet[str]:
@@ -516,6 +522,9 @@ class _Check:
 
     # M: federation.env.example (make syntax).
     def make_rules(self) -> None:
+        for i in sorted(self.banner):
+            if self.raws[i] != RULE and self.raws[i] != "# deploy":
+                self.add(i, "M5")
         for i, line in enumerate(self.lines):
             if line is not None and line.kind == "comment":
                 match = _MAKE_SPACED.match(self.raws[i])
@@ -549,6 +558,119 @@ def check(
     """Every departure of an example from the format, sorted by line. The M
     rules apply to make syntax only; M4 only when make_defaults is given."""
     return _Check(text, member, syntax, groups, grep_keys, make_defaults).run()
+
+
+# X: an example against its compose files and its env-sync.conf rows.
+
+_COMPOSE_DEFAULT = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(:?-)([^${}]*)\}")
+_COMPOSE_REQUIRED = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*):\?")
+_COMPOSE_REF = re.compile(
+    r"\$\{([A-Za-z_][A-Za-z0-9_]*)|\$([A-Za-z_][A-Za-z0-9_]*)"
+)
+
+
+def _compose_body(text: str) -> str:
+    """The compose text without comments and without `$$` escapes."""
+    kept = []
+    for raw in text.split("\n"):
+        if raw.lstrip().startswith("#"):
+            continue
+        at = raw.find(" #")
+        if at >= 0 and "'" not in raw[:at] and '"' not in raw[:at]:
+            raw = raw[:at]
+        kept.append(raw)
+    return "\n".join(kept).replace("$$", "")
+
+
+def _example_settings(text: str) -> Dict[str, List[Tuple[int, Line, FrozenSet[str]]]]:
+    """Every setting and commented setting by key: line number, line and the
+    tags on the line above."""
+    raws = text.split("\n")
+    found: Dict[str, List[Tuple[int, Line, FrozenSet[str]]]] = {}
+    for index, raw in enumerate(raws):
+        try:
+            line = parse_line(raw, "dotenv")
+        except ParseError:
+            continue
+        if line.kind not in _SETTINGS or not line.key:
+            continue
+        names: FrozenSet[str] = frozenset()
+        if index > 0 and _TAG_LINE.match(raws[index - 1]):
+            names = frozenset(
+                tag.split(":")[0] for tag in _TAG.findall(raws[index - 1])
+            )
+        found.setdefault(line.key, []).append((index + 1, line, names))
+    return found
+
+
+def check_compose(
+    example_text: str, compose_text: str, override_text: Optional[str]
+) -> List[Finding]:
+    """X3 and X5 for a migrated example: the simple compose defaults against
+    the commented values, `${K:?}` against [required], and every interpolated
+    variable (*_VERSION aside) against what the example documents."""
+    settings = _example_settings(example_text)
+    base = _compose_body(compose_text)
+    over = _compose_body(override_text) if override_text is not None else ""
+    found: Set[Finding] = set()
+
+    def is_dev(key: str) -> bool:
+        return any("dev" in names for _, _, names in settings.get(key, []))
+
+    for source, is_override in ((base, False), (over, True)):
+        for match in _COMPOSE_DEFAULT.finditer(source):
+            key, default = match.group(1), match.group(3)
+            rows = settings.get(key)
+            if not rows or is_dev(key) != is_override:
+                continue
+            for lineno, line, _ in rows:
+                if line.kind == "commented" and (line.value or "") != default:
+                    found.add(Finding(lineno, "X3", key))
+        for match in _COMPOSE_REQUIRED.finditer(source):
+            key = match.group(1)
+            rows = settings.get(key)
+            if rows and not is_dev(key):
+                if not any("required" in names for _, _, names in rows):
+                    found.add(Finding(rows[0][0], "X3", key))
+    for source in (base, over):
+        for match in _COMPOSE_REF.finditer(source):
+            key = match.group(1) or match.group(2)
+            if not key.endswith("_VERSION") and key not in settings:
+                found.add(Finding(1, "X5", key))
+    return sorted(found, key=lambda f: (f.lineno, _ORDER[f.rule], f.key or ""))
+
+
+def _group_required(
+    examples: Dict[str, str], groups: Sequence[Group]
+) -> List[Tuple[str, Finding]]:
+    settings = {
+        member: _example_settings(text)
+        for member, text in examples.items()
+        if is_migrated(text, member)
+    }
+    found: List[Tuple[str, Finding]] = []
+    for group in groups:
+        rows = []
+        for row in group.rows:
+            entries = settings.get(row.member, {}).get(row.key)
+            if entries:
+                required = any("required" in names for _, _, names in entries)
+                rows.append((row, entries[0][0], required))
+        if not rows:
+            continue
+        reference = next((r for r in rows if r[0].source), rows[0])
+        for row, lineno, required in rows:
+            if required != reference[2]:
+                found.append((row.member, Finding(lineno, "X2", row.key)))
+    return found
+
+
+def check_group_required(
+    examples: Dict[str, str], groups: Sequence[Group]
+) -> List[Finding]:
+    """X2: the migrated examples in one group agree on [required]; a row
+    that differs from the source (else the first row) is reported."""
+    return [f for _, f in _group_required(examples, groups)]
 
 
 # The command: scripts/check_env_examples.py [--table FILE] DIR...
@@ -603,6 +725,17 @@ def _findings(target: _Target, groups: List[Group]) -> List[Finding]:
     except UnicodeDecodeError as exc:
         found.append(Finding(data.count(b"\n", 0, exc.start) + 1, "F1", None))
         text = data.decode("utf-8", errors="replace")
+    if target.syntax == "dotenv" and is_migrated(text, target.member):
+        compose = target.folder / "docker" / "compose.yaml"
+        override = target.folder / "docker" / "compose.override.yaml"
+        if compose.is_file():
+            found += check_compose(
+                text,
+                _read(compose).decode("utf-8", errors="replace"),
+                _read(override).decode("utf-8", errors="replace")
+                if override.is_file()
+                else None,
+            )
     makefile = target.folder / "Makefile"
     rules = (
         _read(makefile).decode("utf-8", errors="replace")
@@ -647,8 +780,20 @@ def main(argv: List[str]) -> int:
     except UsageError as exc:
         print(f"check_env_examples.py: error: {exc}", file=sys.stderr)
         return 2
+    texts = {
+        target.member: _read(target.example).decode("utf-8", errors="replace")
+        for target in targets
+        if target.syntax == "dotenv"
+    }
+    cross: Dict[str, List[Finding]] = {}
+    for member, finding in _group_required(texts, groups):
+        cross.setdefault(member, []).append(finding)
     failed = False
     for target, findings in results:
+        findings = sorted(
+            set(findings) | set(cross.get(target.member, [])),
+            key=lambda f: (f.lineno, _ORDER[f.rule], f.key or ""),
+        )
         name = f"{target.member}/{target.example.name}"
         for f in findings:
             failed = True

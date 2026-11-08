@@ -363,6 +363,7 @@ Each finding names a line number, a rule and a key, never a value.
 - M2: `KEY=value` with no blanks around `=`.
 - M3: No active line.
 - M4: Each commented value equals the Makefile `?=` default; a key with no `?=` is shown empty, except `WAIT_TIMEOUT=180`.
+- M5: The only section is `deploy`.
 
 **Siblings (X)**, run only where the sibling exists and is migrated (H1)
 - X1: F to V pass with its env-sync.conf rows.

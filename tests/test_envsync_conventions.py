@@ -18,6 +18,8 @@ from envsync.conventions import (
     SECTIONS,
     Finding,
     check,
+    check_compose,
+    check_group_required,
     header,
     is_migrated,
     makefile_defaults,
@@ -131,7 +133,8 @@ ALL_RULES = (
     + [f"S{i}" for i in range(1, 6)]
     + [f"T{i}" for i in range(1, 7)]
     + [f"V{i}" for i in range(1, 12)]
-    + [f"M{i}" for i in range(1, 5)]
+    + [f"M{i}" for i in range(1, 6)]
+    + ["X2", "X3", "X5"]
 )
 
 Pairs = Set[Tuple[str, Optional[str]]]
@@ -606,9 +609,141 @@ class MakeRuleTests(unittest.TestCase):
             with self.subTest(key=key):
                 self.assertIn(("M4", key), self.pairs(mutate(MAKE_VALID, old, new)))
 
+    def test_m5_only_the_deploy_section(self) -> None:
+        text = mutate(MAKE_VALID, "# deploy\n", "# Inference\n")
+        self.assertIn(("M5", None), self.pairs(text))
+        self.assertNotIn(("M5", None), self.pairs(MAKE_VALID))
+
     def test_m_rules_only_for_make(self) -> None:
         pairs = found(VALID, make_defaults={})
         self.assertFalse([rule for rule, _ in pairs if rule.startswith("M")])
+
+
+COMPOSE = """\
+services:
+  metrics:
+    environment:
+      - DATA_NET=${DATA_NET:-data-net}
+      - PORT=${METRICS_PORT-9090}
+      - SECRET=${AUDIT_EDGE_SECRET:?set it}
+      - ESCAPED=$${NOT_A_VARIABLE}
+      - IMAGE=x:${OBS_PLANE_VERSION}
+"""
+OVERRIDE = """\
+services:
+  metrics:
+    ports:
+      - "${DASHBOARD_HOST_PORT:-3000}:3000"
+"""
+
+
+def compose_pairs(
+    compose: str, override: Optional[str] = OVERRIDE, text: str = VALID
+) -> Pairs:
+    return {(f.rule, f.key) for f in check_compose(text, compose, override)}
+
+
+class ComposeRuleTests(unittest.TestCase):
+    def test_clean(self) -> None:
+        self.assertEqual(check_compose(VALID, COMPOSE, OVERRIDE), [])
+        self.assertEqual(check_compose(VALID, COMPOSE, None), [])
+
+    def test_compose_default_mismatch(self) -> None:
+        for old, new, key in (
+            ("${DATA_NET:-data-net}", "${DATA_NET:-other-net}", "DATA_NET"),
+            ("${METRICS_PORT-9090}", "${METRICS_PORT-9091}", "METRICS_PORT"),
+        ):
+            with self.subTest(key=key):
+                pairs = compose_pairs(mutate(COMPOSE, old, new))
+                self.assertEqual(pairs, {("X3", key)})
+
+    def test_compose_default_mismatch_line_and_no_value(self) -> None:
+        got = check_compose(VALID, mutate(COMPOSE, "data-net}", "secret-net}"), OVERRIDE)
+        self.assertEqual(
+            [(f.lineno, f.rule, f.key) for f in got],
+            [(lineno_of(VALID, "# DATA_NET=data-net"), "X3", "DATA_NET")],
+        )
+
+    def test_nested_default_is_not_compared(self) -> None:
+        text = mutate(COMPOSE, "${DATA_NET:-data-net}", "${DATA_NET:-${OTHER:-x}}")
+        self.assertNotIn(("X3", "DATA_NET"), compose_pairs(text))
+
+    def test_prose_only_key_is_not_compared(self) -> None:
+        text = mutate(
+            VALID,
+            "#   METRICS_URL=http://proxy.example.invalid/metrics\n",
+            "#   METRICS_URL=http://proxy.example.invalid/metrics\n"
+            "#   SHAPE_ONLY=a\n",
+        )
+        extra = "      - S=${SHAPE_ONLY:-b}\n"
+        pairs = compose_pairs(COMPOSE + extra, text=text)
+        self.assertNotIn(("X3", "SHAPE_ONLY"), pairs)
+
+    def test_dev_key_is_compared_to_the_override(self) -> None:
+        pairs = compose_pairs(COMPOSE, mutate(OVERRIDE, "-3000}", "-3001}"))
+        self.assertEqual(pairs, {("X3", "DASHBOARD_HOST_PORT")})
+        base = COMPOSE + "      - P=${DASHBOARD_HOST_PORT:-3001}\n"
+        self.assertEqual(compose_pairs(base), set())
+
+    def test_required_key_from_colon_question(self) -> None:
+        self.assertEqual(
+            compose_pairs(mutate(COMPOSE, "${DATA_NET:-data-net}", "${DATA_NET:?x}")),
+            {("X3", "DATA_NET")},
+        )
+        self.assertNotIn(("X3", "AUDIT_EDGE_SECRET"), compose_pairs(COMPOSE))
+        text = mutate(
+            VALID,
+            "# [required] [secret] [shared: edge-plane]\nAUDIT_EDGE_SECRET=\n",
+            "# [secret] [shared: edge-plane]\n# AUDIT_EDGE_SECRET=\n",
+        )
+        self.assertIn(("X3", "AUDIT_EDGE_SECRET"), compose_pairs(COMPOSE, text=text))
+
+    def test_undocumented_compose_variable(self) -> None:
+        for ref in ("${UNDOCUMENTED}", "$UNDOCUMENTED", "${UNDOCUMENTED:-1}"):
+            with self.subTest(ref=ref):
+                pairs = compose_pairs(COMPOSE + f"      - V={ref}\n")
+                self.assertEqual(pairs, {("X5", "UNDOCUMENTED")})
+        self.assertEqual(
+            compose_pairs(COMPOSE, OVERRIDE + "      - V=${UNDOCUMENTED}\n"),
+            {("X5", "UNDOCUMENTED")},
+        )
+
+    def test_version_and_escape_are_ignored(self) -> None:
+        pairs = compose_pairs(COMPOSE)
+        self.assertNotIn(("X5", "OBS_PLANE_VERSION"), pairs)
+        self.assertNotIn(("X5", "NOT_A_VARIABLE"), pairs)
+
+
+def sibling(member: str, body: str) -> str:
+    return "\n".join(header(member, ".env", ".env.example")) + "\n" + body
+
+
+class GroupRequiredTests(unittest.TestCase):
+    REQUIRED = "# [required] [secret] [shared: obs-plane]\nAUDIT_EDGE_SECRET=\n"
+
+    def test_group_required_disagrees(self) -> None:
+        got = check_group_required(
+            {
+                "edge-plane": sibling("edge-plane", self.REQUIRED),
+                "obs-plane": sibling("obs-plane", "# AUDIT_EDGE_SECRET=\n"),
+            },
+            GROUPS,
+        )
+        self.assertEqual(
+            [(f.lineno, f.rule, f.key) for f in got], [(len(header("obs-plane", "", "")) + 1, "X2", "AUDIT_EDGE_SECRET")]
+        )
+        agree = {m: sibling(m, self.REQUIRED) for m in ("edge-plane", "obs-plane")}
+        self.assertEqual(check_group_required(agree, GROUPS), [])
+
+    def test_unmigrated_and_absent_members_are_skipped(self) -> None:
+        required = sibling("edge-plane", self.REQUIRED)
+        self.assertEqual(
+            check_group_required(
+                {"edge-plane": required, "obs-plane": "AUDIT_EDGE_SECRET=\n"}, GROUPS
+            ),
+            [],
+        )
+        self.assertEqual(check_group_required({"edge-plane": required}, GROUPS), [])
 
 
 MAKEFILE = (
@@ -751,6 +886,30 @@ class CliTests(unittest.TestCase):
         self.assertIn("deploy/federation.env.example:", done.stdout)
         self.assertIn(" M4 INFRA_ROOT ", done.stdout)
         self.assertIn(" M4 APP_DIRS ", done.stdout)
+
+    def test_compose_checks_for_a_member_with_compose(self) -> None:
+        folder = self.member("obs-plane", VALID)
+        (folder / "docker").mkdir()
+        (folder / "docker" / "compose.yaml").write_text(COMPOSE, encoding="utf-8")
+        (folder / "docker" / "compose.override.yaml").write_text(
+            OVERRIDE, encoding="utf-8"
+        )
+        done = run_check(folder, table=self.table)
+        self.assertEqual((done.returncode, done.stdout), (0, ""))
+        (folder / "docker" / "compose.yaml").write_text(
+            mutate(COMPOSE, "data-net}", "other-net}"), encoding="utf-8"
+        )
+        done = run_check(folder, table=self.table)
+        self.assertEqual(done.returncode, 1)
+        self.assertIn(" X3 DATA_NET ", done.stdout)
+
+    def test_group_required_across_dirs(self) -> None:
+        edge = self.member("edge-plane", sibling("edge-plane", GroupRequiredTests.REQUIRED))
+        obs = self.member("obs-plane", sibling("obs-plane", "# AUDIT_EDGE_SECRET=\n"))
+        done = run_check(edge, obs, table=self.table)
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("obs-plane/.env.example:", done.stdout)
+        self.assertIn(" X2 AUDIT_EDGE_SECRET ", done.stdout)
 
     def test_several_dirs(self) -> None:
         good = self.member("obs-plane", VALID)
