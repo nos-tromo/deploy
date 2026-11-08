@@ -143,7 +143,7 @@ def _classify(lineno: int, raw: str, syntax: str) -> Line:
 
 def parse(text: str, syntax: str = "dotenv") -> EnvFile:
     """Parse a whole file; raises ParseError on the first unreadable line."""
-    if text.startswith("﻿"):
+    if text.startswith("\ufeff"):
         raise ParseError(1, "byte-order mark")
     raws = text.split("\n")
     if raws and raws[-1] == "":

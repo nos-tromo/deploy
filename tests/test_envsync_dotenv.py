@@ -98,7 +98,7 @@ class ParseTests(unittest.TestCase):
             ("=v", 1),
             ("K.EY=v", 1),
             ("A=1\nK='SENTINEL-open", 2),
-            ("﻿K=v", 1),
+            ("\ufeffK=v", 1),
             ("K=v\r", 1),
             ("A=1\nK=SENTINEL-1\nK=SENTINEL-2", 3),
         ]
@@ -117,7 +117,7 @@ class ParseTests(unittest.TestCase):
             "KEY: v": "unsupported syntax",
             "K='x": "unterminated quote",
             "K='x' y": "text after closing quote",
-            "﻿K=v": "byte-order mark",
+            "\ufeffK=v": "byte-order mark",
             "K=v\r": "CRLF line end",
             "K=1\nK=2": "duplicate key (first defined on line 1)",
         }

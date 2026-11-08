@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import unittest
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Iterable, List, Optional, Tuple
 
 from envsync_helpers import assert_no_sentinel
 from envsync.dotenv import parse
 from envsync.example import Example, load_example
 from envsync.plan import (
-    MARKER,
     Entry,
     Event,
     FilePlan,
@@ -17,6 +16,7 @@ from envsync.plan import (
     plan_file,
 )
 from envsync.render import render
+
 
 def plan_texts(
     e: str,
