@@ -5,7 +5,15 @@ from __future__ import annotations
 from collections import Counter
 from typing import Dict, List, Optional
 
-from .dotenv import EnvFile, ParseError, parse, parse_line, references
+from .dotenv import (
+    EnvFile,
+    Line,
+    ParseError,
+    parse,
+    parse_line,
+    references,
+    rewrite_key,
+)
 from .example import Example
 from .plan import MARKER, FilePlan, plan_file
 
@@ -48,20 +56,37 @@ def _positions(env: EnvFile) -> Dict[str, int]:
     return {key: line.lineno for key, line in env.settings().items()}
 
 
-def _check_order(original: EnvFile, rendered: EnvFile) -> None:
+def _placed_as(
+    line: Line, placed: Dict[str, Line], renames: Dict[str, str]
+) -> Optional[str]:
+    """The key the rendered file holds an original line under: its own (kept,
+    or at the end), or the end of its rename chain when it was carried there.
+    None when the line was dropped."""
+    if line.key is None or line.key in placed:
+        return line.key
+    new = renames.get(line.key, "")
+    if new in placed and placed[new].raw == rewrite_key(line.raw, line.key, new):
+        return new
+    return None
+
+
+def _check_order(
+    original: EnvFile, rendered: EnvFile, renames: Dict[str, str]
+) -> None:
     before = _positions(original)
     after = _positions(rendered)
+    placed = rendered.settings()
     for line in original.settings().values():
+        key = _placed_as(line, placed, renames)
         for name in references(line):
             if (
-                line.key is None
-                or line.key not in after
+                key is None
                 or name == line.key
                 or name not in before
                 or name not in after
             ):
                 continue
-            if (before[name] < line.lineno) != (after[name] < after[line.key]):
+            if (before[name] < line.lineno) != (after[name] < after[key]):
                 raise CheckError(f"{line.key}: order against {name} changed")
 
 
@@ -88,7 +113,7 @@ def verify(
             )
             raise CheckError(f"a kept line is not present exactly once ({line})")
     if plan.syntax == "dotenv" and original is not None:
-        _check_order(original, parsed)
+        _check_order(original, parsed, example.renames)
     try:
         again = plan_file(
             plan.file_id, plan.display, example, example, parsed, plan.shared_keys

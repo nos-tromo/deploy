@@ -601,6 +601,25 @@ class FillTests(SharedCase):
         self.assertEqual(self.plan("docint").entries["OPENAI_API_KEY"].origin, "kept")
         self.assertIsNone(event(self.plan("docint"), "filled"))
 
+    def test_a_fill_keeps_the_reference_note(self) -> None:
+        # docint's example adds OPENAI_API_KEY above the operator's
+        # NER_API_KEY=$OPENAI_API_KEY; the router's key is filled into it,
+        # and the note that NER_API_KEY now reads it stays.
+        self.start(ROUTER)
+        router = "OPENAI_API_KEY=sk-no-key-required\n"
+        self.member("vllm-service", router, "OPENAI_API_KEY=SENTINEL-r\n")
+        ner = "# NER_API_KEY=$OPENAI_API_KEY\n"
+        docint = self.member(
+            "docint", router + ner, "NER_API_KEY=$OPENAI_API_KEY\n", base=ner
+        )
+        self.assertEqual(self.apply(), [])
+        self.assertEqual(docint.entries["OPENAI_API_KEY"].origin, "filled")
+        self.assertIsNone(items(docint, "added"))
+        self.assertEqual(
+            items(docint, "lint"),
+            ["line 1: now reads ${OPENAI_API_KEY} from a line the sync added"],
+        )
+
     def test_unsafe_not_copied(self) -> None:
         for name, raw in {
             "a blank": 'AUDIT_EDGE_SECRET="SENTINEL-a b"\n',
@@ -851,32 +870,49 @@ class EntryRowTests(SharedCase):
                 self.assertEqual(self.snapshot(), before)
 
     def test_a_set_list_is_never_appended_to(self) -> None:
-        # (docint env, Nextext env, conflict item)
+        # The single key is set: a list without its real entry is a conflict.
         cases = {
             "a placeholder entry beside a real one": (
-                "NEXTEXT_API_KEY=SENTINEL-t\n",
-                "NEXTEXT_SERVICE_TOKENS=docint=<token>,other=SENTINEL-o\n",
-                "NEXTEXT_SERVICE_TOKENS: Nextext differs from docint",
+                "NEXTEXT_SERVICE_TOKENS=docint=<token>,other=SENTINEL-o\n"
             ),
-            "no entry, the single key unset": (
-                "OTHER=1\n",
-                "NEXTEXT_SERVICE_TOKENS=other=SENTINEL-o\n",
-                "NEXTEXT_SERVICE_TOKENS: Nextext has no docint entry",
-            ),
-            "an item that is not name=token": (
-                "OTHER=1\n",
-                "NEXTEXT_SERVICE_TOKENS=SENTINEL-x\n",
-                "NEXTEXT_SERVICE_TOKENS: Nextext has no docint entry",
-            ),
+            "no entry": "NEXTEXT_SERVICE_TOKENS=other=SENTINEL-o\n",
+            "an item that is not name=token": "NEXTEXT_SERVICE_TOKENS=SENTINEL-x\n",
         }
-        for name, (docint_env, nextext_env, item) in cases.items():
+        for name, nextext_env in cases.items():
             with self.subTest(name):
                 self.start(TOKENS)
-                self.member("docint", "# NEXTEXT_API_KEY=\nOTHER=1\n", docint_env)
+                self.member(
+                    "docint",
+                    "# NEXTEXT_API_KEY=\nOTHER=1\n",
+                    "NEXTEXT_API_KEY=SENTINEL-t\n",
+                )
                 self.member("Nextext", TOKENS_EXAMPLE, nextext_env)
                 before = self.snapshot()
-                self.assertEqual(self.apply(), [conflict(item)])
+                self.assertEqual(
+                    self.apply(),
+                    [conflict("NEXTEXT_SERVICE_TOKENS: Nextext differs from docint")],
+                )
                 self.assertEqual(self.snapshot(), before)
+
+    def test_a_list_without_the_entry_and_nothing_else_set(self) -> None:
+        # Nothing disagrees: unset everywhere, not a conflict. The list
+        # cannot be filled, so nothing is generated either.
+        cases = {
+            "no entry": "NEXTEXT_SERVICE_TOKENS=other=SENTINEL-o\n",
+            "an item that is not name=token": "NEXTEXT_SERVICE_TOKENS=SENTINEL-x\n",
+        }
+        for name, nextext_env in cases.items():
+            for generate in (False, True):
+                with self.subTest(name, generate=generate):
+                    self.start(TOKENS)
+                    self.member("docint", "# NEXTEXT_API_KEY=\nOTHER=1\n", "OTHER=1\n")
+                    self.member("Nextext", TOKENS_EXAMPLE, nextext_env)
+                    before = self.snapshot()
+                    self.assertEqual(
+                        self.apply(generate),
+                        [unset_everywhere("NEXTEXT_API_KEY (docint, Nextext)")],
+                    )
+                    self.assertEqual(self.snapshot(), before)
 
     def test_generate_fills_list_and_key(self) -> None:
         stub = Tokens("a" * 64)

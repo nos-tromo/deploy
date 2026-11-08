@@ -320,12 +320,17 @@ class _Pass:
         ref = next((side for side in held if side.row.source), held[0])
         value = ref.value
         differs = [side for side in held if side is not ref and side.value != value]
-        if differs or value is None:
+        if differs:
             items = [
                 f"{side.row.key}: {side.row.member} differs from {ref.row.member}"
                 for side in differs
-            ] or [f"{ref.row.key}: {ref.row.member} has no {ref.row.entry} entry"]
+            ]
             self.found["conflict"].append(Event("conflict", items, "error"))
+            return
+        if value is None:
+            # Only lists without the entry are set: nothing disagrees, and a
+            # list that is set is never filled, so nothing is generated.
+            self.unset_everywhere(sides)
             return
         for side in sides:
             if not side.is_set:
@@ -341,6 +346,9 @@ class _Pass:
         if self.generate:
             for side in kept:
                 self.note(side.row.member, "kept_unset", side.row.key)
+        self.unset_everywhere(sides)
+
+    def unset_everywhere(self, sides: List[_Side]) -> None:
         members = list(dict.fromkeys(side.row.member for side in sides))
         self.found["unset_everywhere"].append(
             Event(

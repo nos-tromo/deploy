@@ -6,9 +6,17 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Dict, FrozenSet, List, Optional, Set
+from typing import Dict, FrozenSet, List, Optional, Set, Tuple
 
-from .dotenv import EnvFile, Line, is_secret_like, lint, references, rewrite_key
+from .dotenv import (
+    EnvFile,
+    Line,
+    is_secret_like,
+    lint,
+    parse_line,
+    references,
+    rewrite_key,
+)
 from .example import Example
 
 MARKER = "# [env-sync]"
@@ -165,7 +173,8 @@ class _Planner:
             self.items["dropped_comments"].append(
                 f"{dropped} comment lines not in the example dropped (see the backup)"
             )
-        for lineno, message in lint(self.env):
+        notes = lint(self.env) + self.reads_added()
+        for lineno, message in sorted(notes, key=lambda note: note[0]):
             self.items["lint"].append(f"line {lineno}: {message}")
         events = [
             Event(kind, found, "warn" if kind in _WARN else "info")
@@ -309,6 +318,53 @@ class _Planner:
                 and entry.value != _value(default)
             ):
                 self.items["differs"].append(key)
+
+    def reads_added(self) -> List[Tuple[int, str]]:
+        """Operator lines whose ${X} now reads an X that an added or followed
+        line sets above them, where the operator file set no X above. The
+        value changes through the reference, so the report says so; make
+        reads a reference wherever its line stands, so only dotenv."""
+        if self.syntax == "make":
+            return []
+        end = len(self.example.env.lines) + 1
+        orphaned = {orphan.line.lineno for orphan in self.orphans}
+        found: List[Tuple[int, str]] = []
+        for own, line in self.ops.items():
+            if line.lineno in orphaned:
+                at = end
+            else:
+                entry = self.holder(own)
+                anchor = None
+                if entry is not None:
+                    anchor = self.example.anchor_for(
+                        entry.key, parse_line(entry.raw, self.syntax)
+                    )
+                if anchor is None:
+                    continue
+                at = anchor.lineno
+            for name in references(line):
+                source = self.entries.get(name)
+                mine = self.ops.get(name)
+                if (
+                    source is not None
+                    and source.origin in ("added", "followed")
+                    and (mine is None or mine.lineno > line.lineno)
+                    and self.e_active[name].lineno < at
+                ):
+                    message = f"now reads ${{{name}}} from a line the sync added"
+                    found.append((line.lineno, message))
+        return found
+
+    def holder(self, own: str) -> Optional[Entry]:
+        """The entry that keeps an operator line in the example's body: its
+        own when kept, or the carried one when it is a renamed key."""
+        new = self.example.renames.get(own)
+        entry = self.entries.get(own if new is None else new)
+        if entry is None:
+            return None
+        if new is None:
+            return entry if entry.origin == "kept" else None
+        return entry if entry.origin == "carried" and not self.drops(own) else None
 
     def orphan(self, key: str, note: Optional[str]) -> None:
         line = self.ops[key]

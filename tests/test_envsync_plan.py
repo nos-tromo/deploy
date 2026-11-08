@@ -636,6 +636,64 @@ class EventOrderTests(PlanCase):
             lint_event.items[0].startswith("line 2: empty value followed by a comment")
         )
 
+    def test_reference_now_reads_an_added_line(self) -> None:
+        def note(lineno: int, key: str) -> str:
+            return f"line {lineno}: now reads ${{{key}}} from a line the sync added"
+
+        trap = (
+            "line 3: empty value followed by a comment: compose reads the "
+            "comment as the value; put the comment on its own line"
+        )
+        e = (
+            "OPENAI_API_KEY=sk-no-key-required\n"
+            "MODEL=m\n"
+            "# NER_API_KEY=$OPENAI_API_KEY\n"
+            "TAIL=1\n"
+        )
+        base = "MODEL=m\n# NER_API_KEY=$OPENAI_API_KEY\nTAIL=1\n"
+        cases = {
+            # docint-style: the operator's NER_API_KEY reads a key the file
+            # did not set, which the example now adds above it.
+            "kept line": (
+                e,
+                base,
+                "MODEL=m\nNER_API_KEY=$OPENAI_API_KEY\nTAIL=   # SENTINEL-c\n",
+                [note(2, "OPENAI_API_KEY"), trap],
+            ),
+            "line kept at the end": (
+                e,
+                base,
+                "MODEL=m\nTAIL=1\nMY_KEY=${OPENAI_API_KEY}/v1\n",
+                [note(3, "OPENAI_API_KEY")],
+            ),
+            "carried line": (
+                "# renamed: OLD -> NEW\nX=1\nNEW=2\n",
+                "OLD=2\n",
+                "OLD=${X}-s\n",
+                [note(1, "X")],
+            ),
+            "set by the operator": (
+                e,
+                base,
+                "OPENAI_API_KEY=SENTINEL-k\nMODEL=m\nNER_API_KEY=$OPENAI_API_KEY\n",
+                None,
+            ),
+            "added below the reference": (
+                "TAIL=1\nLATE=x\n",
+                "TAIL=1\n",
+                "TAIL=${LATE}\n",
+                None,
+            ),
+        }
+        for name, (example, synced, env, found) in cases.items():
+            with self.subTest(name):
+                p = self.plan(example, env, base=synced)
+                self.assertEqual(items(p, "lint"), found)
+        # make reads a reference when it is used, wherever the line stands.
+        p = self.plan("B=1\nA=x\n", "A=${B}\n", base="A=x\n", syntax="make")
+        self.assertEqual(p.entries["B"].origin, "added")
+        self.assertIsNone(items(p, "lint"))
+
 
 class EffectiveAndPlaceholderTests(PlanCase):
     def test_effective(self) -> None:

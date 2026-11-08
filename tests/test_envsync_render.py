@@ -184,6 +184,32 @@ class VerifyTests(unittest.TestCase):
         self.assertEqual(plan.entries["NEW"].origin, "carried")
         verify(ex, plan, env, render(ex, plan))
 
+    def test_carried_rename_above_its_reference_refused(self) -> None:
+        # The example puts NEW above X: the carried line would read ${X}
+        # before X is set.
+        ex = load_example("# renamed: OLD -> NEW\nNEW=2\nX=1\n")
+        base = load_example("X=1\nOLD=2\n")
+        env = parse("X=1\nOLD=${X}-s\n", "dotenv")
+        plan = plan_file("m", "m/.env", ex, base, env)
+        self.assertEqual(plan.entries["NEW"].origin, "carried")
+        message = self.fault(ex, plan, env, render(ex, plan))
+        self.assertEqual(message, "OLD: order against X changed")
+
+    def test_renamed_line_not_carried_is_checked_where_it_stays(self) -> None:
+        # Without a sync record OLD stays at the end, below X, under its own
+        # name; dropped as the old default, it is not in the file at all.
+        # Neither is NEW's line, which the example puts above X.
+        ex = load_example("# renamed: OLD -> NEW\nNEW=2\nX=1\n")
+        env = parse("X=1\nOLD=${X}-s\n", "dotenv")
+        plan = plan_file("m", "m/.env", ex, None, env)
+        self.assertEqual([o.line.key for o in plan.orphans], ["OLD"])
+        verify(ex, plan, env, render(ex, plan))
+        inherited = "X=1\nOLD=${X}-s\n"
+        env = parse(inherited, "dotenv")
+        plan = plan_file("m", "m/.env", ex, load_example(inherited), env)
+        self.assertEqual(plan.entries["NEW"].origin, "added")
+        verify(ex, plan, env, render(ex, plan))
+
     def test_rerender_exception_is_a_check_error(self) -> None:
         example, plan, original = plan_of("orphan")
         text = render(example, plan)
