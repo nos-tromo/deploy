@@ -281,10 +281,33 @@ Member notes follow the header template after a bare `#` line.
   must no longer be a key of the example, a chain must end in a key the example
   has, and no file may reference `${OLD}`.
 - A new or renamed shared key means an edit to deploy's `env-sync.conf`.
+- A rename carries a value only when the previous example had OLD as a setting
+  line (`OLD=` or `# OLD=`). OLD named only in prose is not carried: the old line
+  stays at the end of the `.env`. Keep the code's fallback for OLD until hosts
+  have moved the value by hand, and say so in the PR.
 
 The example's value for a key should equal the default the member's Makefile or
 compose file applies; otherwise a followed default and the real behaviour
 diverge.
+
+- `[required]` is advisory where compose falls back (`${KEY:-v}`): `make env`
+  fills shared values, and a host without deploy still starts. A key compose
+  checks with `${KEY:?…}` must carry `[required]`.
+- A compose default under `environment:` (`${KEY:-v}`) is interpolated, so a
+  value exported in the shell that runs `make up` beats `.env`. Where a shell
+  value would break the member (a router model name that must match what its
+  backend serves), deliver the default the way vllm-service does: a committed
+  env file listed before `../.env` in `env_file:` (the later file wins), or an
+  image `ENV`. Otherwise say so in the member's docs.
+- A key compose checks with `:?` is delivered by that same `${KEY:?…}`, so the
+  check and the container read one value. A check elsewhere (an `x-` field)
+  passes on a shell export while the container gets an empty `.env` value.
+- The checker compares defaults (X3) in `docker/compose.yaml` and
+  `docker/compose.override.yaml` only. Container-side `$${KEY:-v}`, the
+  standalone `docker/compose.*.yaml` shapes, env files such as
+  `docker/router/defaults.env` and Dockerfile `ENV` are not checked: keep them
+  equal to the example by hand, and write a shape's own default as indented
+  prose (`#   KEY=v`).
 
 ## Knobs
 
