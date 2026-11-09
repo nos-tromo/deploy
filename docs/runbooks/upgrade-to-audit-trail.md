@@ -65,9 +65,8 @@ v2.10+).
    - A copy of the volumes `sessions-storage` (docint) and `open-webui-data`
      (Open WebUI v0.13.0 migrates its database on first start): the way back
      for those two apps.
-2. **Generate the secrets.** `make secret` in edge-plane; every value its own,
-   at least 32 characters. `openssl rand -hex 32` for the Qdrant key and the
-   Open WebUI token secret.
+2. **Generate the secrets.** `openssl rand -hex 32`, once per value: every
+   value its own, at least 32 characters.
 
    | Value | edge-plane `.env` | Counterpart, same value |
    |---|---|---|

@@ -59,7 +59,7 @@ edge-plane's docs:
 - **Edge secrets.** The gateway sends each app its own `X-Edge-Secret`,
   and the app trusts the `X-Auth-*` identity headers only when it matches
   (edge-plane `docs/identity-contract.md` § Edge secret). Generate one value
-  per app with edge-plane's `make secret`, and put it into edge-plane's
+  per app with `openssl rand -hex 32`, and put it into edge-plane's
   `.env` and the app's `.env` under the same name: `DOCINT_EDGE_SECRET`,
   `NEXTEXT_EDGE_SECRET`, `TRANSLATOR_EDGE_SECRET`, `OPEN_WEBUI_EDGE_SECRET`.
   obs-plane's two Grafanas work the same way, with the values in obs-plane's
