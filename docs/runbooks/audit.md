@@ -8,7 +8,7 @@ store's own reference is obs-plane's `docs/audit.md`.
 
 1. **Volumes and secrets.** obs-plane's `make volumes` creates the audit
    volumes along with the others (`make setup` here runs it). Generate
-   `AUDIT_EDGE_SECRET` with edge-plane's `make secret` and put the same value
+   `AUDIT_EDGE_SECRET` with `openssl rand -hex 32` and put the same value
    into edge-plane's and obs-plane's `.env`; until both carry it, `/audit/`
    answers 403. If the applicable rules prescribe a period other than one
    year, set `AUDIT_RETENTION` in obs-plane's `.env` (Loki duration syntax,
