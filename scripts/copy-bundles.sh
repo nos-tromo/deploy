@@ -249,6 +249,19 @@ cp "$INFRA_ROOT/edge-plane/authelia/configuration.yml" \
    "$DEST_BASE/edge-plane/authelia/"
 echo -e "  ${GREEN}✓${NC} edge-plane: authelia configuration (without users.yml) copied."
 
+# edge-plane special case: announcements/ only the released announcement.md.
+# Host-only announcement files (gitignored there) and the smoke-test fixture
+# stay behind; Caddy mounts the directory, and without the file the portal's
+# announcement section stays hidden. Releases before v0.14.0 have none.
+mkdir -p "$DEST_BASE/edge-plane/announcements"
+if [ -f "$INFRA_ROOT/edge-plane/announcements/announcement.md" ]; then
+    cp "$INFRA_ROOT/edge-plane/announcements/announcement.md" \
+       "$DEST_BASE/edge-plane/announcements/"
+    echo -e "  ${GREEN}✓${NC} edge-plane: announcements/announcement.md copied."
+else
+    echo -e "  ${YELLOW}⚠ edge-plane: announcements/announcement.md not found — skipped.${NC}"
+fi
+
 # edge-plane special case: client provisioning (hosts entry + CA trust) is
 # needed on the airgap clients, not just on the gateway; audit-admin.sh is what
 # `make totp` runs, so the account change is recorded.
