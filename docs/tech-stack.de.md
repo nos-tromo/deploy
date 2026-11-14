@@ -32,7 +32,7 @@ und nichts lädt zur Laufzeit Daten, Modelle oder Telemetrie nach.
 | Datenbank | Qdrant v1.17 (Vektor) |
 | Edge / Auth | Caddy 2.11 (TLS, Pfad-Routing) + Authelia 4.39 (Forward-Auth-SSO, vertrauenswürdige Header `X-Auth-User`/`X-Auth-Email`) |
 | Observability | Prometheus v3.13, Grafana OSS 13.0, Loki 3.7, Alloy v1.18 + node-exporter, cAdvisor, blackbox-exporter |
-| Audit-Trail | Hash-verkettete Ereignisse (gemeinsame `audit_event.py` + `audit_runtime.py`, vendored und auf Drift geprüft) aus den App-Backends, dem Router, `auth-audit` in edge-plane und `admin-audit` in data-plane, abgelegt in einem eigenen Loki mit Verifier und signierten Tagesankern (ADR 0003). Abfragen und Offenlegungen nennen einen Zweck, der einmal je Sitzung in der Zweck-Leiste jedes SPA angegeben wird |
+| Audit-Trail | Hash-verkettete Ereignisse (gemeinsame `audit_event.py` + `audit_runtime.py`, vendored und auf Drift geprüft) aus den App-Backends, dem Router, `auth-audit` und `auth-retention` in edge-plane und `admin-audit` in data-plane, abgelegt in einem eigenen Loki mit Verifier und signierten Tagesankern (ADR 0003). Abfragen und Offenlegungen nennen einen Zweck, der einmal je Sitzung in der Zweck-Leiste jedes SPA angegeben wird |
 | Paketierung / Abhängigkeiten | `uv` (Python, `uv.lock`), `pnpm` 9.12 (JS) |
 | Qualitätssicherung | ruff 0.15.14, pyrefly 1.1.1 (strict), pytest 9, pre-commit; ESLint 9 + `tsc` + vitest 4 |
 | Container | Docker Compose pro Repo; Digest-gepinnte Images; Make-gesteuerter Lebenszyklus |
@@ -124,6 +124,7 @@ Infrastruktur — gepullte, Digest-gepinnte Images.
 | Auth | `authelia:4.39.20` — Forward-Auth-SSO; injiziert vertrauenswürdige `X-Auth-User` / `X-Auth-Email`; `Authorization`-Pass-through; dateibasierte Benutzer (`make user` / `make secret`); Admins-Gruppen-Gate für `/grafana` |
 | Self-Service | Landing-Portal + Passwort-Self-Service mit Einmalcode-Anzeige (`landing/`, `authcode/`; projektgebundenes Volume `edge-notify` für kurzlebige Codes) |
 | Audit | `auth-audit` (gepinntes `python`, ohne Netzwerk): Anmeldeversuche aus Authelia und Kontoänderungen in `users.yml` als Audit-Ereignisse; Position auf dem externen Volume `edge-audit-state` |
+| Aufbewahrung | `auth-retention` (gepinntes `python`, ohne Netzwerk): löscht Authelias Anmeldedaten nach `EDGE_AUTH_RETENTION_DAYS` (30), Anmeldeversuche erst nach ihrem Export; jeder Batch als `delete`-Audit-Ereignis |
 | TLS | Interne CA (`make ca-export`) oder organisationseigene Zertifikate via `EDGE_TLS`; `EDGE_HOST` muss ein Hostname mit Punkt oder eine IP sein |
 | State | Externe Volumes `edge-state` / `edge-ca` |
 | Routing | Jede SPA unter ihrem kanonischen Unterpfad (`/docint/`, `/nextext/`, `/translator/`); Open WebUI (kein Unterpfad-Support) auf der dedizierten `:8443`-Site |
