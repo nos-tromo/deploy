@@ -20,7 +20,14 @@ def _members() -> List[str]:
         if parts and not raw.lstrip().startswith("#") and parts[1] not in names:
             names.append(parts[1])
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-    for var in ("VLLM_DIR", "DATA_DIR", "OBS_DIR", "EDGE_DIR", "OPENWEBUI_DIR"):
+    for var in (
+        "VLLM_DIR",
+        "DATA_DIR",
+        "OBS_DIR",
+        "WORKBENCH_DIR",
+        "EDGE_DIR",
+        "OPENWEBUI_DIR",
+    ):
         found = re.search(rf"^{var}\s*\?=\s*(\S+)", makefile, re.M)
         if found and found.group(1) not in names:
             names.append(found.group(1))

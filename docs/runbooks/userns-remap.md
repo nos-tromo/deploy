@@ -46,7 +46,8 @@ window.
    ```
 
    The range must cover every container UID in use; 65536 covers the
-   federation's highest (10001) many times over.
+   federation's highest (workbench's job slots, 20001 to 20016) three
+   times over.
 3. **Enable remap in the daemon config** (`/etc/docker/daemon.json`):
 
    ```json
@@ -84,3 +85,20 @@ root.
   and Authelia's users.yml writeback works because its container keeps
   the caps to manage its own files — verify the password self-service
   cycle after enabling remap (edge-plane `scripts/smoke.sh`).
+- **workbench's executor** runs as container root with six capabilities
+  (`SETUID`, `SETGID`, `CHOWN`, `FOWNER`, `DAC_OVERRIDE`, `KILL`), so that it
+  can run each job as one of its slot uids; under remap that root is the
+  remapped one, not host root. `/dev/zero` is then the host's node,
+  bind-mounted and owned by an unmapped uid, so the executor cannot close it
+  to jobs: it logs a warning and starts. The same holds under any
+  user-namespaced daemon, rootless Docker with the memory controller
+  delegated included. A job can then hold shared memory that no job's count
+  shows, and the executor's container-wide check stops every running job, of
+  every user, once more than 64 MiB of it shows. That is a denial of service
+  within one user's limits; it reaches no other user's data (workbench
+  `docs/sandbox.md`, Residual risks;
+  [ADR 0005](../decisions/0005-workbench-shared-tool-tier.md)). The executor
+  has not yet run on a remapped host: the first such bring-up is a check for
+  the owner. After step 7, `make health` in workbench must show `api` and
+  `executor` healthy, and the executor's log (`make logs`) must hold no
+  start-up refusal.

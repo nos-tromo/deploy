@@ -189,6 +189,12 @@ copy_project "$INFRA_ROOT/translator" translator \
     "$INFRA_ROOT/translator/.translator-version" \
     "$INFRA_ROOT/translator/.env.example"
 
+# workbench: both images (api, executor) are built locally; nothing is mounted
+# from the repo.
+copy_project "$INFRA_ROOT/workbench" workbench \
+    "$INFRA_ROOT/workbench/.workbench-version" \
+    "$INFRA_ROOT/workbench/.env.example"
+
 # open-webui-service: the retention sidecar mounts retention/ and VERSION from
 # the repo; without them it does not start on the airgap side.
 copy_project "$INFRA_ROOT/open-webui-service" open-webui-service \

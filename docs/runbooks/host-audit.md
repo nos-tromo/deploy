@@ -42,6 +42,7 @@ the trail itself.
    -w $root/vllm-service/.env -p wa -k fed-config
    -w $root/data-plane/.env -p wa -k fed-config
    -w $root/obs-plane/.env -p wa -k fed-config
+   -w $root/workbench/.env -p wa -k fed-config
    -w $root/edge-plane/.env -p wa -k fed-config
    -w $root/open-webui-service/.env -p wa -k fed-config
    -w $root/deploy/federation.env -p wa -k fed-config

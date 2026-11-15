@@ -58,13 +58,15 @@ the rest.
 
 ## The load-bearing invariant: bring-up order
 
-`inference (vllm-service) → state (data-plane) → obs (obs-plane) → apps → edge (edge-plane)`,
+`inference (vllm-service) → state (data-plane) → obs (obs-plane) → workbench → apps → edge (edge-plane)`,
 each tier **healthy before the next starts**. `down` is the exact reverse. This is not a
 preference — the apps assume the router (`inference-net`) and the database (`data-net`) are
 already reachable when they start, and the edge tier assumes the apps it fronts are already up.
 `make up` enforces it by health-gating each tier with `wait-healthy.sh` before starting the next.
 The obs tier is gated on `prometheus:9090` over `data-net`; it is optional (`OBS_DIR` empty skips
-it) but when present its position is fixed. The edge tier (Caddy + Authelia) is gated on
+it) but when present its position is fixed. The workbench tier (ADR 0005) is gated on
+`workbench-api:8000` over `workbench-net`, after obs and before the apps, whose Open WebUI calls it;
+`WORKBENCH_DIR` empty skips it. The edge tier (Caddy + Authelia) is gated on
 `caddy:443` over `edge-net`, comes up last, and — like inference — is pinned to production `up`
 in both `up` and `up-dev` (never published in dev shape); `EDGE_DIR` empty skips it. **Never
 reorder these tiers.**
@@ -92,12 +94,13 @@ drive compose directly. Keep this split:
    (6333 on `127.0.0.1`, for the Qdrant dashboard over an SSH tunnel; edge-plane does not route it)
    opens only on demand with data-plane's `up-admin`, which records the opening and the closing in
    the audit trail; see data-plane's README § Admin access. `up-dev` reuses that same sequencer (one
-   shared recipe selected by `$(MODE_UP)` / `$(DATA_UP)`): the state + obs + app tiers come up via
+   shared recipe selected by `$(MODE_UP)` / `$(DATA_UP)`): the state + obs + workbench + app tiers come up via
    their detached `up-dev` to publish host ports — data-plane's `up-dev` already publishes the admin
    port among others — while inference stays pinned to production `up`. `bundle`/`load` cover every image-bearing member — the `APP_DIRS` apps +
    `vllm-service` + `data-plane` (which `bundle` runs at `PROFILE=$(DATA_PROFILE)`) +
    `open-webui-service` (via `OPENWEBUI_DIR`; its bundle is bespoke but yields the same kind of
-   tarball) + `obs-plane` (via `OBS_DIR`; bespoke, data-plane pattern). Delegation does not
+   tarball) + `obs-plane` (via `OBS_DIR`; bespoke, data-plane pattern) + `workbench` (via
+   `WORKBENCH_DIR`; `common.mk`, both images built locally). Delegation does not
    preclude gating: `bundle` decides *whether* to invoke each member's `make bundle` via
    `scripts/bundle-exists.sh` (skip the rebuild when the member's `.<slug>-version` file matches
    its latest reachable tag on a clean tree and a tarball is present — but still switch the member
@@ -150,7 +153,7 @@ are driven directly.
 ## Cross-repo contract (not visible from this repo alone)
 
 The Makefile assumes every member listed in
-`VLLM_DIR` / `DATA_DIR` / `OBS_DIR` / `EDGE_DIR` / `APP_DIRS` / `OPENWEBUI_DIR`:
+`VLLM_DIR` / `DATA_DIR` / `OBS_DIR` / `WORKBENCH_DIR` / `EDGE_DIR` / `APP_DIRS` / `OPENWEBUI_DIR`:
 
 - lives at `$(INFRA_ROOT)/<dir>/`,
 - has `.env` and `docker/compose.yaml` (used by the `compose` helper above),
@@ -166,7 +169,7 @@ The Makefile assumes every member listed in
 
 Four members honor that same `network`/`volumes`/`down`/`bundle` contract with a **bespoke
 Makefile** rather than `common.mk`: `data-plane`, `obs-plane`, `edge-plane`, and
-`open-webui-service`. Only `docint`, `Nextext`, `translator`, and `vllm-service`
+`open-webui-service`. Only `docint`, `Nextext`, `translator`, `vllm-service` and `workbench`
 `include make/common.mk`. Delegation here must therefore never assume a `common.mk`-only
 target exists on a member.
 
@@ -191,6 +194,7 @@ The Makefile `-include`s it. To change which apps run, where member repos live, 
 profile, **edit `federation.env`, not the Makefile**: `INFRA_ROOT`, `GIT_REMOTE`, `VLLM_DIR`, `DATA_DIR`,
 `APP_DIRS`, `OPENWEBUI_DIR` (the upstream UI — a full lifecycle member, appended to every app-tier
 loop + `bundle`/`load`), `OBS_DIR` (the observability plane; set empty to disable),
+`WORKBENCH_DIR` (the shared tool tier, `workbench`; set empty to disable),
 `EDGE_DIR` (the edge gateway — Caddy + Authelia, `edge-plane`; set empty to disable),
 `DATA_PROFILE` (`cpu`|`cuda`), and optional `WAIT_TIMEOUT` / `WAIT_PROBE_IMAGE` / `BUNDLE_FORCE` /
 `PRUNE_UPSTREAM` (the last two usually passed one-shot: `make bundle BUNDLE_FORCE=1`,
@@ -211,8 +215,8 @@ make clone     # clone every missing member repo under INFRA_ROOT (never shallow
 
 # Operate the federation (needs the member repos present under INFRA_ROOT):
 make setup     # one-time: external networks + volumes for every tier (idempotent)
-make up        # ordered, health-gated bring-up, detached (inference -> state -> obs -> apps -> edge); state tier without published ports
-make up-dev    # like up, but state + obs + app tiers publish host ports; inference & edge stay production
+make up        # ordered, health-gated bring-up, detached (inference -> state -> obs -> workbench -> apps -> edge); state tier without published ports
+make up-dev    # like up, but state + obs + workbench + app tiers publish host ports; inference & edge stay production
 make ps        # status across all tiers       make logs  # tail across all tiers
 make down      # reverse-order stop (never removes data volumes)
 make pull      # switch every federation repo (deploy + members) to main, git pull --ff-only

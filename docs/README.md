@@ -38,6 +38,7 @@ stack.
 | [decisions/0002-open-webui-lifecycle-member.md](decisions/0002-open-webui-lifecycle-member.md) | `open-webui-service` is a full lifecycle member, carried in its own `OPENWEBUI_DIR` variable rather than in `APP_DIRS` |
 | [decisions/0003-federation-audit-trail.md](decisions/0003-federation-audit-trail.md) | A separate, verifiable audit trail: two log lanes, identity first, one hash-chained event library, the audit store in obs-plane, its access and integrity model, and the phased rollout |
 | [decisions/0004-retire-chorus.md](decisions/0004-retire-chorus.md) | chorus and Neo4j leave the federation: chorus was never used in production, docint covers its use, and Neo4j Community cannot separate users; data-plane runs Qdrant alone |
+| [decisions/0005-workbench-shared-tool-tier.md](decisions/0005-workbench-shared-tool-tier.md) | workbench is the shared tool tier: tool execution is shared, never embedded; the fourth network seam `workbench-net`, the data store `workbench-data` (7 days), the tier between obs and the apps, and what its executor needs from the host |
 
 ## Reference
 

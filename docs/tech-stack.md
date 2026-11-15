@@ -5,19 +5,20 @@ Versions below are taken from each repo's manifests (`pyproject.toml`,
 `package.json`, `compose.yaml`, Dockerfiles, `VERSION`) at time of writing;
 the manifests remain the source of truth.
 
-The federation is eleven independent repositories under the `nos-tromo`
+The federation is twelve independent repositories under the `nos-tromo`
 GitHub account (a personal user account, not an organization), each with its
-own git history, CI, and release cycle, joined at runtime by three external
+own git history, CI, and release cycle, joined at runtime by four external
 Docker networks:
 
 - **`inference-net`** — app backends ↔ `vllm-service` (LiteLLM router, alias `vllm-router`)
 - **`data-net`** — app backends ↔ `data-plane` (alias `qdrant`)
+- **`workbench-net`** — tool callers (Open WebUI) ↔ `workbench` (alias `workbench-api`)
 - **`edge-net`** — edge gateway ↔ app frontends (aliases `docint-frontend`, `nextext-frontend`, `translator-frontend`, `open-webui`, `grafana`)
 
-Bring-up order is inference → state → obs (optional) → apps → edge
-(optional), automated by `deploy`. Everything is airgap-first: production
-artifacts are versioned image-tarball bundles (`make bundle`), and nothing
-fetches data, models, or telemetry at runtime.
+Bring-up order is inference → state → obs (optional) → workbench
+(optional) → apps → edge (optional), automated by `deploy`. Everything is
+airgap-first: production artifacts are versioned image-tarball bundles
+(`make bundle`), and nothing fetches data, models, or telemetry at runtime.
 
 ---
 
@@ -30,9 +31,10 @@ fetches data, models, or telemetry at runtime.
 | Frontend | React 19 + Vite 8 + Tailwind CSS v4, shared `@infra/ui` design system (v0.15.x) |
 | Inference | LiteLLM Proxy router → vLLM v0.20.1 backends; Ray Serve for GLiNER |
 | Database | Qdrant v1.17 (vector) |
+| Tools | workbench: FastAPI tool API + a network-less executor that runs every job on file content (pandas, openpyxl, python-docx, docxtpl, pypdf, …) under its own slot uid (ADR 0005) |
 | Edge / auth | Caddy 2.11 (TLS, path routing) + Authelia 4.39 (forward-auth SSO, trusted `X-Auth-User`/`X-Auth-Email` headers) |
 | Observability | Prometheus v3.13, Grafana OSS 13.0, Loki 3.7, Alloy v1.18 + node-exporter, cAdvisor, blackbox-exporter |
-| Audit trail | Hash-chained events (shared `audit_event.py` + `audit_runtime.py`, vendored and drift-checked) from the app backends, the router, edge-plane's `auth-audit` and `auth-retention` and data-plane's `admin-audit`, kept in a separate Loki with a verifier and signed daily anchors (ADR 0003). Queries and disclosures state a purpose, entered once per session in each SPA's purpose bar |
+| Audit trail | Hash-chained events (shared `audit_event.py` + `audit_runtime.py`, vendored and drift-checked) from the app backends, the router, workbench's `api`, edge-plane's `auth-audit` and `auth-retention` and data-plane's `admin-audit`, kept in a separate Loki with a verifier and signed daily anchors (ADR 0003). Queries and disclosures state a purpose, entered once per session in each SPA's purpose bar |
 | Packaging / deps | `uv` (Python, `uv.lock`), `pnpm` 9.12 (JS) |
 | Quality gates | ruff 0.15.14, pyrefly 1.1.1 (strict), pytest 9, pre-commit; ESLint 9 + `tsc` + vitest 4 |
 | Containers | Docker Compose per repo; digest-pinned images; Make-driven lifecycle |
@@ -103,6 +105,27 @@ external volumes (data-plane blast-radius pattern). Grafana joins `edge-net`
 | Lifecycle | Bespoke Makefile: `make bundle` (tag) but no `bundle-dev`; `OBS_PLANE_VERSION_OVERRIDE` for working-tree bundles; `make health` |
 
 Known v1 gap: LiteLLM metrics are license-gated.
+
+---
+
+## Tier: workbench (shared tools)
+
+### `workbench` (v0.1.0)
+
+The shared tool tier (ADR 0005): typed tools over a short-lived workspace per
+user, which Open WebUI reaches as a terminal server. Tool execution is shared,
+never embedded: compute tools live here, data tools stay with their owner.
+
+| Component | Technology |
+|---|---|
+| `api` | FastAPI + Uvicorn (one process), Pydantic v2, prometheus-client; uid 10001, alias `workbench-api` (port 8000) on `workbench-net`, not published in production (`up-dev`: host loopback only); bearer key shared with open-webui-service |
+| `executor` | No network; a root supervisor with six capabilities runs each job as one of up to 16 slot uids, under a seccomp filter of its own and per-job limits; the api reaches it over a Unix socket |
+| Tool libraries | pandas, numpy, scipy, matplotlib, openpyxl, xlsxwriter, python-docx, docxtpl, python-pptx, pypdf, odfpy, lxml, beautifulsoup4, markdown-it-py (executor image only) |
+| Python / images | `>=3.12,<3.13`; both images on `python:3.12-slim-trixie`, built locally |
+| State | External `workbench-data` volume; every file and job record deleted `WORKBENCH_RETENTION_DAYS` (7) days after it was made; `make nuke` gate |
+| Host | cgroup v2 with Docker's default cgroup namespace |
+| Lifecycle | Vendored `common.mk`; version in `pyproject.toml`; one bundle with both images |
+| Tests | pytest; CI also runs the executor's tests as root, the isolation tests on a live stack, and the terminal contract against the pinned Open WebUI image |
 
 ---
 
@@ -196,11 +219,11 @@ Dependabot-bumped.
 Make + shell only; owns no services or data and builds no service images — its
 own `bundle` merely re-saves the pinned health-probe image. Sequences the
 members' own `make` targets: `make up` brings up inference → state → obs →
-apps → edge in order, health-gated, on a single host; `make up-dev` keeps that
-same order and the same gates, but the state, obs and app tiers come up via
-their own `up-dev` to publish host ports while inference and edge stay on the
-production `up`. Host profile via `federation.env` (`INFRA_ROOT`, tier dir
-lists, `DATA_PROFILE=cpu|cuda`).
+workbench → apps → edge in order, health-gated, on a single host; `make up-dev`
+keeps that same order and the same gates, but the state, obs, workbench and app
+tiers come up via their own `up-dev` to publish host ports while inference and
+edge stay on the production `up`. Host profile via `federation.env`
+(`INFRA_ROOT`, tier dir lists, `DATA_PROFILE=cpu|cuda`).
 Also fans out `network` / `volumes` / `down` / `bundle` / airgap `load`
 across members.
 
@@ -227,7 +250,7 @@ shared `uv` / `common.mk` conventions apply.
 
 ## Shared toolchain & conventions
 
-**Python (docint, Nextext, translator; lint-only for vllm-service):**
+**Python (docint, Nextext, translator, workbench; lint-only for vllm-service):**
 `uv` + `uv.lock` as dependency source of truth; ruff `0.15.14` (lint + format,
 Google docstrings, 120-col) and pyrefly `1.1.1` strict preset — both mirroring
 canonical configs in `nos-tromo/.github/configs/python-strict/` (drift fails
