@@ -20,7 +20,11 @@ Each member repo already produces its own versioned tarballs (`make bundle`,
 sharing `scripts/bundle-lib.sh`); `make bundle` here just fans that out, and
 `make load` loads them on the offline side. obs-plane's
 `obs-plane-pulled-<version>.tar.gz` and edge-plane's
-`edge-plane-pulled-<version>.tar.gz` are included in the fan-out.
+`edge-plane-pulled-<version>.tar.gz` are included in the fan-out, and so is
+workbench's `workbench-built-<version>.tar.gz`: its two images, `api` and
+`executor`, both built locally from the release tag. workbench pulls no image,
+so it has no `-pulled-` tarball; the copy step ships its tarball, version
+file, compose files, Makefile with the vendored `make/`, and `.env.example`.
 Every member ends on its release tag: a member's own `make bundle` stays on
 the tag it built, and one already bundled at that tag is switched to it without
 a rebuild (see the `bundle` row in [bring-up.md](bring-up.md#targets)). Two caveats: the

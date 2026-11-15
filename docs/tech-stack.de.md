@@ -5,19 +5,21 @@ Die unten genannten Versionen stammen aus den Manifesten der einzelnen Repos
 (`pyproject.toml`, `package.json`, `compose.yaml`, Dockerfiles, `VERSION`)
 zum Zeitpunkt der Erstellung; die Manifeste bleiben die maßgebliche Quelle.
 
-Die Föderation besteht aus elf unabhängigen Repositories unter dem
+Die Föderation besteht aus zwölf unabhängigen Repositories unter dem
 GitHub-Account `nos-tromo` (ein persönlicher User-Account, keine
 Organisation), jedes mit eigener Git-Historie, CI und eigenem Release-Zyklus,
-zur Laufzeit verbunden über drei externe Docker-Netzwerke:
+zur Laufzeit verbunden über vier externe Docker-Netzwerke:
 
 - **`inference-net`** — App-Backends ↔ `vllm-service` (LiteLLM-Router, Alias `vllm-router`)
 - **`data-net`** — App-Backends ↔ `data-plane` (Alias `qdrant`)
+- **`workbench-net`** — Werkzeug-Aufrufer (Open WebUI) ↔ `workbench` (Alias `workbench-api`)
 - **`edge-net`** — Edge-Gateway ↔ App-Frontends (Aliase `docint-frontend`, `nextext-frontend`, `translator-frontend`, `open-webui`, `grafana`)
 
-Die Startreihenfolge ist Inference → State → Obs (optional) → Apps → Edge
-(optional), automatisiert durch `deploy`. Alles ist Airgap-first:
-Produktionsartefakte sind versionierte Image-Tarball-Bundles (`make bundle`),
-und nichts lädt zur Laufzeit Daten, Modelle oder Telemetrie nach.
+Die Startreihenfolge ist Inference → State → Obs (optional) → Workbench
+(optional) → Apps → Edge (optional), automatisiert durch `deploy`. Alles ist
+Airgap-first: Produktionsartefakte sind versionierte Image-Tarball-Bundles
+(`make bundle`), und nichts lädt zur Laufzeit Daten, Modelle oder Telemetrie
+nach.
 
 ---
 
@@ -30,9 +32,10 @@ und nichts lädt zur Laufzeit Daten, Modelle oder Telemetrie nach.
 | Frontend | React 19 + Vite 8 + Tailwind CSS v4, gemeinsames Designsystem `@infra/ui` (v0.15.x) |
 | Inference | LiteLLM-Proxy-Router → vLLM-v0.20.1-Backends; Ray Serve für GLiNER |
 | Datenbank | Qdrant v1.17 (Vektor) |
+| Werkzeuge | workbench: FastAPI-Werkzeug-API + ein Executor ohne Netzwerk, der jeden Job auf Dateiinhalten (pandas, openpyxl, python-docx, docxtpl, pypdf, …) unter einer eigenen Slot-UID ausführt (ADR 0005) |
 | Edge / Auth | Caddy 2.11 (TLS, Pfad-Routing) + Authelia 4.39 (Forward-Auth-SSO, vertrauenswürdige Header `X-Auth-User`/`X-Auth-Email`) |
 | Observability | Prometheus v3.13, Grafana OSS 13.0, Loki 3.7, Alloy v1.18 + node-exporter, cAdvisor, blackbox-exporter |
-| Audit-Trail | Hash-verkettete Ereignisse (gemeinsame `audit_event.py` + `audit_runtime.py`, vendored und auf Drift geprüft) aus den App-Backends, dem Router, `auth-audit` in edge-plane und `admin-audit` in data-plane, abgelegt in einem eigenen Loki mit Verifier und signierten Tagesankern (ADR 0003). Abfragen und Offenlegungen nennen einen Zweck, der einmal je Sitzung in der Zweck-Leiste jedes SPA angegeben wird |
+| Audit-Trail | Hash-verkettete Ereignisse (gemeinsame `audit_event.py` + `audit_runtime.py`, vendored und auf Drift geprüft) aus den App-Backends, dem Router, der `api` von workbench, `auth-audit` in edge-plane und `admin-audit` in data-plane, abgelegt in einem eigenen Loki mit Verifier und signierten Tagesankern (ADR 0003). Abfragen und Offenlegungen nennen einen Zweck, der einmal je Sitzung in der Zweck-Leiste jedes SPA angegeben wird |
 | Paketierung / Abhängigkeiten | `uv` (Python, `uv.lock`), `pnpm` 9.12 (JS) |
 | Qualitätssicherung | ruff 0.15.14, pyrefly 1.1.1 (strict), pytest 9, pre-commit; ESLint 9 + `tsc` + vitest 4 |
 | Container | Docker Compose pro Repo; Digest-gepinnte Images; Make-gesteuerter Lebenszyklus |
@@ -106,6 +109,28 @@ denen andere abhängen); besitzt eigene externe Volumes
 | Lebenszyklus | Eigenes Makefile: `make bundle` (Tag), aber kein `bundle-dev`; `OBS_PLANE_VERSION_OVERRIDE` für Working-Tree-Bundles; `make health` |
 
 Bekannte Lücke in v1: LiteLLM-Metriken sind lizenzbeschränkt.
+
+---
+
+## Tier: Workbench (gemeinsame Werkzeuge)
+
+### `workbench` (v0.1.0)
+
+Die gemeinsame Werkzeug-Ebene (ADR 0005): typisierte Werkzeuge über einem
+kurzlebigen Arbeitsbereich pro Benutzer, den Open WebUI als Terminal-Server
+erreicht. Werkzeugausführung ist geteilt, nie eingebettet: Rechenwerkzeuge
+liegen hier, Datenwerkzeuge bleiben beim Eigentümer der Daten.
+
+| Komponente | Technologie |
+|---|---|
+| `api` | FastAPI + Uvicorn (ein Prozess), Pydantic v2, prometheus-client; UID 10001, Alias `workbench-api` (Port 8000) auf `workbench-net`, nie veröffentlicht; Bearer-Key gemeinsam mit open-webui-service |
+| `executor` | Ohne Netzwerk; ein Root-Supervisor mit sechs Capabilities führt jeden Job unter einer von bis zu 16 Slot-UIDs aus, mit einem eigenen seccomp-Filter und Grenzen pro Job; die API erreicht ihn über einen Unix-Socket |
+| Werkzeug-Bibliotheken | pandas, numpy, scipy, matplotlib, openpyxl, xlsxwriter, python-docx, docxtpl, python-pptx, pypdf, odfpy, lxml, beautifulsoup4, markdown-it-py (nur im Executor-Image) |
+| Python / Images | `>=3.12,<3.13`; beide Images auf `python:3.12-slim-trixie`, lokal gebaut |
+| State | Externes Volume `workbench-data`; jede Datei und jeder Job-Datensatz wird `WORKBENCH_RETENTION_DAYS` (7) Tage nach der Erstellung gelöscht; `make nuke`-Gate |
+| Host | cgroup v2 mit Dockers Standard-cgroup-Namespace |
+| Lebenszyklus | Vendortes `common.mk`; Version in `pyproject.toml`; ein Bundle mit beiden Images |
+| Tests | pytest; die CI führt außerdem die Executor-Tests als Root, die Isolationstests auf einem laufenden Stack und den Terminal-Vertrag gegen das gepinnte Open-WebUI-Image aus |
 
 ---
 
@@ -199,12 +224,12 @@ den `FROM`-Zeilen Digest-gepinnt und per Dependabot aktualisiert.
 Nur Make + Shell; besitzt keine Services und keine Daten und baut keine
 Service-Images — das eigene `bundle` sichert lediglich das gepinnte
 Health-Probe-Image. Sequenziert die eigenen `make`-Targets der Mitglieder:
-`make up` fährt Inference → State → Obs → Apps → Edge der Reihe nach hoch,
-health-gated, auf einem einzelnen Host; `make up-dev` behält dieselbe
-Reihenfolge und dieselben Gates bei, aber State-, Obs- und App-Tier kommen
-über ihr eigenes `up-dev` hoch und veröffentlichen Host-Ports, während
-Inference und Edge auf dem Produktions-`up` bleiben. Host-Profil über
-`federation.env` (`INFRA_ROOT`, Tier-Verzeichnislisten,
+`make up` fährt Inference → State → Obs → Workbench → Apps → Edge der Reihe
+nach hoch, health-gated, auf einem einzelnen Host; `make up-dev` behält
+dieselbe Reihenfolge und dieselben Gates bei, aber State-, Obs-, Workbench-
+und App-Tier kommen über ihr eigenes `up-dev` hoch und veröffentlichen
+Host-Ports, während Inference und Edge auf dem Produktions-`up` bleiben.
+Host-Profil über `federation.env` (`INFRA_ROOT`, Tier-Verzeichnislisten,
 `DATA_PROFILE=cpu|cuda`). Verteilt außerdem
 `network` / `volumes` / `down` / `bundle` / Airgap-`load` auf die Mitglieder.
 
@@ -232,7 +257,7 @@ Föderation; keine der gemeinsamen `uv`- / `common.mk`-Konventionen gilt hier.
 
 ## Gemeinsame Toolchain & Konventionen
 
-**Python (docint, Nextext, translator; nur Lint für vllm-service):**
+**Python (docint, Nextext, translator, workbench; nur Lint für vllm-service):**
 `uv` + `uv.lock` als maßgebliche Quelle für Abhängigkeiten; ruff `0.15.14`
 (Lint + Format, Google-Docstrings, 120 Spalten) und pyrefly `1.1.1` im
 Strict-Preset — beide spiegeln die kanonischen Konfigurationen in

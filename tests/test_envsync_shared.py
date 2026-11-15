@@ -64,6 +64,8 @@ GROUP_NAMES = [
     "openwebui-jwt",
     "nextext-token",
     "router-key",
+    "workbench-key",
+    "workbench-period",
 ]
 
 
@@ -163,10 +165,14 @@ class TableTests(unittest.TestCase):
         groups = load_table(text)
         self.assertEqual([group.name for group in groups], GROUP_NAMES)
         rows = {(row.member, row.key): row for group in groups for row in group.rows}
-        self.assertEqual(len(rows), 26)
+        self.assertEqual(len(rows), 30)
         self.assertEqual(
             sorted(key for key, row in rows.items() if row.source),
-            [("edge-plane", "EDGE_HOST"), ("vllm-service", "OPENAI_API_KEY")],
+            [
+                ("edge-plane", "EDGE_HOST"),
+                ("vllm-service", "OPENAI_API_KEY"),
+                ("workbench", "WORKBENCH_RETENTION_DAYS"),
+            ],
         )
         self.assertEqual(
             [(row.member, row.entry) for row in rows.values() if row.entry],
@@ -174,7 +180,7 @@ class TableTests(unittest.TestCase):
         )
         self.assertEqual(
             [group.name for group in groups if not group.rows[0].gen],
-            ["edge-host", "router-key"],
+            ["edge-host", "router-key", "workbench-period"],
         )
         first = next(
             lineno
@@ -199,6 +205,10 @@ class TableTests(unittest.TestCase):
                     "OPENAI_API_KEY",
                 }
             ),
+        )
+        self.assertEqual(
+            shared_keys_for(groups, "workbench"),
+            frozenset({"OPEN_WEBUI_WORKBENCH_KEY", "WORKBENCH_RETENTION_DAYS"}),
         )
         self.assertEqual(shared_keys_for(groups, "deploy"), frozenset())
 

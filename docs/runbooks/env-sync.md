@@ -203,6 +203,14 @@ points an app at another provider, remove that app's `router-key` row from
 `env-sync.conf`. Otherwise the tool reports a conflict for the app's own key,
 or, while that key is unset or a placeholder, writes the router key into it.
 
+The `workbench-period` group carries no secret: it copies workbench's file
+period, `WORKBENCH_RETENTION_DAYS`, to open-webui-service, whose banner names
+it. workbench's example comments it out at its default, and an example value
+counts as unset, so nothing is copied until a host sets it. Set it in
+workbench's `.env`, the source. A value set only in open-webui-service's
+`.env` is copied into workbench's as well, and workbench then deletes by it,
+with no notice period ([bring-up.md](bring-up.md#retention-periods)).
+
 `ENV_GENERATE=1 make env` generates a fresh 64-hex value for each group that is
 unset in every present member, and only when all its rows can take it. Secrets
 that belong to one member (Authelia's keys) are never generated; they show up

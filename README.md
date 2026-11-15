@@ -22,6 +22,7 @@ your host differs.
   vllm-service/      # inference tier (LiteLLM router + backends)
   data-plane/        # state tier (Qdrant + its volumes)
   obs-plane/         # observability tier (Prometheus, Grafana, Loki)
+  workbench/         # tool tier (tool API + sandboxed executor, ADR 0005)
   docint/ Nextext/ translator/ open-webui-service/   # app tier
   edge-plane/        # edge tier (Caddy gateway + Authelia — the entry point)
   deploy/            # this repo
@@ -33,13 +34,13 @@ start**).
 
 ## Bring-up order (load-bearing)
 
-`inference (vllm-service) → state (data-plane) → obs (obs-plane) → apps → edge (edge-plane)`.
+`inference (vllm-service) → state (data-plane) → obs (obs-plane) → workbench → apps → edge (edge-plane)`.
 Each tier must be healthy before the next starts — the apps assume the router and
-the database are already reachable on `inference-net` / `data-net`. See
-`../CLAUDE.md` for the invariant.
+the database are already reachable on `inference-net` / `data-net`, and Open
+WebUI finds workbench on `workbench-net`. See `../CLAUDE.md` for the invariant.
 
 `make up` enforces this, health-gating each tier before starting the next, and
-`make setup` creates all three network seams up front so no tier can fail on a
+`make setup` creates all four network seams up front so no tier can fail on a
 missing network. For the per-tier probes and the reverse-order `down`, see
 [bring-up.md](docs/runbooks/bring-up.md#what-make-up-enforces).
 
@@ -51,7 +52,7 @@ make clone     # bare host: clone every missing member repo under INFRA_ROOT
 make env       # create/update every .env from its .env.example (instead of copying them by hand)
 make setup     # one-time: external networks + volumes for every tier
 make up        # ordered, health-gated bring-up (detached; state tier without published ports)
-make up-dev    # dev bring-up: state + obs + app tiers publish host ports (inference & edge stay production)
+make up-dev    # dev bring-up: state + obs + workbench + app tiers publish host ports (inference & edge stay production)
 make ps        # status across all tiers
 make down      # reverse-order stop (never removes data volumes)
 ```
@@ -82,7 +83,7 @@ for every target — flags, skip rules, exit codes — is in
 |---|---|
 | `setup` | Delegates `make network volumes` to every tier (idempotent). |
 | `up` | Ordered, health-gated bring-up via each member's own `make up` (detached, `--no-build`; data-plane without published ports) |
-| `up-dev` | Same order + gates, but state + obs + apps publish host ports; inference and edge stay production. |
+| `up-dev` | Same order + gates, but state + obs + workbench + apps publish host ports; inference and edge stay production. |
 | `env` | Bring every `.env` and `federation.env` in step with its example and print what changed. `ENV_GENERATE=1` also generates missing shared secrets. |
 | `env-check` | The same, without writing. `up` / `up-dev` run it first and stop while a `.env` is behind (`ENV_ALLOW_DRIFT=1` overrides). |
 | `down` | Reverse order, via each repo's `make down`. Never `-v`. |
@@ -168,6 +169,10 @@ Rehearse both together on a scratch host before staging/production; the
   [CLAUDE.md](CLAUDE.md) § *The central design split*.
 - **obs tier** (`OBS_DIR`) — after state, before the apps; gated on
   `prometheus:9090`. [Design](docs/2026-07-22-obs-tier-wiring-design.md).
+- **workbench tier** (`WORKBENCH_DIR`) — after obs, before the apps; gated on
+  `workbench-api:8000`. Its executor needs cgroup v2 with Docker's default
+  cgroup namespace ([bring-up.md](docs/runbooks/bring-up.md#the-workbench-tier)).
+  [ADR 0005](docs/decisions/0005-workbench-shared-tool-tier.md).
 - **edge tier** (`EDGE_DIR`) — last up, first down; gated on `caddy:443`,
   production-pinned in both modes. [Design](docs/2026-07-24-edge-tier-wiring-design.md).
 - **open-webui-service** (`OPENWEBUI_DIR`) — a full lifecycle member kept out of
@@ -186,6 +191,9 @@ recorded here, since `deploy` is the layer that operates the whole stack:
   Podman migration.
 - `0002-open-webui-lifecycle-member.md` — `open-webui-service` is a full
   lifecycle member, carried in `OPENWEBUI_DIR` rather than `APP_DIRS`.
+- `0005-workbench-shared-tool-tier.md` — workbench is the shared tool tier:
+  tool execution is shared, never embedded; a fourth network seam
+  (`workbench-net`) and a new data store (`workbench-data`, 7 days).
 
 ## Documentation
 
