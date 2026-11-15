@@ -231,7 +231,8 @@ copy_project "$INFRA_ROOT/obs-plane" obs-plane \
 # not leave the build machine; per the README they are provisioned fresh on
 # the airgap side.
 # audit/ and VERSION are mounted into auth-audit (login attempts and account
-# changes as audit events); without them that service does not start.
+# changes as audit events) and auth-retention (deletes Authelia's login
+# records after a period); without them those services do not start.
 copy_project "$INFRA_ROOT/edge-plane" edge-plane \
     "$INFRA_ROOT/edge-plane/.edge-plane-version" \
     "$INFRA_ROOT/edge-plane/VERSION" \

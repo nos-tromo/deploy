@@ -32,7 +32,7 @@ fetches data, models, or telemetry at runtime.
 | Database | Qdrant v1.17 (vector) |
 | Edge / auth | Caddy 2.11 (TLS, path routing) + Authelia 4.39 (forward-auth SSO, trusted `X-Auth-User`/`X-Auth-Email` headers) |
 | Observability | Prometheus v3.13, Grafana OSS 13.0, Loki 3.7, Alloy v1.18 + node-exporter, cAdvisor, blackbox-exporter |
-| Audit trail | Hash-chained events (shared `audit_event.py` + `audit_runtime.py`, vendored and drift-checked) from the app backends, the router, edge-plane's `auth-audit` and data-plane's `admin-audit`, kept in a separate Loki with a verifier and signed daily anchors (ADR 0003). Queries and disclosures state a purpose, entered once per session in each SPA's purpose bar |
+| Audit trail | Hash-chained events (shared `audit_event.py` + `audit_runtime.py`, vendored and drift-checked) from the app backends, the router, edge-plane's `auth-audit` and `auth-retention` and data-plane's `admin-audit`, kept in a separate Loki with a verifier and signed daily anchors (ADR 0003). Queries and disclosures state a purpose, entered once per session in each SPA's purpose bar |
 | Packaging / deps | `uv` (Python, `uv.lock`), `pnpm` 9.12 (JS) |
 | Quality gates | ruff 0.15.14, pyrefly 1.1.1 (strict), pytest 9, pre-commit; ESLint 9 + `tsc` + vitest 4 |
 | Containers | Docker Compose per repo; digest-pinned images; Make-driven lifecycle |
@@ -121,6 +121,7 @@ digest-pinned images.
 | Auth | `authelia:4.39.20` — forward-auth SSO; injects trusted `X-Auth-User` / `X-Auth-Email`; `Authorization` pass-through; file-backed users (`make user` / `make secret`); admins-group gate on `/grafana` |
 | Self-service | Landing portal + password self-service with one-time-code viewer (`landing/`, `authcode/`; project-scoped `edge-notify` volume for short-lived codes) |
 | Audit | `auth-audit` (pinned `python`, no network): Authelia's login attempts and the account changes in `users.yml` as audit events; position on the external `edge-audit-state` volume |
+| Retention | `auth-retention` (pinned `python`, no network): deletes Authelia's login records after `EDGE_AUTH_RETENTION_DAYS` (30), login attempts only once exported; each batch recorded as a `delete` audit event |
 | TLS | Internal CA (`make ca-export`) or org-issued certs via `EDGE_TLS`; `EDGE_HOST` must be a dotted hostname or IP |
 | State | External `edge-state` / `edge-ca` volumes |
 | Routing | Each SPA under its canonical sub-path (`/docint/`, `/nextext/`, `/translator/`); Open WebUI (no sub-path support) on the dedicated `:8443` site |

@@ -36,13 +36,22 @@ for the notice period first. The settings, in each member's `.env`:
 | open-webui-service | `OPEN_WEBUI_CHAT_RETENTION_DAYS` | `365` | Each chat, that many days after it was started, with its files |
 | Nextext | `NEXTEXT_CLI_RETENTION_DAYS` | `365` | Command-line inputs and results, that many days after they were stored |
 | data-plane | `BACKUP_RETENTION_DAYS` | `30` | Backups, that many days after they were taken ([backups.md](backups.md)) |
+| edge-plane | `EDGE_AUTH_RETENTION_DAYS` | `30` | Authelia's login records, that many days after they were recorded or ended: login attempts once `auth-audit` exported them to the audit trail, one-time codes, identity verifications, the TOTP history, ended bans (edge-plane `docs/audit.md#retention`) |
 | each of the above | `RETENTION_NOTICE_DAYS` | `30` | — the notice before a deletion, and the grace a new or shorter period gives; changing it alone moves nothing |
 
-docint, open-webui-service and Nextext also accept `off`, for development only,
-logged as a warning; data-plane does not. An invalid value stops the app at
-startup, and makes data-plane refuse the backup run. The first start of a
-release that brings a period, and switching it on again after `off`, deletes
-nothing for the notice period.
+docint, open-webui-service, Nextext and edge-plane also accept `off`, for
+development only, logged as a warning; data-plane does not. An invalid value
+stops the app at startup, and makes data-plane refuse the backup run. The
+first start of a release that brings a period, and switching it on again
+after `off`, deletes nothing for the notice period.
+
+edge-plane's period has **no notice period** (`RETENTION_NOTICE_DAYS` does
+not apply): users have nothing to save from Authelia's login records, and
+every login attempt is in the audit trail before it can be deleted. The
+first start of edge-plane v0.16.0 therefore deletes the backlog older than
+the period at once — exported attempts only. Deploy obs-plane v0.13.0 first
+or together with it: its verifier must list `edge-plane/auth-retention`, or
+that service's records are reported as `unlisted_source`.
 
 A changed period never deletes sooner than announced: a longer one applies at
 once, also to what was due under the shorter one but not yet deleted; a
