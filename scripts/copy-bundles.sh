@@ -262,6 +262,20 @@ else
     echo -e "  ${YELLOW}⚠ edge-plane: announcements/announcement.md not found — skipped.${NC}"
 fi
 
+# edge-plane special case: info/ only the *.example.md templates. The texts
+# written from them (privacy notice etc.) are per host and stay on the airgap
+# side, like .env; the smoke-test fixture stays behind. Caddy mounts the
+# directory, and without a text the portal links no information page.
+# Releases before v0.15.0 have no templates.
+mkdir -p "$DEST_BASE/edge-plane/info"
+info_templates=("$INFRA_ROOT"/edge-plane/info/*.example.md)
+if [ "${#info_templates[@]}" -gt 0 ]; then
+    cp "${info_templates[@]}" "$DEST_BASE/edge-plane/info/"
+    echo -e "  ${GREEN}✓${NC} edge-plane: info/*.example.md copied (${#info_templates[@]} templates)."
+else
+    echo -e "  ${YELLOW}⚠ edge-plane: no info/*.example.md found — skipped.${NC}"
+fi
+
 # edge-plane special case: client provisioning (hosts entry + CA trust) is
 # needed on the airgap clients, not just on the gateway; audit-admin.sh is what
 # `make totp` runs, so the account change is recorded.
