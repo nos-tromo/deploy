@@ -12,7 +12,7 @@ Docker networks:
 
 - **`inference-net`** — app backends ↔ `vllm-service` (LiteLLM router, alias `vllm-router`)
 - **`data-net`** — app backends ↔ `data-plane` (alias `qdrant`)
-- **`workbench-net`** — tool callers (Open WebUI) ↔ `workbench` (alias `workbench-api`)
+- **`workbench-net`** — tool callers (Open WebUI, docint's backend, alias `docint-backend`) ↔ `workbench` (alias `workbench-api`)
 - **`edge-net`** — edge gateway ↔ app frontends (aliases `docint-frontend`, `nextext-frontend`, `translator-frontend`, `open-webui`, `grafana`)
 
 Bring-up order is inference → state → obs (optional) → workbench
@@ -118,7 +118,7 @@ never embedded: compute tools live here, data tools stay with their owner.
 
 | Component | Technology |
 |---|---|
-| `api` | FastAPI + Uvicorn (one process), Pydantic v2, prometheus-client; uid 10001, alias `workbench-api` (port 8000) on `workbench-net`, not published in production (`up-dev`: host loopback only); bearer key shared with open-webui-service |
+| `api` | FastAPI + Uvicorn (one process), Pydantic v2, prometheus-client; uid 10001, alias `workbench-api` (port 8000) on `workbench-net`, not published in production (`up-dev`: host loopback only); one bearer key per caller (open-webui-service on the terminal door, docint's backend on an MCP door; ADR 0006) |
 | `executor` | No network; a root supervisor with six capabilities runs each job as one of up to 16 slot uids, under a seccomp filter of its own and per-job limits; the api reaches it over a Unix socket |
 | Tool libraries | pandas, numpy, scipy, matplotlib, openpyxl, xlsxwriter, python-docx, docxtpl, python-pptx, pypdf, odfpy, lxml, beautifulsoup4, markdown-it-py (executor image only) |
 | Python / images | `>=3.12,<3.13`; both images on `python:3.12-slim-trixie`, built locally |
