@@ -50,7 +50,9 @@ destination (e.g. a mounted USB stick). Member paths are derived from the
 script's location (siblings of `deploy/`; override with `INFRA_ROOT=...`).
 Secrets stay behind by design: edge-plane's `authelia/users.yml`, `certs/`,
 and every real `.env` are never copied — they are provisioned fresh on the
-airgap side.
+airgap side. So are edge-plane's information texts (the privacy notice and
+the like in `info/`): only their `*.example.md` templates travel, and the
+texts are written from them on the airgap host.
 
 Run it right after `make bundle`, while the members still sit on their release
 tags; afterwards `make pull` returns every repo to `main`.

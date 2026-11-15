@@ -48,8 +48,9 @@ Hash-chained events come from the three apps' backends, vllm-service's router
 (one `ai_call` per model call, naming Open WebUI's user when step 5 is done),
 workbench's `api` (uploads, reads, views, tool runs on files, new files and
 deletions, by file id), edge-plane's `auth-audit` (login attempts and account
-changes) and data-plane's `admin-audit` (database shells, backups and
-restores).
+changes) and `auth-retention` (deletions of Authelia's login records after
+`EDGE_AUTH_RETENTION_DAYS`), and data-plane's `admin-audit` (database
+shells, backups and restores).
 obs-plane's verifier accepts chained lines only from these containers; adding
 or renaming an emitter means adding its `project/service` pair (obs-plane
 `docs/audit.md`, "Source binding"). The gateway's access log and Open WebUI's

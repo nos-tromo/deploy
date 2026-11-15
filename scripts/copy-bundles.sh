@@ -237,7 +237,8 @@ copy_project "$INFRA_ROOT/obs-plane" obs-plane \
 # not leave the build machine; per the README they are provisioned fresh on
 # the airgap side.
 # audit/ and VERSION are mounted into auth-audit (login attempts and account
-# changes as audit events); without them that service does not start.
+# changes as audit events) and auth-retention (deletes Authelia's login
+# records after a period); without them those services do not start.
 copy_project "$INFRA_ROOT/edge-plane" edge-plane \
     "$INFRA_ROOT/edge-plane/.edge-plane-version" \
     "$INFRA_ROOT/edge-plane/VERSION" \
@@ -266,6 +267,20 @@ if [ -f "$INFRA_ROOT/edge-plane/announcements/announcement.md" ]; then
     echo -e "  ${GREEN}✓${NC} edge-plane: announcements/announcement.md copied."
 else
     echo -e "  ${YELLOW}⚠ edge-plane: announcements/announcement.md not found — skipped.${NC}"
+fi
+
+# edge-plane special case: info/ only the *.example.md templates. The texts
+# written from them (privacy notice etc.) are per host and stay on the airgap
+# side, like .env; the smoke-test fixture stays behind. Caddy mounts the
+# directory, and without a text the portal links no information page.
+# Releases before v0.15.0 have no templates.
+mkdir -p "$DEST_BASE/edge-plane/info"
+info_templates=("$INFRA_ROOT"/edge-plane/info/*.example.md)
+if [ "${#info_templates[@]}" -gt 0 ]; then
+    cp "${info_templates[@]}" "$DEST_BASE/edge-plane/info/"
+    echo -e "  ${GREEN}✓${NC} edge-plane: info/*.example.md copied (${#info_templates[@]} templates)."
+else
+    echo -e "  ${YELLOW}⚠ edge-plane: no info/*.example.md found — skipped.${NC}"
 fi
 
 # edge-plane special case: client provisioning (hosts entry + CA trust) is
