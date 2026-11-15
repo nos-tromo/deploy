@@ -46,6 +46,10 @@ ROUTER = (
     "router-key  translator          OPENAI_API_KEY\n"
     "router-key  open-webui-service  OPENAI_API_KEY\n"
 )
+PERIOD = (
+    "workbench-period  workbench           WORKBENCH_RETENTION_DAYS  source\n"
+    "workbench-period  open-webui-service  WORKBENCH_RETENTION_DAYS\n"
+)
 TOKENS = (
     "nextext-token  docint   NEXTEXT_API_KEY         gen\n"
     "nextext-token  Nextext  NEXTEXT_SERVICE_TOKENS  gen  entry=docint\n"
@@ -637,6 +641,41 @@ class FillTests(SharedCase):
         )
         self.assertEqual(self.plan("docint").entries["OPENAI_API_KEY"].origin, "kept")
         self.assertIsNone(event(self.plan("docint"), "filled"))
+
+    def test_workbench_period_follows_whichever_side_is_set(self) -> None:
+        # Both examples comment the period out at the same default. A
+        # commented line is unset on both sides, the source included.
+        example = "# WORKBENCH_RETENTION_DAYS=7\n"
+        key = "WORKBENCH_RETENTION_DAYS"
+        with self.subTest("both commented: silent"):
+            self.start(PERIOD)
+            self.member("workbench", example, example)
+            self.member("open-webui-service", example, example)
+            self.assertEqual(self.apply(), [])
+            for name in ("workbench", "open-webui-service"):
+                self.assertNotIn(key, self.plan(name).entries)
+                self.assertIsNone(event(self.plan(name), "filled"))
+                self.assertEqual(self.text(name), example)
+        for name, setter, filled in (
+            ("the source set", "workbench", "open-webui-service"),
+            ("only open-webui-service set", "open-webui-service", "workbench"),
+        ):
+            with self.subTest(name):
+                self.start(PERIOD)
+                for member in ("workbench", "open-webui-service"):
+                    env = f"{key}=14\n" if member == setter else example
+                    self.member(member, example, env)
+                self.assertEqual(self.apply(), [])
+                self.assertEqual(
+                    self.plan(filled).entries[key],
+                    Entry(key, f"{key}=14", "14", "filled"),
+                )
+                self.assertEqual(
+                    items(self.plan(filled), "filled"), [f"{key} (from {setter})"]
+                )
+                self.assertEqual(self.text(filled), f"{key}=14\n")
+                self.assertEqual(self.plan(setter).entries[key].origin, "kept")
+                self.assertIsNone(event(self.plan(setter), "filled"))
 
     def test_a_fill_keeps_the_reference_note(self) -> None:
         # docint's example adds OPENAI_API_KEY above the operator's

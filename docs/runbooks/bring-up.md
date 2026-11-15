@@ -38,6 +38,16 @@ passes once both have started. The api's `/healthz` needs no key:
 starts without workbench; only its workbench tools need it. `WORKBENCH_DIR`
 empty in `federation.env` skips the tier.
 
+**The caller key.** The api refuses to start without an
+`OPEN_WEBUI_WORKBENCH_KEY` of at least 32 characters (workbench
+`docs/configuration.md`); the gate then times out after `WAIT_TIMEOUT` with a
+refused connection. `make env ENV_GENERATE=1` generates the key into
+workbench's and open-webui-service's `.env` (env-sync group `workbench-key`).
+Until open-webui-service's example carries the key (its workbench release),
+only one member of that group documents it, so the group is skipped and
+nothing is generated. Then set the same value by hand in both `.env` files
+(`openssl rand -hex 32`), or set `WORKBENCH_DIR=` empty.
+
 **Host requirements.** The executor needs cgroup v2 and a cgroup namespace of
 its own, Docker's default on cgroup v2. It refuses to start on cgroup v1,
 under `cgroupns: host` (the daemon's `default-cgroupns-mode`), and on a
@@ -51,9 +61,10 @@ grep -s default-cgroupns-mode /etc/docker/daemon.json   # nothing, or "private"
 ```
 
 A refusing executor stops the bring-up at the workbench tier; its log
-(`make logs`) names the reason in one line. On a userns-remap host the
-executor starts, but `/dev/zero` stays writable to jobs, with the consequence
-described in [userns-remap.md](userns-remap.md#known-interactions).
+(`make logs`) names the reason in one line. Under a user-namespaced daemon
+(userns-remap, or rootless with the memory controller delegated) the executor
+starts, but `/dev/zero` stays writable to jobs, with the consequence described
+in [userns-remap.md](userns-remap.md#known-interactions).
 
 ## Retention periods
 

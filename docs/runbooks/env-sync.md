@@ -205,11 +205,13 @@ or, while that key is unset or a placeholder, writes the router key into it.
 
 The `workbench-period` group carries no secret: it copies workbench's file
 period, `WORKBENCH_RETENTION_DAYS`, to open-webui-service, whose banner names
-it. workbench's example comments it out at its default, and an example value
-counts as unset, so nothing is copied until a host sets it. Set it in
-workbench's `.env`, the source. A value set only in open-webui-service's
-`.env` is copied into workbench's as well, and workbench then deletes by it,
-with no notice period ([bring-up.md](bring-up.md#retention-periods)).
+it. workbench's example comments it out at its default, and a commented line
+counts as unset on both sides, so nothing is copied until a host sets an
+active line. An active line in workbench's `.env` counts as set even when it
+holds the default, since workbench is the source. Set it in workbench's
+`.env`. A value set only in open-webui-service's `.env` is copied into
+workbench's as well, and workbench then deletes by it, with no notice period
+([bring-up.md](bring-up.md#retention-periods)).
 
 `ENV_GENERATE=1 make env` generates a fresh 64-hex value for each group that is
 unset in every present member, and only when all its rows can take it. Secrets

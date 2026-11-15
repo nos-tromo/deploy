@@ -118,11 +118,11 @@ never embedded: compute tools live here, data tools stay with their owner.
 
 | Component | Technology |
 |---|---|
-| `api` | FastAPI + Uvicorn (one process), Pydantic v2, prometheus-client; uid 10001, alias `workbench-api` (port 8000) on `workbench-net`, never published; bearer key shared with open-webui-service |
+| `api` | FastAPI + Uvicorn (one process), Pydantic v2, prometheus-client; uid 10001, alias `workbench-api` (port 8000) on `workbench-net`, not published in production (`up-dev`: host loopback only); bearer key shared with open-webui-service |
 | `executor` | No network; a root supervisor with six capabilities runs each job as one of up to 16 slot uids, under a seccomp filter of its own and per-job limits; the api reaches it over a Unix socket |
 | Tool libraries | pandas, numpy, scipy, matplotlib, openpyxl, xlsxwriter, python-docx, docxtpl, python-pptx, pypdf, odfpy, lxml, beautifulsoup4, markdown-it-py (executor image only) |
 | Python / images | `>=3.12,<3.13`; both images on `python:3.12-slim-trixie`, built locally |
-| State | External `workbench-data` volume; every file and job record deleted `WORKBENCH_RETENTION_DAYS` (7) after it was made; `make nuke` gate |
+| State | External `workbench-data` volume; every file and job record deleted `WORKBENCH_RETENTION_DAYS` (7) days after it was made; `make nuke` gate |
 | Host | cgroup v2 with Docker's default cgroup namespace |
 | Lifecycle | Vendored `common.mk`; version in `pyproject.toml`; one bundle with both images |
 | Tests | pytest; CI also runs the executor's tests as root, the isolation tests on a live stack, and the terminal contract against the pinned Open WebUI image |

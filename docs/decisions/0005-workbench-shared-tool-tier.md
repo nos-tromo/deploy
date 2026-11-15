@@ -49,7 +49,8 @@ docint, and workbench never joins `data-net`.
 
 **A fourth network seam, `workbench-net`.** An external network, created by
 the `make network` of each member that joins it. Its members are workbench's
-`api` (alias `workbench-api`, port 8000, never published), its callers
+`api` (alias `workbench-api`, port 8000, not published in production; the dev
+overlay of `make up-dev` publishes it on the host's loopback), its callers
 (`open-webui`) and obs-plane's scraper. The api joins no other seam and calls
 no model. The executor has no network at all.
 
@@ -84,12 +85,14 @@ The two products share no data store.
 namespace of its own, Docker's default on cgroup v2, because its watchdog
 reads the container's shared memory (`memory.stat` `shmem`). It refuses to
 start on cgroup v1, under `cgroupns: host`, and on a rootless daemon without
-the memory controller delegated to it. On a userns-remap host `/dev/zero` is
-the host's node, bind-mounted, and stays writable to jobs, so a job can hold
-shared memory that no job's count shows. A container-wide check then stops
-every running job, of every user, once more than 64 MiB of such memory shows.
-That is a denial of service within one user's limits; it reaches no other
-user's data (workbench `docs/sandbox.md`, Residual risks).
+the memory controller delegated to it. Under any user-namespaced daemon
+(userns-remap, or rootless Docker with the memory controller delegated, where
+the executor starts) `/dev/zero` is the host's node, bind-mounted, and stays
+writable to jobs, so a job can hold shared memory that no job's count shows.
+A container-wide check then stops every running job, of every user, once more
+than 64 MiB of such memory shows. That is a denial of service within one
+user's limits; it reaches no other user's data (workbench `docs/sandbox.md`,
+Residual risks).
 
 ## Alternatives considered
 
@@ -135,9 +138,9 @@ user's data (workbench `docs/sandbox.md`, Residual risks).
   open-webui-service connects to workbench, and obs-plane scrapes its metrics
   and accepts its audit chain.
 - Hosts need cgroup v2 with Docker's default cgroup namespace; the bring-up
-  runbook checks it. On userns-remap hosts the `/dev/zero` residual above
-  applies. The executor has not yet run on a userns-remap host: the first such
-  bring-up is a check for the owner.
+  runbook checks it. Under a user-namespaced daemon (userns-remap or rootless)
+  the `/dev/zero` residual above applies. The executor has not yet run on a
+  userns-remap host: the first such bring-up is a check for the owner.
 - Version 2, docint as a second caller over an MCP door with a key and a tool
   list per caller, is a separate decision with its own design round.
 - This record states no legal conclusions. The legal classification, the

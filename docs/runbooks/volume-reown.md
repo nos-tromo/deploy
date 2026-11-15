@@ -62,6 +62,7 @@ instead of two). The `huggingface-cache` chown is the long pole: time it.
 | data-plane | `qdrant-storage`, `qdrant-snapshots` | — | no change this wave — `user:` deliberately deferred (see data-plane README) |
 | edge-plane | `edge-state`, `edge-ca` | — | no change — caddy stays root-in-container (remap covers it), authelia manages its own files |
 | edge-plane | `edge-audit-state` | `65534:65534` | new with edge-plane v0.11.0 — `make volumes` creates it and `auth-audit-init` hands it to `auth-audit` on every start; auth-audit's export position |
+| workbench | `workbench-data` | — | handled by `volume-permissions` on every start — it sets the owners and modes of the volume's root, `workspaces/`, `staging/`, `jobs/` and `workbench.db` (api `10001` or root, per part); ⚠ users' workspace files, kept 7 days |
 
 Model weights arriving later via `unpack-model.sh` are safe: the script
 chowns what it extracts to the cache directory's current owner, so once
