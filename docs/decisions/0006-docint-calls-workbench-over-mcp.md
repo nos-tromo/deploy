@@ -7,9 +7,8 @@ Date: 2026-11-15
 
 [ADR 0005](0005-workbench-shared-tool-tier.md) left version 2 to a decision of
 its own. docint's chat model needs Python on what a turn retrieved (passages,
-keyword counts, topic listings), and docint may not run a sandbox of its own,
-by 0005's invariant. Later AI services should find workbench's tools in one
-place.
+keyword counts, topic listings), and 0005's invariant bars docint from a sandbox
+of its own. Later AI services should find workbench's tools in one place.
 
 ## Decision
 
@@ -44,7 +43,7 @@ place.
 - **The official SDK** (`mcp` 2.x, MIT): about 15 more packages in the api
   image, three of them native. It stays in the dev group for a conformance test.
 - **Uploads into a workspace:** docint's data would enter a 7-day workspace
-  lifecycle, where inline data leaves nothing.
+  lifecycle, where inline data goes with the job.
 - **A sandbox in docint:** against 0005's invariant, and next to its
   collections on `data-net`.
 - **A network of its own for MCP callers:** a fifth seam, where a key and a
@@ -58,10 +57,11 @@ place.
   `unavailable` and later turns offer none.
 - One more shared secret group; `make env ENV_GENERATE=1` writes it. The two
   callers' keys must differ.
-- Residual risks (workbench's v2 design, § 6): the hand-over is recorded after
-  the data has left, so a docint killed between send and settle loses its
-  `disclose` events (workbench's own event still holds job, purpose and request
-  id); an abandoned call runs to its wall time; docint's backend and Open WebUI
-  can reach each other on `workbench-net`; workbench holds the key the
-  pseudonyms are made with.
+- Residual risks (workbench
+  `docs/superpowers/specs/2026-11-15-v2-mcp-docint-design.md`, § 6): the
+  hand-over is recorded after the data has left, so a docint killed between send
+  and settle loses its `disclose` events (workbench's own event still holds job,
+  purpose and request id); an abandoned call runs to its wall time; docint's
+  backend and Open WebUI can reach each other on `workbench-net`; workbench
+  holds the key the pseudonyms are made with.
 - This record states no legal conclusions, as in 0005.
