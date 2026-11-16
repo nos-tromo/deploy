@@ -50,6 +50,14 @@ PERIOD = (
     "workbench-period  workbench           WORKBENCH_RETENTION_DAYS  source\n"
     "workbench-period  open-webui-service  WORKBENCH_RETENTION_DAYS\n"
 )
+WORKBENCH_KEY = (
+    "workbench-key  workbench           OPEN_WEBUI_WORKBENCH_KEY  gen\n"
+    "workbench-key  open-webui-service  OPEN_WEBUI_WORKBENCH_KEY  gen\n"
+)
+DOCINT_KEY = (
+    "workbench-docint-key  workbench  DOCINT_WORKBENCH_KEY  gen\n"
+    "workbench-docint-key  docint     WORKBENCH_API_KEY     gen\n"
+)
 TOKENS = (
     "nextext-token  docint   NEXTEXT_API_KEY         gen\n"
     "nextext-token  Nextext  NEXTEXT_SERVICE_TOKENS  gen  entry=docint\n"
@@ -69,6 +77,7 @@ GROUP_NAMES = [
     "nextext-token",
     "router-key",
     "workbench-key",
+    "workbench-docint-key",
     "workbench-period",
 ]
 
@@ -169,7 +178,7 @@ class TableTests(unittest.TestCase):
         groups = load_table(text)
         self.assertEqual([group.name for group in groups], GROUP_NAMES)
         rows = {(row.member, row.key): row for group in groups for row in group.rows}
-        self.assertEqual(len(rows), 30)
+        self.assertEqual(len(rows), 32)
         self.assertEqual(
             sorted(key for key, row in rows.items() if row.source),
             [
@@ -207,12 +216,19 @@ class TableTests(unittest.TestCase):
                     "QDRANT_API_KEY",
                     "NEXTEXT_API_KEY",
                     "OPENAI_API_KEY",
+                    "WORKBENCH_API_KEY",
                 }
             ),
         )
         self.assertEqual(
             shared_keys_for(groups, "workbench"),
-            frozenset({"OPEN_WEBUI_WORKBENCH_KEY", "WORKBENCH_RETENTION_DAYS"}),
+            frozenset(
+                {
+                    "OPEN_WEBUI_WORKBENCH_KEY",
+                    "DOCINT_WORKBENCH_KEY",
+                    "WORKBENCH_RETENTION_DAYS",
+                }
+            ),
         )
         self.assertEqual(shared_keys_for(groups, "deploy"), frozenset())
 
@@ -1077,6 +1093,44 @@ class GenerateTests(SharedCase):
                 for item in found.items:
                     self.assertNotIn("a" * 64, item)
                     self.assertNotIn("b" * 64, item)
+
+
+class WorkbenchDocintKeyTests(SharedCase):
+    def test_each_caller_gets_its_own_generated_key(self) -> None:
+        self.start(WORKBENCH_KEY + DOCINT_KEY)
+        for name, key in (
+            ("workbench", "OPEN_WEBUI_WORKBENCH_KEY=\nDOCINT_WORKBENCH_KEY=\n"),
+            ("open-webui-service", "OPEN_WEBUI_WORKBENCH_KEY=\n"),
+            ("docint", "WORKBENCH_API_KEY=\n"),
+        ):
+            self.member(name, key, key)
+        self.assertEqual(self.apply(True, Tokens("a" * 64, "b" * 64)), [])
+        for name, key, value in (
+            ("workbench", "OPEN_WEBUI_WORKBENCH_KEY", "a" * 64),
+            ("open-webui-service", "OPEN_WEBUI_WORKBENCH_KEY", "a" * 64),
+            ("workbench", "DOCINT_WORKBENCH_KEY", "b" * 64),
+            ("docint", "WORKBENCH_API_KEY", "b" * 64),
+        ):
+            with self.subTest(name=name, key=key):
+                entry = self.plan(name).entries[key]
+                self.assertEqual((entry.value, entry.origin), (value, "generated"))
+
+    def test_the_group_waits_until_both_examples_document_the_key(self) -> None:
+        self.start(DOCINT_KEY)
+        self.member("workbench", "DOCINT_WORKBENCH_KEY=\n", "DOCINT_WORKBENCH_KEY=\n")
+        self.member("docint", "# OTHER=1\n", "# OTHER=1\n")
+        before = self.snapshot()
+        self.assertEqual(
+            self.apply(True),
+            [
+                Event(
+                    "table",
+                    ["env-sync.conf: WORKBENCH_API_KEY is not in docint's example"],
+                    "warn",
+                )
+            ],
+        )
+        self.assertEqual(self.snapshot(), before)
 
 
 class PlannerNotesTests(SharedCase):
