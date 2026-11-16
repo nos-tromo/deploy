@@ -29,6 +29,7 @@ open-webui-service#67 eases the workbench flow as a bridge until the replacement
 
 - **Conversation.** Ghostwriter is a chat assistant first: questions, writing, explaining, with or without a file. Every description of it says so, and files are presented as what it can also do.
 - **Answers.** Streamed answers with Markdown, code highlighting and tables. Stop and regenerate.
+- **Reasoning.** A switch in the composer, as in docint, lets the model think before it answers. It is off by default. The thinking itself is never shown, stored or replayed; only the answer is.
 - **Chat list.** New, rename, delete.
 - **Attachments.** By drag and drop or paste, for the formats workbench reads: PDF, DOCX, XLSX, PPTX, CSV, TXT, MD, ODT, ODS, EML, HTML. At most 50 MB per file.
 - **workbench's tools.** Read documents, search files, run Python, inspect and fill templates, write tables (xlsx, csv) and documents (docx, md).
@@ -117,6 +118,8 @@ These are the federation's invariants:
 
 7. **The name is Ghostwriter**, everywhere: the repo `nos-tromo/ghostwriter`, the path `/ghostwriter/`, the env prefix `GHOSTWRITER_*`, the compose project, the volume, the audit emitter and the workbench caller. It writes the tables and documents the user hands in.
 
+8. **Reasoning can be switched on in the chat** (2026-11-16), as in docint: today's reasoning models are of little use if their reasoning is never asked for.
+
 ## 6. Design
 
 ### 6.1 Parts
@@ -165,6 +168,11 @@ Retiring Open WebUI is **phase 2**, with its own spec, after the owner accepts t
 - **The agent loop** is new, and lean, over the OpenAI SDK. It reuses docint's `ToolCallAccumulator` and its prepare/fetch/finish pattern.
   - The tool schemas come from workbench's `tools/list`.
   - Each message has a cap on tool rounds, a wall time and a context budget, sized for a 40k context. The plan sets the values.
+  - **Reasoning** (decision 8). A message carries `reasoning: bool` (default false), set by the composer's switch.
+    - On `INFERENCE_PROVIDER=vllm`, every round sends `chat_template_kwargs.enable_thinking` with that value, as docint does.
+    - With reasoning on, the reply may open inside a think block: docint's `ReasoningStripper(reasoning_open=True)` holds the text until a close tag, a separate reasoning field, or the end of the round.
+    - The thinking is dropped: it is never streamed, stored, replayed in follow-ups or recorded. The `ai_call` event records only `reasoning: true|false`.
+    - A reasoning round gets a larger answer budget, and the prompt budget shrinks by as much. The plan sets the values.
 - **Identity towards workbench.**
   - Ghostwriter sends HMAC pseudonyms, as docint does, keyed with its own workbench key.
   - `X-User-Id` is the user's pseudonym.
@@ -206,7 +214,8 @@ Retiring Open WebUI is **phase 2**, with its own spec, after the owner accepts t
 - **Layout.** `AppShell` from `@infra/ui`.
   - On the left, the chat list: new, rename, delete.
   - On the right, the conversation.
-  - Below it, the composer: attach (paperclip, drag and drop, paste), the microphone when enabled, send and stop.
+  - Below it, the composer: attach (paperclip, drag and drop, paste), the microphone when enabled, the reasoning switch, send and stop.
+- **The reasoning switch** is docint's `ReasoningToggle`: one icon button with `BrainIcon` / `BrainActiveIcon` from `@infra/ui`, off by default, its state in the accessible name. While a reasoning round thinks, the pending answer says so.
 - **Taken from docint.** `sse.ts`, `MarkdownProse` (react-markdown with remark-gfm) and the trail disclosure.
 - **Code highlighting** is bundled, with no CDN; the plan picks the library.
 - **Result cards** are modelled on docint's `AnalysisCard`: images inline, a table preview, a file with its size and a download button, and an "expired" state.
@@ -305,6 +314,7 @@ Retiring Open WebUI is **phase 2**, with its own spec, after the owner accepts t
 8. **Retention.** The dry run shows the chats that are due, and the notice period holds.
 9. **Airgap.** `make bundle` and deploy's transfer work, and nothing is fetched at runtime.
 10. **Side by side.** Open WebUI keeps running unchanged.
+11. **Reasoning.** With the switch on, the answer comes after a visible "thinking" state and shows no thinking text; with it off, the request carries `enable_thinking: false`.
 
 ## 10. Calls made in the design
 
