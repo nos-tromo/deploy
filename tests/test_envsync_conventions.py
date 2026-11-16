@@ -491,6 +491,27 @@ class TagRuleTests(unittest.TestCase):
         text = mutate(VALID, "# --- metrics ---\n\n", "# --- metrics ---\n\n" + short)
         self.assertIn(("T5", "GRAFANA_JWT_SECRET"), found(text))
 
+    def test_t5_workbench_docint_key_tags(self) -> None:
+        real = load_table((ROOT / "env-sync.conf").read_text())
+        for member, key, tag in (
+            (
+                "workbench",
+                "DOCINT_WORKBENCH_KEY",
+                "[secret] [shared: docint WORKBENCH_API_KEY]",
+            ),
+            (
+                "docint",
+                "WORKBENCH_API_KEY",
+                "[secret] [shared: workbench DOCINT_WORKBENCH_KEY]",
+            ),
+        ):
+            block = f"# A synthetic caller key.\n# {tag}\n# {key}=\n"
+            anchor = "# DATA_NET=data-net\n"
+            text = mutate(VALID, anchor, anchor + "\n" + block)
+            self.assertNotIn(("T5", key), found(text, member, groups=real))
+            wrong = mutate(text, tag, "[secret]")
+            self.assertIn(("T5", key), found(wrong, member, groups=real))
+
     def test_t6_dev_tag(self) -> None:
         text = mutate(VALID, "# DATA_NET=data-net", "# [dev]\n# DATA_NET=data-net")
         self.assertIn(("T6", "DATA_NET"), found(text))

@@ -41,7 +41,11 @@ empty in `federation.env` skips the tier.
 **The caller key.** The api refuses to start without an
 `OPEN_WEBUI_WORKBENCH_KEY` of at least 32 characters (workbench
 `docs/configuration.md`); the gate then times out after `WAIT_TIMEOUT` with a
-refused connection. `make env ENV_GENERATE=1` generates the key into
+refused connection. From workbench v0.2.0 the api starts with either
+`OPEN_WEBUI_WORKBENCH_KEY` or `DOCINT_WORKBENCH_KEY` (at least 32 characters
+each), refuses to start with neither, and `make env ENV_GENERATE=1` also writes
+`DOCINT_WORKBENCH_KEY` into workbench's and docint's `.env` (group
+`workbench-docint-key`). The same command generates `OPEN_WEBUI_WORKBENCH_KEY` into
 workbench's and open-webui-service's `.env` (env-sync group `workbench-key`).
 Until open-webui-service's example carries the key (its workbench release),
 only one member of that group documents it, so the group is skipped and
