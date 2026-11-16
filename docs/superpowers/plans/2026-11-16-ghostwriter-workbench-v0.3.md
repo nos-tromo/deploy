@@ -57,6 +57,10 @@
   1. deploy env-sync rows and ADR 0007;
   2. obs-plane;
   3. workbench v0.3.0;
+  4. Ghostwriter v0.1.0;
+  5. edge-plane;
+  6. deploy's lifecycle wiring (`APP_DIRS`, `copy-bundles.sh`, tech-stack) once Ghostwriter repo exists;
+  7. the `infra/CLAUDE.md` map.
 
 **The contract amendment (binding):** deploy's rule T5 requires a source row's `[shared: …]` tag to name every partner row. So workbench's `.env.example` must carry:
 - `GHOSTWRITER_WORKBENCH_KEY`, commented and not `[required]`, tagged `# [secret] [shared: ghostwriter WORKBENCH_API_KEY]`;
@@ -83,7 +87,7 @@
 - Preview bounds:
   - the header and at most 5 rows, 20 columns, cells of at most 100 characters (`TablePreview`);
   - csv and xlsx outputs only, by suffix in any case;
-  - at most 2 s per job (`PREVIEW_TOTAL_S`) and 256 KiB of previews per job (`PREVIEW_BUDGET`).
+  - at most 2 s per job (`PREVIEW_TOTAL_S`) and 256 KiB of previews per call, counted in UTF-8 bytes (`PREVIEW_BUDGET`).
 - Synthetic data only (`user-a`, `chat-1`, `quarterly-figures.xlsx`, `harbour-report.pdf`), and no path from a developer's machine, in code, tests, docs and commit messages.
 - Documentation is only the short additions Task 8 lists (owner: verbose docs are rejected).
 - Before every commit, `make verify` and `make test` pass (`git add` new files first).
@@ -161,8 +165,9 @@ Merge it only after deploy's env-sync rows (`workbench-ghostwriter-key`, and Gho
 - Modify:
   - `workbench/config.py`, `workbench/models.py`
   - `workbench/api/auth.py`, `workbench/api/registry.py`
-  - `tests/test_config.py`, `tests/api/conftest.py`, `tests/api/test_callers.py`, `tests/api/test_registry.py`
+  - `tests/test_config.py`, `tests/api/conftest.py`, `tests/api/test_callers.py`, `tests/api/test_registry.py`, `tests/api/test_contract.py`
   - `tests/api/test_tools_inline.py` (`test_config_audit_lists_the_callers_and_the_purpose_rule`)
+- Create: `tests/callers.py` (the shared `EIGHT`).
 
 **Interfaces:**
 - Consumes: `CallerRegistry`, `_within_form`, `door_allows`, `principal_from_headers` (v0.2.0).
@@ -200,15 +205,15 @@ Merge it only after deploy's env-sync rows (`workbench-ghostwriter-key`, and Gho
       - a missing `X-Session-Id`, or `default`, raises `InvalidPrincipal(INVALID_SESSION)`;
       - the principal it returns has `confined=True`.
 
-- [ ] **Step 1: Write the failing tests.** In `tests/api/conftest.py`:
-  - add `GHOSTWRITER_KEY = "a" * 32`, `HA = {"Authorization": f"Bearer {GHOSTWRITER_KEY}", "X-User-Id": "user-a", "X-Session-Id": "chat-1"}` and `PA = Principal("ghostwriter", "user-a", "chat-1", confined=True)`;
+- [ ] **Step 1: Write the failing tests.** `tests/callers.py` (new) holds `EIGHT = frozenset({...})`, the eight tools. `tests/test_config.py`, `tests/api/test_callers.py`, `tests/api/test_tools_mcp.py` and `tests/api/test_mcp_sdk_workspace.py` import it (`from tests.callers import EIGHT`), so no module defines its own. In `tests/api/conftest.py`:
+  - add `GHOSTWRITER_KEY = "a" * 32`, `HG = {"Authorization": f"Bearer {GHOSTWRITER_KEY}", "X-User-Id": "user-a", "X-Session-Id": "chat-1"}` and `PG = Principal("ghostwriter", "user-a", "chat-1", confined=True)`;
   - the `settings` fixture also sets `"GHOSTWRITER_WORKBENCH_KEY": GHOSTWRITER_KEY`.
 
 ```python
 # tests/test_config.py
+from tests.callers import EIGHT
+
 A = "a" * 32
-EIGHT = frozenset({"list_files", "read_document", "search_files", "run_python",
-                   "inspect_template", "fill_template", "write_table", "write_document"})
 
 def test_the_ghostwriter_key_alone_starts_the_api() -> None:
     s = load_settings({"GHOSTWRITER_WORKBENCH_KEY": A}, role="api")
@@ -270,7 +275,7 @@ def test_ghostwriters_door_answers_before_any_body_is_read(settings, key, path, 
     ({"X-User-Id": "user-a", "X-Session-Id": "default"}, "invalid session"), ({"X-Session-Id": "chat-1"}, "missing or invalid user")])
 def test_the_ghostwriter_needs_a_chat_of_its_own(headers, message) -> None:  # InvalidPrincipal; str(exc) == message
 def test_ghostwriters_principal_is_confined() -> None:
-    assert principal_from_headers(GHOSTWRITER, {"X-User-Id": "user-a", "X-Session-Id": "chat-1"}) == PA
+    assert principal_from_headers(GHOSTWRITER, {"X-User-Id": "user-a", "X-Session-Id": "chat-1"}) == PG
 ```
 
 ```python
@@ -284,7 +289,10 @@ def test_allowed_tools_by_door_and_form() -> None:
 Update these tests for the third row:
 - `test_the_registry_holds_a_row_per_key`: Ghostwriter's row is `("mcp", "workspace", EIGHT, 120, 2)`;
 - `test_authentication_compares_every_caller`: the count is 3;
-- `test_config_audit_lists_the_callers_and_the_purpose_rule`: `{"name": "ghostwriter", "door": "mcp", "tools": sorted(EIGHT), "wall_s": 120, "slots": 2}` comes first.
+- `test_config_audit_lists_the_callers_and_the_purpose_rule`: `{"name": "ghostwriter", "door": "mcp", "tools": sorted(EIGHT), "wall_s": 120, "slots": 2}` comes between docint's entry and Open WebUI's: `config.audit` lists the callers sorted by name (docint, ghostwriter, open-webui);
+- `test_each_key_alone_makes_its_one_row` (`tests/api/test_callers.py`): Ghostwriter's key alone makes its one row too; the `ConfigError` case drops `ghostwriter_key` as well, and its match is the new `NO_CALLER_KEY` text (`GHOSTWRITER_WORKBENCH_KEY` named);
+- `test_the_registry_needs_a_key` (`tests/api/test_contract.py`): drops `ghostwriter_key` as well, and matches the new text;
+- `test_the_key_is_compared_in_constant_time` (`tests/api/test_contract.py`): three comparisons per authentication, not two.
 - [ ] **Step 2: Run them to verify they fail.** Run `uv run pytest tests/test_config.py tests/api/test_callers.py tests/api/test_registry.py -q`. Expected: FAIL (no `ghostwriter_key`).
 - [ ] **Step 3: Implement it** in the four files. `KeyGate` itself does not change: it keeps calling `door_allows`.
 - [ ] **Step 4: Run them to verify they pass.** Run `make test`. Expected: all PASS.
@@ -301,7 +309,7 @@ Update these tests for the third row:
 - Create: `tests/api/test_files_ghostwriter.py`
 
 **Interfaces:**
-- Consumes: `Caller.confined`, `FILE_PATHS`, `PA`, `HA` (Task 1).
+- Consumes: `Caller.confined`, `FILE_PATHS`, `PG`, `HG` (Task 1).
 - Produces:
   - **In `workbench/api/audit.py`:**
     - `class PurposeRequired(Exception)`, moved here; `registry` re-exports it, so `mcp.py`'s import stands.
@@ -334,14 +342,14 @@ P2 = Principal("ghostwriter", "user-a", "chat-2", confined=True)
 PURPOSE = {"X-Audit-Purpose": "reason=ghostwriter+chat", "X-Request-ID": "req-1"}
 
 def test_the_ghostwriter_uploads_into_its_chat_and_gets_the_id(client, store) -> None:
-    r = client.post("/files/upload", params={"directory": "/workspace/chat-1"}, files={"file": ("quarterly-figures.csv", CSV)}, headers=HA)
-    rec = store.get(PA, "/workspace/chat-1/quarterly-figures.csv")
+    r = client.post("/files/upload", params={"directory": "/workspace/chat-1"}, files={"file": ("quarterly-figures.csv", CSV)}, headers=HG)
+    rec = store.get(PG, "/workspace/chat-1/quarterly-figures.csv")
     assert (r.status_code, r.json()) == (200, {"path": rec.virtual_path, "size": len(CSV), "id": rec.id})
     assert rec.caller == "ghostwriter"
 
 @pytest.mark.parametrize("directory", ["/workspace", "/workspace/chat-2", "/workspace/chat-1/sub", "/workspace/default", "/etc"])
 def test_an_upload_outside_its_chat_is_not_found(client, store, directory) -> None:
-    # (404, {"detail": "not found"}); store.files_in_chat(PA) == [] and nothing under workspaces/ghostwriter/user-a/chat-2
+    # (404, {"detail": "not found"}); store.files_in_chat(PG) == [] and nothing under workspaces/ghostwriter/user-a/chat-2
 
 def test_a_name_with_spaces_umlauts_and_a_hash_round_trips(client) -> None:  # Review Focus 1
     # upload "Übersicht März #1 (100%).csv" -> path "/workspace/chat-1/Übersicht März #1 (100%).csv";
@@ -349,26 +357,26 @@ def test_a_name_with_spaces_umlauts_and_a_hash_round_trips(client) -> None:  # R
 
 @pytest.mark.parametrize("path", ["/workspace/chat-2/q.csv", "/workspace/chat-1/../chat-2/q.csv", "/workspace/q.csv", "/etc/passwd"])
 def test_another_chats_file_is_not_found(client, store, path) -> None:
-    # q.csv put into chat-2 as P2 via store.add_upload; GET /files/view with HA -> (404, {"detail": "not found"})
+    # q.csv put into chat-2 as P2 via store.add_upload; GET /files/view with HG -> (404, {"detail": "not found"})
 
 def test_list_is_the_chat_alone(client, store) -> None:
     # /files/list?directory=/workspace/chat-1 -> 200 with the chat's file; "/workspace" and "/workspace/chat-2" -> 404 not found
 
 def test_ghostwriters_files_are_its_own(client, store) -> None:
-    # Open WebUI's user-a holds /workspace/chat-1/x.csv: HA view -> 404; Ghostwriter's file -> H view -> 404
+    # Open WebUI's user-a holds /workspace/chat-1/x.csv: HG view -> 404; Ghostwriter's file -> H view -> 404
 
 def test_open_webui_keeps_version_2(client, store) -> None:
     # H upload -> set(r.json()) == {"path", "size"}; H with X-Session-Id chat-2 views /workspace/chat-1/x.csv -> 200
 
 def test_purpose_and_request_id_reach_the_file_events(client, audit_lines) -> None:
-    # HA | PURPOSE: upload, then view -> the file.upload and file.view events have purpose == {"reason": "ghostwriter chat"},
+    # HG | PURPOSE: upload, then view -> the file.upload and file.view events have purpose == {"reason": "ghostwriter chat"},
     # request_id == "req-1", criteria["caller"] == "ghostwriter", target container "chat:chat-1"
 
 @pytest.mark.parametrize("purpose", ["reason=%ZZ", "reason=Prüfung"])
 def test_a_malformed_purpose_is_400(client, purpose) -> None:  # (400, {"detail": "invalid purpose"}); nothing stored
 
 def test_a_required_purpose_is_428_and_recorded_denied(settings, store, audit, audit_lines) -> None:
-    # app over replace(settings, require_purpose=frozenset({"collect", "disclose"})): HA upload, no purpose ->
+    # app over replace(settings, require_purpose=frozenset({"collect", "disclose"})): HG upload, no purpose ->
     # (428, {"detail": "a stated purpose is required"}); last event operation "file.upload", outcome "denied", no "target",
     # criteria == {"caller": "ghostwriter", "refused": "purpose_required", "container": "chat:chat-1"}; nothing stored;
     # H (Open WebUI) uploads with no purpose -> 200
@@ -388,9 +396,9 @@ def test_check_denies_only_a_required_action(log, stream, alice) -> None:
 ```python
 # tests/api/test_store.py
 @pytest.mark.parametrize("path", ["/workspace", "/workspace/chat-2", "/workspace/chat-2/q.csv", "/workspace/chat-1/../chat-2/q.csv", "/etc"])
-def test_a_confined_principal_finds_nothing_outside_its_chat(store, path) -> None:  # list_dir and get raise NotFound for PA
+def test_a_confined_principal_finds_nothing_outside_its_chat(store, path) -> None:  # list_dir and get raise NotFound for PG
 def test_a_confined_upload_goes_into_the_chat_folder_itself(store) -> None:
-    # "/workspace/chat-1/sub", made with mkdir by an unconfined principal of the same user -> NotFound for PA; "/workspace/chat-1" works
+    # "/workspace/chat-1/sub", made with mkdir by an unconfined principal of the same user -> NotFound for PG; "/workspace/chat-1" works
 ```
 
 - [ ] **Step 2: Run them to verify they fail.** Run `uv run pytest tests/api/test_files_ghostwriter.py tests/api/test_audit.py tests/api/test_store.py -q`. Expected: FAIL (Ghostwriter's key gets 404 from `require_caller`).
@@ -429,10 +437,10 @@ def test_a_confined_upload_goes_into_the_chat_folder_itself(store) -> None:
 ```python
 # tests/api/test_chat_delete.py
 def test_delete_removes_files_jobs_and_folder_after_its_event(client, store, audit_lines, settings) -> None:
-    # two files in chat-1 as PA, one in chat-2 as P2, job = store.add_job(PA, "run_python")
-    r = client.delete("/files/chat", headers={**HA, "X-Audit-Purpose": "reason=ghostwriter+chat", "X-Request-ID": "req-1"})
+    # two files in chat-1 as PG, one in chat-2 as P2, job = store.add_job(PG, "run_python")
+    r = client.delete("/files/chat", headers={**HG, "X-Audit-Purpose": "reason=ghostwriter+chat", "X-Request-ID": "req-1"})
     assert (r.status_code, r.json()) == (200, {"deleted": 2})
-    # store.files_in_chat(PA) == []; store.find_job(job.id) is None; chat-2's file is still there;
+    # store.files_in_chat(PG) == []; store.find_job(job.id) is None; chat-2's file is still there;
     # not (settings.data_dir / "workspaces" / "ghostwriter" / "user-a" / "chat-1").exists()
     # the event: action "delete", operation "chat.delete", outcome "ok", actor {"user": "user-a", "via": "service"},
     # target == {"kind": "file", "ids": <the two ids, in any order>, "count": 2, "container": "chat:chat-1"},
@@ -449,9 +457,9 @@ def test_a_missing_or_default_session_is_400(client, session) -> None:  # (400, 
 def test_open_webui_and_docint_find_no_chat_delete(client, headers) -> None:  # (404, {"detail": "not found"})
 def test_a_late_output_of_a_running_job_is_refused(settings, store, audit, audit_lines) -> None:
     # app over JobQueue(FakeClient) with fake.hold = {"ghostwriter/user-a"} and fake.files = {"r.csv": b"a\n1\n"};
-    # jobs.submit(PA, "run_python", python_args("print(1)", 60), [], OutputKeeper(audit, PA, "run_python", [], decide))
+    # jobs.submit(PG, "run_python", python_args("print(1)", 60), [], OutputKeeper(audit, PG, "run_python", [], decide))
     # started on client.portal; DELETE /files/chat -> 200; fake.gate.set(); the submit returns made == []
-    # store.files_in_chat(PA) == []; the chat folder does not exist again; a tool.run_python event with outcome "error"
+    # store.files_in_chat(PG) == []; the chat folder does not exist again; a tool.run_python event with outcome "error"
     # names the planned id
 def test_a_required_purpose_is_428_for_delete_when_listed(settings, store, audit) -> None:
     # require_purpose {"delete"}: no purpose -> 428; with one -> 200
@@ -463,8 +471,8 @@ def test_delete_chat_records_first_then_rows_jobs_and_folder(store) -> None:
     # record sees the ids while the files still exist; afterwards no rows, no job row, no folder; returns len(ids)
 def test_a_record_that_raises_deletes_nothing(store) -> None:
 def test_register_output_refuses_a_job_whose_row_is_gone(store, tmp_path) -> None:
-    # job = store.add_job(PA, "run_python"); store.delete_chat(PA, unrecorded_chat) ;
-    # register_output(PA, staged, "r.csv", job.id, ...) -> NotFound; the chat folder is not made
+    # job = store.add_job(PG, "run_python"); store.delete_chat(PG, unrecorded_chat) ;
+    # register_output(PG, staged, "r.csv", job.id, ...) -> NotFound; the chat folder is not made
 ```
 
 Two tests in `tests/api/test_retention.py`, the ones near lines 660 and 1248, register outputs under a job id that has no row. They now call `store.add_job` first.
@@ -498,10 +506,10 @@ Two tests in `tests/api/test_retention.py`, the ones near lines 660 and 1248, re
   - **In `workbench/executor/preview.py`** (imports `readers.sheet.Workbook`, `timer.limit_until`; nothing of the api):
     - `PREVIEW_SUFFIXES: Final = (".csv", ".xlsx")`, `PREVIEW_TOTAL_S: Final = 2.0`, `PREVIEW_COUNT_MAX: Final = 100_000`, `PREVIEWS_FILE: Final = "previews.json"`.
     - `table_preview(path: Path, deadline: float) -> TablePreview | None`. Its rows:
-      - `columns` is the first record of a csv, or the first row with content of an xlsx's first sheet in workbook order.
+      - `columns` is the first record of a csv, or the first row with content of an xlsx's first (active) sheet; an xlsx preview reads that sheet only.
       - `rows` are the next records or rows, at most 5.
-      - Each row and the header are cut to 20 cells, and each cell to 100 characters.
-      - `truncated` is true when anything was left out: rows, columns or characters.
+      - Each row and the header are cut to 20 cells, and each cell plainly to its first 100 characters, with no "…", for csv and xlsx alike.
+      - `truncated` is true when any row, column or cell was cut.
       - `row_count` counts the data rows below the header when the end is reached within `PREVIEW_COUNT_MAX` rows and before `deadline`; otherwise it is `None`.
       - A file that cannot be read, or whose header and rows are not read by `deadline`, gives `None`.
       - An empty file gives `TablePreview(columns=[], rows=[], row_count=0, truncated=False)`.
@@ -510,9 +518,10 @@ Two tests in `tests/api/test_retention.py`, the ones near lines 660 and 1248, re
   - **`workbench/executor/job.py`:** when `spec.get("previews")` is true, once the runner has answered, it writes `{name: preview.model_dump()}` of `previews_of(ctx.out_dir, time.monotonic() + PREVIEW_TOTAL_S)` as JSON to `result_path.with_name(PREVIEWS_FILE)`. Any failure there writes no file and never changes the result.
   - **`workbench/executor/supervisor.py`:**
     - `spec.json` gains `"previews": req.previews`.
-    - `PREVIEW_BUDGET: Final = 256 * 1024`.
+    - `PREVIEW_BUDGET: Final = 256 * 1024`, in UTF-8 bytes per call.
     - `_read_previews(home: int, owner: int) -> dict[str, TablePreview]` reads it as `_read_result` reads its file: the job's own regular file, at most `MAX_LINE` bytes, a JSON object. An entry that does not validate is dropped.
-    - Only when `req.previews` is set, `_answer_job` attaches each staged output's preview in name order while the previews' `model_dump_json()` lengths together stay within `PREVIEW_BUDGET`. The rest get `None`.
+    - Only when `req.previews` is set, `_answer_job` attaches each staged output's preview in name order while their sizes in UTF-8 bytes (`len(p.model_dump_json().encode())`) together stay within `PREVIEW_BUDGET`. The rest get `None`.
+    - The previews must also keep the executor's answer line under `MAX_LINE` (1 MiB): the budget is the smaller of `PREVIEW_BUDGET` and what `MAX_LINE` leaves beside the result already in hand, so a result near its cap leaves less room for previews.
 
 - [ ] **Step 1: Write the failing tests** (the files are built at test time; openpyxl writes the xlsx; all text invented)
 
@@ -524,7 +533,8 @@ def test_a_csv_preview_is_its_header_and_five_rows(tmp_path) -> None:
     # TablePreview(columns=["author", "posts"], rows=[["user-1", "1"], ..., ["user-5", "5"]], row_count=7, truncated=True)
 def test_a_short_table_comes_whole(tmp_path) -> None:  # 3 rows -> 3 rows, row_count 3, truncated False
 def test_columns_stop_at_20_and_cells_at_100(tmp_path) -> None:
-    # 25 columns, one cell "x" * 150 -> len(columns) == 20, every row <= 20 cells, that cell == "x" * 100, truncated True
+    # 25 columns, one cell "x" * 150 -> len(columns) == 20, every row <= 20 cells, that cell == "x" * 100, truncated True;
+    # the same table as an xlsx gives the same preview: that cell == "x" * 100 (no "…"), truncated True
 def test_a_semicolon_csv_with_a_bom_and_a_latin1_one_preview(tmp_path) -> None:  # Review Focus 4
     # b"\xef\xbb\xbfname;city\nM\xc3\xbcller;Kiel\n" -> columns ["name", "city"], rows [["Müller", "Kiel"]];
     # "name\tcity\n..." splits on the tab; "name,city\nM\xfcller,Kiel\n" (Latin-1) -> rows [["M�ller", "Kiel"]], not None
@@ -567,13 +577,17 @@ async def test_no_preview_unless_asked(volume, monkeypatch) -> None:  # the same
 async def test_a_preview_that_does_not_validate_is_dropped_and_the_output_kept(volume, monkeypatch) -> None:
     # previews.json written by the job with 6 rows for t.csv -> outputs[0].preview is None; status "ok", t.csv staged
 async def test_previews_past_256_kib_are_left_out_in_name_order(volume, monkeypatch) -> None:
-    # 25 csv outputs whose previews are about 12 KiB each -> the first ones by name carry one, the rest None, total <= PREVIEW_BUDGET
+    # within MAX_OUTPUTS (20): 8 csv outputs of 6 rows x 20 columns of "€" * 100 (about 36 KB of UTF-8 each) ->
+    # the first 7 by name carry a preview, the 8th has None; the sum of len(p.model_dump_json().encode()) <= PREVIEW_BUDGET
+async def test_previews_never_push_the_answer_line_past_max_line(volume, monkeypatch) -> None:
+    # a result already about MAX_LINE minus 100 KiB long, then previews that would fit PREVIEW_BUDGET alone ->
+    # the later ones are None, and the encoded answer line is under MAX_LINE
 async def test_a_previews_file_that_is_not_the_jobs_own_is_ignored(volume, monkeypatch) -> None:  # a hard link -> no previews
 ```
 
 Update `test_inline_data_never_reaches_the_spec`: its key set gains `"previews"`.
 - [ ] **Step 2: Run them to verify they fail.** Run `uv run pytest tests/executor/test_preview.py tests/executor/test_protocol.py tests/executor/test_job.py tests/executor/test_supervisor.py -q`. Expected: FAIL (no `workbench.executor.preview`).
-- [ ] **Step 3: Implement it.** The xlsx path reuses `readers.sheet.Workbook.walk(None, 1, cap=PREVIEW_CELL)` within `limit_until(deadline, ...)`. The csv path is one stream: `open(path, encoding="utf-8-sig", errors="replace", newline="")` with `csv.reader`.
+- [ ] **Step 3: Implement it.** The xlsx path reuses `readers.sheet.Workbook.walk(None, 1, cap=PREVIEW_CELL + 1)` within `limit_until(deadline, ...)`, stops at the first sheet change (`walk` runs on into the next sheets), and cuts and flags the cells in `preview.py`, never through `paging.clip`'s "…". The csv path is one stream: `open(path, encoding="utf-8-sig", errors="replace", newline="")` with `csv.reader`.
 - [ ] **Step 4: Verify.** Run `make test`, then `make test-executor-root`. Expected: PASS in both `/dev/shm` shapes.
 - [ ] **Step 5: Commit:** `git commit -m "feat(executor): a table preview of csv and xlsx outputs, read in the job and checked by the supervisor"`
 
@@ -639,6 +653,7 @@ async def test_the_keeper_sees_each_outputs_preview(...) -> None:
       - `"Show the result with display_file."` becomes `"The user sees the new file as a card in the chat."`;
       - `"show it with display_file"` becomes `"the user sees it as a card in the chat"`.
     - `mcp_text(text: str) -> str` applies `MCP_TEXT`, and `mcp_schema(schema: dict[str, Any]) -> dict[str, Any]` applies it to every `description` of a schema, at any depth.
+    - `_model_schema(model: type[BaseModel], caller: Caller) -> dict[str, Any]`: `mcp_schema(model.model_json_schema())`. `workspace_tools` binds the model per tool with `functools.partial`, never with a lambda that closes over the loop's variable.
     - `with_outputs(model: type[BaseModel]) -> type[BaseModel]`: `pydantic.create_model(f"{model.__name__}WithOutputs", __base__=model, outputs=(list[OutputRef], Field(default_factory=list)))`.
     - `workspace_run(endpoint: Callable[..., Any], key: str) -> Callable[[Any, ToolEnv], Awaitable[ToolOutcome]]`, the adapter, in this order:
       1. `wall = min(caller.wall_s or settings.job_wall_s, settings.job_wall_s)`.
@@ -655,35 +670,39 @@ async def test_the_keeper_sees_each_outputs_preview(...) -> None:
       6. Return `ToolOutcome(structured, [], text)`.
     - `workspace_tools(app: FastAPI) -> tuple[ToolSpec, ...]`: every spec of `workspace_specs(app)`. Each one named in `MCP_WORKSPACE_TOOLS` gets, through `dataclasses.replace`:
       - `run=workspace_run(<its route's endpoint>, name)`;
-      - `input_model=spec.input_model or NoArguments` and `input_schema=lambda caller: mcp_schema(input_model.model_json_schema())`;
-      - `output_model=with_outputs(spec.output_model)` and `output_schema=lambda caller: mcp_schema(output_model.model_json_schema())`;
+      - `input_model=spec.input_model or NoArguments` and `input_schema=partial(_model_schema, input_model)`;
+      - `output_model=with_outputs(spec.output_model)` and `output_schema=partial(_model_schema, output_model)`;
       - `description=mcp_text(spec.description)`.
 
       `display_file` stays as it is.
   - **`main.create_app`** builds `Registry([*workspace_tools(app), *INLINE_SPECS])`.
 
-- [ ] **Step 1: Write the failing tests.** The fixtures are the `app` and `fake_executor` of `tests/api/test_tools_templates.py` (`Local`, the real runners in process). The helper is `acall(client, tool, arguments=None, **options)`, which is `test_mcp.rpc(client, "tools/call", {"name": tool, "arguments": arguments or {}}, headers=HA, **options)`. `EIGHT` is from Task 1.
+- [ ] **Step 1: Write the failing tests.** The fixtures are the `app` and `fake_executor` of `tests/api/test_tools_templates.py` (`Local`, the real runners in process). The helper is `acall(client, tool, arguments=None, **options)`, which is `test_mcp.rpc(client, "tools/call", {"name": tool, "arguments": arguments or {}}, headers=HG, **options)`. `EIGHT` is imported from `tests/callers.py` (Task 1).
 
 ```python
 # tests/api/test_tools_mcp.py
 TABLE = {"name": "counts", "format": "csv", "columns": ["author", "posts"], "rows": [["user-a", 12], ["user-b", 7]]}
 
 def test_the_ghostwriter_lists_its_eight_tools_in_name_order(client) -> None:
-    tools = result(rpc(client, "tools/list", headers=HA))["tools"]
+    tools = result(rpc(client, "tools/list", headers=HG))["tools"]
     assert [t["name"] for t in tools] == sorted(EIGHT)
     # every inputSchema "type" == "object"; every outputSchema has properties "outputs";
     # list_files' inputSchema properties == {} and additionalProperties is False
 
+def test_each_tool_has_its_own_schemas(client) -> None:
+    # tools/list: list_files' inputSchema properties == {} while write_table's holds "name" and "rows";
+    # no two of the eight tools share an inputSchema or an outputSchema
+
 def test_display_file_is_nowhere_in_ghostwriters_tools(client) -> None:  # Review Focus 2
-    assert "display_file" not in json.dumps(result(rpc(client, "tools/list", headers=HA)))
+    assert "display_file" not in json.dumps(result(rpc(client, "tools/list", headers=HG)))
     # acall(client, "display_file", {"path": "/workspace/chat-1/x"}) -> error 400, -32602, "unknown tool"
 
 def test_discover_tells_each_form_its_own_instructions(client) -> None:
-    # HA -> instructions == WORKSPACE_INSTRUCTIONS; HD -> INSTRUCTIONS
+    # HG -> instructions == WORKSPACE_INSTRUCTIONS; HD -> INSTRUCTIONS
 
 def test_a_call_answers_the_rest_model_plus_outputs(client, store) -> None:
     answer = result(acall(client, "write_table", TABLE))
-    rec = store.get(PA, "/workspace/chat-1/counts.csv")
+    rec = store.get(PG, "/workspace/chat-1/counts.csv")
     assert answer["isError"] is False and [b["type"] for b in answer["content"]] == ["text"]
     assert answer["structuredContent"] == {"path": rec.virtual_path, "rows": 2, "outputs": [{
         "id": rec.id, "path": rec.virtual_path, "name": "counts.csv", "mime": "text/csv", "size": rec.size,
@@ -704,7 +723,7 @@ def test_a_taken_name_comes_back_numbered_with_its_own_preview(client) -> None: 
     # its path ends "/counts (1).csv", its id differs, its preview rows == [["user-c", "3"]]
 def test_output_names_come_back_as_written(client) -> None:  # Review Focus 1
     # write_document {"name": "Übersicht März #1", "format": "md", "markdown": "# Hafen"} -> outputs[0]["name"] == "Übersicht März #1.md";
-    # GET /files/view params={"path": outputs[0]["path"]} with HA -> 200, b"# Hafen" in r.content
+    # GET /files/view params={"path": outputs[0]["path"]} with HG -> 200, b"# Hafen" in r.content
 
 @pytest.mark.parametrize(("tool", "arguments"), [("read_document", {"path": "/workspace/chat-2/q.csv"}),
     ("inspect_template", {"path": "/workspace/chat-2/t.docx"}), ("read_document", {"path": "/workspace/chat-1/../chat-2/q.csv"})])
@@ -748,7 +767,7 @@ In `tests/api/test_mcp.py`, `test_docints_call_of_a_workspace_tool_is_an_unknown
 - Modify: `workbench/api/tools_mcp.py`, `tests/api/test_tools_mcp.py`
 
 **Interfaces:**
-- Consumes: `AuditLog.bound`, `AuditLog.check`, `PurposeRequired` (Task 2); `workspace_run` (Task 6); `served` (`tests/api/test_mcp_sdk_client.py`).
+- Consumes: `AuditLog.bound`, `AuditLog.check`, `PurposeRequired` (Task 2); `workspace_run` (Task 6); `EIGHT` (`tests/callers.py`, Task 1); `served` (`tests/api/test_mcp_sdk_client.py`).
 - Produces:
   - **In `workspace_run`**, before step 1:
     - `audit = env.audit.bound(env.purpose, env.request_id, required=env.settings.require_purpose)`;
@@ -760,7 +779,7 @@ In `tests/api/test_mcp.py`, `test_docints_call_of_a_workspace_tool_is_an_unknown
 
 ```python
 # tests/api/test_tools_mcp.py
-PURPOSE = {**HA, "X-Audit-Purpose": "reason=ghostwriter+chat", "X-Request-ID": "req-1"}
+PURPOSE = {**HG, "X-Audit-Purpose": "reason=ghostwriter+chat", "X-Request-ID": "req-1"}
 
 @pytest.mark.parametrize("tool", ["read_document", "write_table"])
 def test_a_stated_purpose_and_request_id_reach_the_tool_event(client, store, audit_lines, tool) -> None:
@@ -803,7 +822,7 @@ def test_the_official_client_lists_and_calls_the_workspace_tools(app_with_local_
 **Files:**
 - Modify:
   - `docker/compose.yaml`, `.env.example`
-  - `docs/configuration.md`, `docs/permissions.md`, `docs/audit.md`, `docs/data-flow.md`, `docs/sandbox.md`, `CLAUDE.md`
+  - `docs/configuration.md`, `docs/permissions.md`, `docs/audit.md`, `docs/data-flow.md`, `docs/sandbox.md`, `CLAUDE.md`, `README.md`
   - `tests/test_compose_defaults.py`
 
 **Interfaces:**
@@ -848,6 +867,7 @@ def test_the_official_client_lists_and_calls_the_workspace_tools(app_with_local_
       - "Adding a tool touches": `registry.MCP_WORKSPACE_TOOLS` too, if Ghostwriter may call it.
       - The links: deploy's Ghostwriter spec and this plan, beside v2's.
       - The `.env` line: one of three keys.
+    - `README.md` (line 35, the quick start): the key sentence names all three keys, `OPEN_WEBUI_WORKBENCH_KEY`, `DOCINT_WORKBENCH_KEY` or `GHOSTWRITER_WORKBENCH_KEY`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -893,7 +913,7 @@ Update `test_the_api_alone_gets_the_callers_variables` for the new `AUDIT_REQUIR
 **Interfaces:**
 - Produces:
   - **`compose.test.yaml`, the `api`'s `environment:`:**
-    - `GHOSTWRITER_WORKBENCH_KEY: synthetic-ghostwriter-test-key-not-a-secret`: synthetic, 41 characters, unlike the two other keys;
+    - `GHOSTWRITER_WORKBENCH_KEY: synthetic-ghostwriter-test-key-not-a-secret`: synthetic, 43 characters, unlike the two other keys;
     - `GHOSTWRITER_WORKBENCH_WALL_S: "20"`: the stack's wall is 20.
   - **In `tests/isolation/conftest.py`:**
     - `ghostwriter(api_info, method: str, path: str, *, chat: str, user: str = "a" * 64, **kwargs) -> httpx.Response`: a REST call with Ghostwriter key from the api's environment, `X-User-Id`, `X-Session-Id` = `chat`, and `X-Audit-Purpose` `PURPOSE`;
@@ -976,13 +996,24 @@ def test_chat_delete_through_the_proxy_is_not_found(admin: Account) -> None:
   - `Store.delete_chat`, `ChatRecord`;
   - `TablePreview`, `OutputFile.preview`, `JobRequest.previews`, `previews_of`, `PREVIEW_TOTAL_S`;
   - `CallJobs`, `OutputRef`, `workspace_run`, `workspace_tools`, `PREVIEW_RESERVE_S`, `ToolSpec.output_schema`, `ToolOutcome.text`;
-  - `GHOSTWRITER_KEY`, `HA`, `PA`.
+  - `GHOSTWRITER_KEY`, `HG`, `PG`, and `EIGHT` (`tests/callers.py`).
 
 ## Contract notes
 
 1. **`X-Session-Id` is required, everywhere.** A missing session or `default` is refused for Ghostwriter on every route, not only on `DELETE /files/chat`: 400 `invalid session` on REST, `-32600` on MCP. Ghostwriter always sends its HMAC, so nothing changes for it.
 2. **The purpose goes on the file routes too.** Ghostwriter must send `X-Audit-Purpose` and `X-Request-ID` on `/files/upload`, `/files/view` and `/files/chat`, not only on `/mcp`. A required purpose that is missing answers `428 {"detail": "a stated purpose is required"}` there. compose's default now requires one for `modify` and `collect` too, but not for `delete`.
 3. **The text block carries no previews.** On the MCP door, `content[0].text` is `structuredContent` without `outputs[].preview`. Ghostwriter gives the model the text and builds its cards from `structuredContent`.
-4. **A preview can be `null`** for a csv or xlsx output too: when the file cannot be read, when the header is not read within 2 s, or past 256 KiB of previews in one call. `row_count` counts the data rows below the header and is `null` when they were not counted to the end.
+4. **A preview can be `null`** for a csv or xlsx output too: when the file cannot be read, when the header is not read within 2 s, or past 256 KiB (UTF-8 bytes) of previews in one call. `row_count` counts the data rows below the header and is `null` when they were not counted to the end.
 5. **The env-sync tags follow the contract amendment.** Task 8 writes `# [secret] [shared: ghostwriter WORKBENCH_API_KEY]` over the commented `# GHOSTWRITER_WORKBENCH_KEY=`, and `[shared: open-webui-service, ghostwriter]` over `WORKBENCH_RETENTION_DAYS`. T5 names the partners in table order, so the tag holds only while deploy's `workbench-period` lists open-webui-service before the ghostwriter.
 6. **`/healthz` and `/metrics`** stay open to every caller, as in v0.2.0, so "the `ghostwriter` key reaches only …" holds for keyed paths. A busy queue on `/mcp` comes back as an `isError` result with `queue_full`, `wait_timeout` or `executor_busy`; Ghostwriter's loop may retry those.
+
+## Pre-flight rulings applied
+
+- **W1:** `config.audit` lists the callers sorted by name (docint, ghostwriter, open-webui); Task 1's expectation says "between", not "first".
+- **W2:** Task 1 also updates `test_each_key_alone_makes_its_one_row`, `test_the_registry_needs_a_key` and `test_the_key_is_compared_in_constant_time`; Task 8 updates `README.md` line 35.
+- **W3:** `PREVIEW_BUDGET` counts UTF-8 bytes per call; the test uses 8 csv outputs of multibyte cells within `MAX_OUTPUTS`; a second test keeps the answer line under `MAX_LINE`.
+- **W4:** csv and xlsx cut cells plainly to 100 characters with no "…"; `truncated` covers any cut row, column or cell; an xlsx preview reads the first (active) sheet only.
+- **W5:** `workspace_tools` binds each schema per tool with `functools.partial`; `test_each_tool_has_its_own_schemas` pins it.
+- **W6:** `EIGHT` lives in `tests/callers.py`; the test modules import it.
+- **W7:** the test key has 43 characters; `HA` and `PA` are now `HG` and `PG`.
+- **W8:** the order list holds the contract's full order, 1 to 7.

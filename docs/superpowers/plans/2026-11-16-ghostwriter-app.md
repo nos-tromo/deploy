@@ -105,7 +105,7 @@
     - `MAX_TOOL_ROUNDS = 8`;
     - `MAX_CALLS_PER_ROUND = 4`;
     - `MESSAGE_WALL_S = 300.0`, the time for tools;
-    - `MIN_CALL_S = 10.0`;
+    - `TOOL_CUTOFF_S = 10.0`, the time left below which a round is offered no tools;
     - `BUSY_RETRY_S = 2.0`.
   - What the model reads back:
     - `TOOL_RESULT_CHARS = 12_000`;
@@ -115,8 +115,8 @@
     - `INLINE_IMAGE_BYTES = 10 * 1024 * 1024`;
     - `IMAGE_MIMES = {"image/png", "image/jpeg", "image/gif", "image/webp"}`.
 - **What the model reads, and what the cards show.** The model reads a tool result's `content[0].text`, which workbench writes without the previews. The cards are built from `structuredContent.outputs`.
-- **A busy workbench.** A call answered `queue_full`, `wait_timeout` or `executor_busy` is sent once more, after `BUSY_RETRY_S`. The retry is disclosed again, and it goes out only while the wall leaves `MIN_CALL_S` after the pause. A second busy answer goes to the model with the `busy` text, and the model tells the user.
-- **Follow-ups.** Earlier turns are replayed natively: a Ghostwriter message with `tool_calls`, then a `tool` message per call, cut to the history caps, for every step whose content has not expired. Whole turns are dropped, oldest first, when the budget is short. When any earlier content has expired, the system prompt carries the expired note (Task 7).
+- **A busy workbench.** A call answered `queue_full`, `wait_timeout` or `executor_busy` is sent once more, after `BUSY_RETRY_S`. The retry is disclosed again, and it goes out only while the time left after the pause is at least the call's timeout. A second busy answer goes to the model with the `busy` text, and the model tells the user.
+- **Follow-ups.** Earlier turns are replayed natively: an assistant message with `tool_calls`, then a `tool` message per call, cut to the history caps, for every step whose content has not expired. Whole turns are dropped, oldest first, when the budget is short. When any earlier content has expired, the system prompt carries the expired note (Task 7).
 - **Speech.**
   - `MAX_RECORDING_S = 120`: the SPA stops the recorder there.
   - `MAX_RECORDING_BYTES = 10 * 1024 * 1024`: the server enforces it.
@@ -126,10 +126,12 @@
 - **Attachments.** `MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024`, as workbench's `WORKBENCH_UPLOAD_MAX_MB` counts it.
   - The type is decided by extension alone, through a fixed map to the MIME type sent on.
   - At most 10 pending attachments per chat, and 10 per message.
-- **`WORKBENCH_TIMEOUT` default 150** s per tool call: the MCP door's queue wait (5 s), the caller's 120 s wall time, and a margin.
-- **Edge secret and workbench key** (contract amendment).
-  - An unset `GHOSTWRITER_EDGE_SECRET` is the dev fallback, as in translator. Identity headers are then trusted from any caller, one warning says so at start, and `GHOSTWRITER_DEFAULT_IDENTITY` counts.
-  - A set secret, or a set `WORKBENCH_API_KEY`, shorter than 32 characters stops startup.
+- **`WORKBENCH_TIMEOUT` default 150** s per tool call: the MCP door's queue wait (5 s), the caller's 120 s wall time, and a margin. A call is started only while at least that much of `MESSAGE_WALL_S` is left, so the app never gives up on a call that workbench still runs.
+- **Edge secret and workbench key** (contract amendment; the edge secret works as in docint and translator).
+  - `GHOSTWRITER_EDGE_SECRET` set and at least 32 characters: identity headers are trusted only with a matching `X-Edge-Secret`.
+  - Set and shorter: the backend refuses to start.
+  - Unset: the dev fallback. Identity headers are then trusted from any caller, `GHOSTWRITER_DEFAULT_IDENTITY` counts, and one warning says so at start. Production always has the secret, because env-sync generates it.
+  - A set `WORKBENCH_API_KEY` shorter than 32 characters also stops startup; unset, tools and attachments are off.
   - Compose delivers both as `${VAR:-}`.
 - **workbench headers.** Every request to workbench carries `X-User-Id`, `X-Session-Id` (the chat's pseudonym, never `default`), `X-Audit-Purpose` (the stated purpose, else `ghostwriter chat`) and `X-Request-ID`. That covers discovery, `/mcp` and the three file routes.
 - **One process.** The backend runs as `uvicorn --factory ghostwriter.main:create_app` with one worker. It holds one audit chain, one turn registry and one sweep.
@@ -157,11 +159,11 @@
 - Run its targeted tests, then `uv run pre-commit run --all-files && uv run pytest`.
 - `pre-commit` checks tracked files only, so `git add` new files first.
 - Frontend tasks also run `cd frontend && pnpm test && pnpm lint && pnpm build`.
-- Tasks touching `.env.example` also run `python3 -B ../deploy/scripts/check_env_examples.py .`. Until deploy's env-sync rows and workbench v0.3.0's example have merged, the only expected findings are `T5`. Afterwards it is clean.
+- Tasks touching `.env.example` also run `python3 -B ../deploy/scripts/check_env_examples.py .`. Expected: no output. By the delivery order, deploy's env-sync rows are merged before this repository, so the check is clean from Task 1. If it is run before they merge, `T5` is expected.
 
 ## Review Focus
 
-1. **Real file names on upload.** For example `../../x/report.pdf`, `C:\Users\x\Bericht März.PDF`, NFD accents, quotes, a newline, or 300 characters. Expected: a basename, NFC, with control characters dropped and `"*:<>?|` replaced. Extensions match in any case, and the extension survives the cut to 200 characters. Test: Task 9 `test_upload_names_are_reduced_to_a_safe_basename`.
+1. **Real file names on upload.** For example `../../x/report.pdf`, `C:\Users\x\Bericht März.PDF`, NFD accents, quotes, a newline, or 300 characters. Expected: a basename, NFC, with control characters dropped and `"*:<>?|` replaced. Extensions match in any case, and the extension survives the cut to 200 characters. A name over 255 UTF-8 bytes is refused with 422. Test: Task 9 `test_upload_names_are_reduced_to_a_safe_basename`.
 2. **Tool arguments as smaller models write them.** For example `""` for a tool without arguments, a JSON string that holds the object, `[1]`, or text. Expected: `""` reads as `{}`, a string holding an object is decoded once, and the rest is refused to the model while the loop goes on. Test: Task 7 `test_arguments_are_read_as_models_write_them`.
 3. **Stop, or a closed tab, during a tool call.** Expected:
    - the call in flight finishes and is stored as its step;
@@ -228,6 +230,7 @@ Every task ends with one commit on that branch. The controller creates `nos-trom
   - In `ghostwriter/main.py`: `create_app(settings: Settings | None = None) -> FastAPI`. It serves `GET /api/health` → `{"status": "ok"}` and `/metrics`, and puts `settings` on `app.state.settings`. Later tasks add keyword-only parameters.
   - In `tests/conftest.py`:
     - `SECRET = "s" * 32`, `KEY = "k" * 32`;
+    - the fixture `loguru_caplog`, copied from `../docint/tests/conftest.py` (translator has none); Tasks 1 and 4 use it;
     - `make_settings(tmp_path: Path, **overrides: Any) -> Settings`, which uses a temporary `db_path`;
     - `as_user(name: str = "user-a") -> dict[str, str]`, which returns the gateway's headers with `SECRET`.
 
@@ -395,7 +398,7 @@ def test_env_example_tags_follow_the_contract_amendment() -> None:
   - Run `uv run pytest tests -v`: PASS.
   - Run `uv run pre-commit run --all-files`: green.
   - Run `cd frontend && pnpm install && pnpm lint && pnpm build`: green.
-  - Run `python3 -B ../deploy/scripts/check_env_examples.py .`. Until deploy's env-sync rows and workbench v0.3.0's example have merged, the only expected findings are `T5`, on `GHOSTWRITER_EDGE_SECRET`, `WORKBENCH_API_KEY` and `WORKBENCH_RETENTION_DAYS`. Any other finding (`X2`, `X3`, `T3`, …) is a defect to fix here.
+  - Run `python3 -B ../deploy/scripts/check_env_examples.py .`. Expected: no output, because deploy's rows are merged first (order step 1). Run before they merge, `T5` is expected. Any other finding (`X2`, `X3`, `T3`, …) is a defect to fix here.
 - [ ] **Step 6: Commit.** `git add -A && git commit -m "chore: scaffold ghostwriter from translator: compose, nginx, CI, settings"`
 
 ### Task 2: Identity and audit
@@ -507,19 +510,20 @@ def test_a_failed_audit_write_refuses_the_request(tmp_path) -> None:  # a stream
     - `ChatDetail {chat, messages, pending_attachments}`.
   - In `store.py`, `class ChatNotFound(LookupError)`, `class AttachmentNotPending(ValueError)`, and `class ChatStore`:
     - `__init__(self, engine: Engine, *, file_days: int, notice_days: int, now: Callable[[], datetime] = utcnow)`
-    - `apply_periods(self, chat_days: int | None) -> RetentionPeriodState`. It records `next_period_state` for store `chats`, sets every chat's `expires_at = deadline_under(created_at, state, notice_days)`, and realigns `content_expires_at` and `preview_expires_at` of rows not yet emptied to `created_at + file_days`.
+    - `apply_periods(self, chat_days: int | None) -> RetentionPeriodState`. It records `next_period_state` for store `chats`, sets every chat's `expires_at = deadline_under(created_at, state, notice_days)`, and recomputes `content_expires_at` and `preview_expires_at` of rows not yet emptied by the expiry rule below, under the current `file_days`.
     - `create_chat(self, owner: str) -> ChatOut`, `list_chats(self, owner: str) -> list[ChatOut]` (by `updated_at` descending), `get_chat(self, owner: str, chat_id: str) -> ChatOut` (raises `ChatNotFound`), `chat_detail(self, owner: str, chat_id: str) -> ChatDetail`, and `rename_chat(self, owner: str, chat_id: str, title: str) -> ChatOut`.
     - `chat_counts(self, chat_id: str) -> dict[str, int]`, with keys `messages`, `steps`, `results` and `attachments`.
     - `delete_chat_rows(self, chat_id: str) -> None`.
     - `add_user_message(self, owner: str, chat_id: str, content: str, attachment_ids: Sequence[str]) -> MessageOut`. It binds pending attachments of this chat (raising `AttachmentNotPending` otherwise), names an untitled chat, and touches `updated_at`.
-    - `start_ghostwriter_message(self, chat_id: str) -> str` and `finish_ghostwriter_message(self, message_id: str, content: str) -> None`.
-    - `add_step(self, message_id: str, *, position: int, round: int, call_id: str, tool: str, arguments: str, result: str, status: str) -> StepOut`.
+    - `start_assistant_message(self, chat_id: str) -> str` and `finish_assistant_message(self, message_id: str, content: str) -> None`.
+    - `add_step(self, message_id: str, *, id: str, position: int, round: int, call_id: str, tool: str, arguments: str, result: str, status: str) -> StepOut`. The loop mints `id` (`str(uuid4())`) before the `running` frame goes out, and the stored step keeps it.
     - `add_result(self, message_id: str, *, kind: str, file_id: str, path: str, name: str, mime: str, size: int, preview: Mapping[str, Any] | None) -> ResultOut`.
     - `add_attachment(self, chat_id: str, *, file_id: str, path: str, name: str, size: int, mime: str) -> AttachmentOut`.
     - `pending_count(self, chat_id: str) -> int`.
     - `find_file(self, owner: str, chat_id: str, file_id: str) -> FileRef | None`, with `@dataclass(frozen=True) class FileRef: path: str; created_at: datetime`.
-    - `last_answer(self, owner: str, chat_id: str) -> str | None`, the id of the last message when it is Ghostwriter's.
+    - `last_answer(self, owner: str, chat_id: str) -> str | None`, the id of the last message when its role is `assistant`.
     - `drop_message(self, message_id: str) -> None`.
+    - **The expiry rule (spec §5.6: nothing outlives its file).** A step's `content_expires_at` is the earliest `created_at` among the chat's attachments and results that exist when the step runs, plus `file_days`; with no file in the chat, it is the step's own time plus `file_days`. A result's `preview_expires_at` is its own `created_at` plus `file_days`, capped by the same earliest-file rule.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -546,7 +550,8 @@ def test_a_shorter_period_gives_notice_only_to_what_it_makes_due_sooner(store) -
 def test_off_clears_every_deadline(store) -> None:  # apply_periods(None) -> expires_at None for every chat
 def test_tool_contents_expire_with_the_files(store) -> None:
     # add_step at T -> content_expires_at T+7d; add_result -> preview_expires_at T+7d
-    # a new ChatStore(file_days=3).apply_periods(90) -> T+3d for rows not yet emptied
+    # a file attached at T and a step added at T+6d -> content_expires_at T+7d, not T+13d (and a result at T+6d the same)
+    # a new ChatStore(file_days=3).apply_periods(90) -> T+3d for rows not yet emptied (by the same rule)
 def test_expired_content_reads_as_expired_before_any_sweep(store) -> None:
     # at T+7d: StepOut.arguments/result/detail None, expired True, tool and status kept; ResultOut.preview None, expired True;
     # AttachmentOut.expired True once created_at + file_days <= now
@@ -592,13 +597,13 @@ def test_deleting_a_chat_takes_every_row_with_it(store) -> None:  # delete_chat_
     - `@dataclass(frozen=True) class ToolFailure: token: str; text: str; answered: bool`
     - `@dataclass(frozen=True) class CallFor: owner: str; chat_id: str; headers: Mapping[str, str]`. `headers` comes from `forward_headers`.
     - `@dataclass(frozen=True) class UploadedFile: id: str; path: str; size: int`
-    - The exceptions `class WorkbenchUnavailable(Exception)` (attribute `token: str`), `class WorkbenchNotFound(WorkbenchUnavailable)` and `class UploadTooLarge(Exception)`.
+    - The exceptions `class WorkbenchUnavailable(Exception)` (attribute `token: str`), `class WorkbenchNotFound(WorkbenchUnavailable)`, `class UploadTooLarge(Exception)` (also workbench's `413`) and `class StorageFull(Exception)` (workbench's `507`).
   - `class WorkbenchClient`:
     - `__init__(self, settings: Settings, *, transport: httpx.AsyncBaseTransport | None = None, clock: Callable[[], float] = time.monotonic) -> None`
     - `discover(self, *, call: CallFor) -> Discovery | None` (sync). It succeeds when `2026-07-28` is served and at least one tool has an object `inputSchema`. Tools whose schema is not an object are dropped. The cache is shared by every chat, and the requests carry the asking turn's headers, since workbench refuses its confined caller without a session on every route.
     - `forget(self) -> None`
-    - `call_tool(self, name: str, arguments: Mapping[str, Any], *, call: CallFor, timeout_s: float) -> ToolResult | ToolFailure`. It is sync, through `_detached`, and never raises. A transport error, a timeout, or the token `invalid_arguments` calls `forget()`.
-    - `async upload(self, *, call: CallFor, filename: str, mime: str, chunks: AsyncIterator[bytes]) -> UploadedFile`. It raises `UploadTooLarge` past `MAX_ATTACHMENT_BYTES`, and `WorkbenchUnavailable` on any other failure, including an answer without a valid `id`.
+    - `call_tool(self, name: str, arguments: Mapping[str, Any], *, call: CallFor, timeout_s: float) -> ToolResult | ToolFailure`. It is sync, through `_detached`, and never raises. A transport error, a timeout, an unreachable call, the token `invalid_arguments`, or the JSON-RPC codes `-32602` (unknown tool) and `-32022` calls `forget()`: docint's set (`_DROPS_DISCOVERY`).
+    - `async upload(self, *, call: CallFor, filename: str, mime: str, chunks: AsyncIterator[bytes]) -> UploadedFile`. It raises `UploadTooLarge` past `MAX_ATTACHMENT_BYTES` or on workbench's `413`, `StorageFull` on its `507`, and `WorkbenchUnavailable` on any other failure, including an answer without a valid `id`.
     - `view(self, *, call: CallFor, path: str) -> AbstractAsyncContextManager[httpx.Response]`. It raises `WorkbenchNotFound` on 404 and `WorkbenchUnavailable` otherwise.
     - `async delete_chat(self, *, call: CallFor) -> int`. It raises `WorkbenchUnavailable`.
   - Headers:
@@ -646,12 +651,17 @@ def test_one_deadline_bounds_the_call() -> None:                    # handler sl
     ("application/json", b"x" * (4 * 1024 * 1024 + 1)), ("application/json", b"not json")])
 def test_an_answer_that_is_not_one_small_json_rpc_message_fails(content_type: str, body: bytes) -> None:
 def test_an_unreachable_call_drops_the_discovery() -> None:
+@pytest.mark.parametrize("code", [-32602, -32022])
+def test_an_unknown_tool_or_a_refused_revision_drops_the_discovery(code: int) -> None:  # the call answers that JSON-RPC code -> the next discover() asks again
 async def test_an_upload_streams_into_the_chats_folder() -> None:
     got = await client.upload(call=CALL, filename="sales.xlsx", mime=XLSX, chunks=_chunks(b"PK\x03\x04", b"rest"))
     assert got == UploadedFile("1" * 32, f"{FOLDER}/sales.xlsx", 8)
     req = door.last("/files/upload")
     assert req.url.params["directory"] == FOLDER and b'name="file"; filename="sales.xlsx"' in req.content
+async def test_an_upload_name_with_umlauts_and_spaces_round_trips() -> None:  # "Übersicht März #1.xlsx" -> the door parses the same filename back
 async def test_an_upload_past_50_mib_is_cut_off() -> None:          # chunks of MAX_ATTACHMENT_BYTES + 1 -> UploadTooLarge
+@pytest.mark.parametrize(("status", "error"), [(413, UploadTooLarge), (507, StorageFull)])
+async def test_workbenchs_413_and_507_are_told_apart(status, error) -> None:  # the door answers the status -> that exception
 async def test_an_upload_answer_without_an_id_is_refused() -> None: # {"path", "size"} -> WorkbenchUnavailable
 async def test_a_view_streams_the_file_and_maps_404() -> None:       # 200 body + headers; 404 -> WorkbenchNotFound
 async def test_deleting_a_chat_returns_workbenchs_count() -> None:   # DELETE /files/chat -> 3; 503 -> WorkbenchUnavailable
@@ -661,10 +671,10 @@ def test_the_log_holds_no_names_or_content(loguru_caplog) -> None:   # "sales.xl
 
 - [ ] **Step 2: Run them to verify they fail.** Run `uv run pytest tests/test_workbench.py -v`. Expected: FAIL.
 - [ ] **Step 3: Implement the client.**
-  - **The upload body.** It is built as an async generator: the part headers (`Content-Disposition: form-data; name="file"; filename="<name>"` and `Content-Type: <mime>`), the chunks counted against the cap, and the closing boundary. It is sent with `content=` and a fresh `secrets.token_hex(16)` boundary. The caller guarantees a name without `"`, CR or LF (Task 9).
+  - **The upload body.** It is built as an async generator: the part headers (`Content-Disposition: form-data; name="file"; filename="<name>"` and `Content-Type: <mime>`), the chunks counted against the cap, and the closing boundary. It is sent with `content=` and a fresh `secrets.token_hex(16)` boundary. The filename is written the way httpx encodes a multipart filename (UTF-8, with `"` and control characters percent-escaped), never hand-quoted. The caller guarantees a name that passed `name_problem` (Task 9).
   - **The view.** It is `client.stream("GET", "/files/view", params={"path": path})`. The REST routes use `httpx.AsyncClient(trust_env=False)` with the phase timeouts and `WORKBENCH_TIMEOUT` for reads.
 - [ ] **Step 4: Run them to verify they pass**, then `uv run pre-commit run --all-files && uv run pytest`: green.
-- [ ] **Step 5: Commit.** `git commit -m "feat(workbench): MCP tools and REST files for Ghostwriter caller, with keyed pseudonyms"`
+- [ ] **Step 5: Commit.** `git commit -m "feat(workbench): MCP tools and REST files for the ghostwriter caller, with keyed pseudonyms"`
 
 ### Task 5: The chats API
 
@@ -836,7 +846,7 @@ def test_every_round_carries_the_cache_scope_and_request_id() -> None:
   - `fit(system: str, tools: list[dict[str, Any]], past: Sequence[PastTurn], current: list[dict[str, Any]], *, budget: int = PROMPT_TOKENS) -> list[dict[str, Any]]`:
     1. The system message and `current` are kept.
     2. While over budget, the oldest `tool` message of `current` gets the content `CLEARED`.
-    3. Past turns are added newest first, whole, while they fit. Each is replayed as its user message, then per round a Ghostwriter message with `tool_calls` and one `tool` message per call (the arguments cut to `HISTORY_ARGUMENT_CHARS`, the result to `HISTORY_RESULT_CHARS`), then the answer.
+    3. Past turns are added newest first, whole, while they fit. Each is replayed as its user message, then per round an assistant message with `tool_calls` and one `tool` message per call (the arguments cut to `HISTORY_ARGUMENT_CHARS`, the result to `HISTORY_RESULT_CHARS`), then the answer.
     4. The result is in chronological order.
 - Produces, in `agent/prompt.py`: `system_prompt(*, today: date, folder: str | None, file_days: int, expired: bool) -> str`. The exact text, joined by single spaces:
   - Always: "You are Ghostwriter in this organisation's workspace. Today is {today:%Y-%m-%d}. Answer in the language of the user's last message, in Markdown; write tables as Markdown tables."
@@ -845,7 +855,7 @@ def test_every_round_carries_the_cache_scope_and_request_id() -> None:
   - With `expired`: "Some files and tool results of earlier messages in this chat have been deleted, as {file_days} days had passed. Say so when the user asks about them, and ask them to attach the file again."
 - Produces, in `store.py`: `past_turns(self, chat_id: str, *, before_position: int) -> tuple[list[PastTurn], bool]`, which also returns whether anything has expired.
 - Produces, in `agent/loop.py`:
-  - `@dataclass(frozen=True) class Turn: chat_id: str; owner: str; user_message_id: str; ghostwriter_message_id: str; call: CallFor; request_id: str; cancel: threading.Event`
+  - `@dataclass(frozen=True) class Turn: chat_id: str; owner: str; user_message_id: str; assistant_message_id: str; call: CallFor; request_id: str; cancel: threading.Event`
   - The events:
     - `TokenEvent(text: str)`
     - `StepEvent(step: StepOut)`
@@ -868,20 +878,20 @@ The loop, in order:
 2. Each round builds its messages with `fit` and streams them. Every `TextDelta` becomes a `TokenEvent`. Between two rounds that both have text, `TokenEvent("\n\n")` goes out. The stored answer is the concatenation of every `TokenEvent`.
 3. After each round, `audit.model_called`.
 4. The turn ends on no calls, on `stopped`, or once `cancel` is set.
-5. A round past `MAX_TOOL_ROUNDS` with tools, or past `MESSAGE_WALL_S`, goes out without tools.
+5. A round goes out without tools when it is past `MAX_TOOL_ROUNDS`, when less than `TOOL_CUTOFF_S` of `MESSAGE_WALL_S` remain (at 295 s no tools are offered, at 285 s they are), or once tools were withdrawn (rule 6).
 6. The round's calls run in order. The first `MAX_CALLS_PER_ROUND` are prepared, and the rest get the `call_limit` refusal. A prepared call is refused when:
    - its name is not offered;
    - its arguments are not an object;
-   - fewer than `MIN_CALL_S` seconds of the wall are left.
+   - less time is left than the call's timeout (`settings.workbench_timeout_s`). The call is refused `no_time`, and tools are withdrawn for the rest of the message.
 
    A call that passes goes through these steps:
-   1. `StepEvent` with `running`;
+   1. mint the step's id, then `StepEvent` with `running` under it;
    2. `audit.disclosed(attempt=1)`;
-   3. `call_tool(timeout_s=min(settings.workbench_timeout_s, wall_left))`;
-   4. a busy failure (token in `BUSY_TOKENS`) waits `BUSY_RETRY_S` and repeats steps 2 and 3 once, with `attempt=2`. That happens only while `MIN_CALL_S` of the wall is left after the pause, and the pause also ends early when `cancel` is set;
-   5. `add_step`, then one `add_result` per new output (deduplicated by id, up to `MAX_RESULTS_PER_MESSAGE`);
-   6. `StepEvent` with `ok` or `error`, and the `ResultEvent`s.
-7. Ghostwriter message with the round's `tool_calls`, and its `tool` messages, are appended to `current`.
+   3. `call_tool(timeout_s=settings.workbench_timeout_s)`;
+   4. a busy failure (token in `BUSY_TOKENS`) waits `BUSY_RETRY_S` and repeats steps 2 and 3 once, with `attempt=2`. That happens only while at least `settings.workbench_timeout_s` of the wall is left after the pause, and the pause also ends early when `cancel` is set;
+   5. `add_step` with that id, then one `add_result` per new output (deduplicated by id, up to `MAX_RESULTS_PER_MESSAGE`);
+   6. `StepEvent` with `ok` or `error` under the same id, and the `ResultEvent`s.
+7. An assistant message with the round's `tool_calls`, and its `tool` messages, are appended to `current`.
 8. A model error ends the turn: `ErrorEvent("model", "The model did not answer.")`, and `model_called(outcome="error")`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -916,6 +926,7 @@ def test_a_turn_reads_calls_and_answers(loop_env) -> None:
     # round 1: read_document {"path": f"{FOLDER}/sales.xlsx"}; round 2: text "Summe: 42"
     assert [type(e).__name__ for e in events] == ["StepEvent", "StepEvent", "TokenEvent"]
     assert (events[1].step.status, events[1].step.detail) == ("ok", "sales.xlsx")
+    assert events[0].step.id == events[1].step.id  # the running and the final frame carry one id
     assert store.chat_detail("user-a", CHAT).messages[-1].content == "Summe: 42"
 def test_outputs_become_result_cards(loop_env) -> None:
     # outputs png 2 KB, xlsx with preview, docx, png of 11 MiB, the png again (same id), csv with preview None
@@ -931,11 +942,17 @@ def test_a_busy_workbench_is_tried_once_more(loop_env) -> None:
     #   audit.log has "disclose:read_document:1:1" then "disclose:read_document:1:2"; the clock advanced by BUSY_RETRY_S
     # busy twice ("wait_timeout", "executor_busy") -> step "error"; len(workbench.calls) == 2;
     #   the tool message == '{"error":"executor_busy","detail":"workbench is busy; tell the user to try again in a minute."}'
-    # busy with 11 s of the wall left -> no retry; len(workbench.calls) == 1
+    # busy with 151 s of the wall left (149 after the pause, under the 150 s timeout) -> no retry; len(workbench.calls) == 1
 def test_unknown_tools_and_bad_arguments_never_reach_workbench(loop_env) -> None:  # "delete_everything", read_document("[1]") -> workbench.calls == []
 def test_at_most_four_calls_run_per_round(loop_env) -> None:                       # six calls -> four sent, two call_limit
 def test_after_eight_rounds_the_model_must_answer(loop_env) -> None:               # the 9th request has no "tools"; len(workbench.calls) == 8
 def test_tools_stop_at_the_wall_time(loop_env) -> None:  # clock at 295 s after round 1: the call is refused no_time, unsent; the next round has no tools
+@pytest.mark.parametrize(("elapsed", "offered"), [(285, True), (295, False)])
+def test_tools_are_offered_until_ten_seconds_before_the_wall(loop_env, elapsed, offered) -> None:  # round 1's call advances the clock to `elapsed`; round 2 has "tools" or not
+@pytest.mark.parametrize(("elapsed", "sent"), [(150, True), (151, False)])
+def test_a_call_starts_only_with_its_timeout_left(loop_env, elapsed, sent) -> None:
+    # the clock reads `elapsed` s when round 2's call is prepared (150 s left or 149): sent, or refused no_time and unsent
+    # with round 3 offered no tools
 def test_each_call_is_disclosed_before_it_is_sent(loop_env) -> None:
     assert audit.log == ["model:1:ok", "disclose:read_document:1:1", "model:2:ok"] and workbench.sent_after == ["disclose:read_document:1:1"]
 def test_a_failed_disclosure_sends_nothing(loop_env) -> None:  # disclosed raises AuditWriteError -> propagates; workbench.calls == []; text so far stored
@@ -964,7 +981,7 @@ def test_the_stored_answer_is_what_was_streamed(loop_env) -> None:  # "Ich lese.
 - Produces:
   - `sse_frame(event: str, data: Mapping[str, Any]) -> str` returns `f"event: {event}\ndata: {compact json}\n\n"`.
   - `aiter_sync_gen(factory: Callable[[], Iterator[Any]], request: Request | None = None) -> AsyncIterator[Any]`
-  - `MessageIn {content: str = "", attachment_ids: list[str] = []}`. After stripping, `content` is at most 20 000 characters. It may be empty only beside at least one attachment, and there are at most 10 unique ids; anything else is 422.
+  - `MessageIn {content: str = "", attachment_ids: list[str] = []}`. After stripping, `content` is at most 20 000 characters. It may be empty only beside at least one attachment, and there are at most 10 distinct ids (duplicates count once and are bound once); anything else is 422.
   - The frames. These are the only ones, and their fields are fixed:
 
     | Frame | Data |
@@ -980,7 +997,7 @@ def test_the_stored_answer_is_what_was_streamed(loop_env) -> None:  # "Ich lese.
     2. `turns.begin`, else 409 `{"detail": "An answer is still being written in this chat."}`.
     3. Every attachment is pending in this chat, else 400 `{"detail": "Unknown attachment."}`.
     4. The primary is recorded: target `message` [user message id, minted first], container chat id, criteria `{"attachments": n, "chars": len(content)}`.
-    5. `add_user_message`, then `start_ghostwriter_message`.
+    5. `add_user_message`, then `start_assistant_message`.
     6. The stream.
   - `POST /api/chats/{chat_id}/regenerate` runs `audited("modify", "chat.regenerate", also=("ai_call", "disclose"))`. The target is `message` [the replaced id]. With no answer to replace, it is 409 `{"detail": "There is no answer to regenerate."}`. It runs `drop_message`, then the same stream; `user_message_id` is `None`.
   - `POST /api/chats/{chat_id}/stop` answers 204. It is idempotent, gives 404 for another owner's chat, and records no event.
@@ -996,6 +1013,7 @@ def test_the_stored_answer_is_what_was_streamed(loop_env) -> None:  # "Ich lese.
 def test_a_message_streams_steps_results_tokens_and_a_final_frame(client, fake_openai, door) -> None:
     frames = _frames(client.post(f"/api/chats/{cid}/messages", json={"content": "Summe der Spalte B"}, headers=as_user()))
     assert [f.event for f in frames] == ["step", "step", "result", "token", "final"]
+    assert frames[0].data["id"] == frames[1].data["id"]   # one id for the running and the final frame
     assert frames[-1].data["stopped"] is False and frames[-1].data["chat"]["title"] == "Summe der Spalte B"
 def test_frames_have_the_documented_fields(...) -> None:
     assert set(step) == {"id", "tool", "status", "detail", "arguments", "result", "expired"}
@@ -1012,8 +1030,9 @@ def test_regenerate_replaces_the_last_answer(client, audit_stream) -> None:
     # the event ("modify", "chat.regenerate") has target ids [old_id]
 def test_regenerate_needs_an_answer(client) -> None:  # 409 {"detail": "There is no answer to regenerate."}
 def test_a_message_names_only_its_chats_pending_attachments(client) -> None:  # another chat's attachment id -> 400 {"detail": "Unknown attachment."}
-@pytest.mark.parametrize("body", [{"content": ""}, {"content": "x" * 20_001}, {"content": "a", "attachment_ids": ["x"] * 11}])
-def test_a_message_must_say_something_and_stay_small(client, body) -> None:  # 422
+@pytest.mark.parametrize("body", [{"content": ""}, {"content": "x" * 20_001}, {"content": "a", "attachment_ids": [f"x{n}" for n in range(11)]}])
+def test_a_message_must_say_something_and_stay_small(client, body) -> None:  # 422 (the last: 11 distinct ids)
+def test_duplicate_attachment_ids_count_once(client) -> None:  # {"content": "a", "attachment_ids": [pending_id] * 11} -> 200, bound once
 def test_the_turn_is_recorded_with_its_children(client, audit_stream) -> None:
     ops = [(e["action"], e["operation"]) for e in events(audit_stream)[-4:]]
     assert ops == [("collect", "chat.message"), ("ai_call", "chat.answer"), ("disclose", "chat.tool"), ("ai_call", "chat.answer")]
@@ -1037,7 +1056,7 @@ def test_an_audit_failure_mid_turn_ends_with_an_error_frame(client, door) -> Non
 - Test: `tests/test_upload.py` and `tests/test_api_files.py`
 
 **Interfaces:**
-- Consumes: Task 4 (`upload`, `view`, `UploadTooLarge`, `WorkbenchUnavailable`, `WorkbenchNotFound`, `MAX_ATTACHMENT_BYTES`), Task 3 (`add_attachment`, `pending_count`, `find_file`), Task 2.
+- Consumes: Task 4 (`upload`, `view`, `UploadTooLarge`, `StorageFull`, `WorkbenchUnavailable`, `WorkbenchNotFound`, `MAX_ATTACHMENT_BYTES`), Task 3 (`add_attachment`, `pending_count`, `find_file`), Task 2.
 - Produces:
   - `ATTACHMENT_TYPES: Final[dict[str, str]]`:
 
@@ -1055,7 +1074,7 @@ def test_an_audit_failure_mid_turn_ends_with_an_error_frame(client, door) -> Non
     | `.eml` | `message/rfc822` |
     | `.html`, `.htm` | `text/html` |
 
-  - `MULTIPART_SLACK = 1024 * 1024`, `MAX_PENDING = 10`, `NAME_CHARS = 200`.
+  - `MULTIPART_SLACK = 1024 * 1024`, `MAX_PENDING = 10`, `NAME_CHARS = 200`, `NAME_BYTES = 255`.
   - `safe_filename(raw: str) -> str | None`:
     1. Take the text after the last `/` or `\`, and NFC it.
     2. Drop control characters, and replace `"*:<>?|` with `_`.
@@ -1063,6 +1082,7 @@ def test_an_audit_failure_mid_turn_ends_with_an_error_frame(client, door) -> Non
     4. Cut the stem so the whole stays within 200 characters, keeping the extension.
 
     It returns `None` when the stem is empty.
+  - `name_problem(name: str) -> str | None`: the message when the name is not allowed (it is not one segment, has more than `NAME_CHARS` characters or `NAME_BYTES` UTF-8 bytes, or ends in `.part`), else `None`. workbench refuses the same names, so none is sent to it.
   - `class BadUpload(Exception)` (400) and `class TooLarge(Exception)` (413).
   - `@dataclass(frozen=True) class FilePart: filename: str; content_type: str; chunks: AsyncIterator[bytes]`
   - `async read_file_part(request: Request, *, field: str = "file", max_bytes: int) -> FilePart`. It feeds `request.stream()` to `python_multipart.MultipartParser`, and returns once the headers of the first part named `field` are read. Its `chunks` go on with the same stream. Nothing is written to disk or kept whole.
@@ -1073,13 +1093,14 @@ def test_an_audit_failure_mid_turn_ends_with_an_error_frame(client, door) -> Non
     3. `pending_count < MAX_PENDING`, else 409 `{"detail": "Send the attached files before adding more."}`.
     4. A `Content-Length` over `MAX_ATTACHMENT_BYTES + MULTIPART_SLACK` is 413 `{"detail": "The file is larger than 50 MB."}`.
     5. `read_file_part`.
-    6. `safe_filename` and an extension in `ATTACHMENT_TYPES`, else 415 `{"detail": "This file type is not supported."}`. Steps 1 to 6 record nothing.
-    7. The primary is recorded: target `attachment` [id minted first], container chat id, criteria `{"mime": mime}`.
-    8. The child `disclose` `chat.attachment`, with `recipient="workbench:upload"`.
-    9. `workbench.upload`.
-    10. `add_attachment`.
+    6. `safe_filename` and an extension in `ATTACHMENT_TYPES`, else 415 `{"detail": "This file type is not supported."}`.
+    7. `name_problem`, else 422 `{"detail": <its message>}`. Steps 1 to 7 record nothing.
+    8. The primary is recorded: target `attachment` [id minted first], container chat id, criteria `{"mime": mime}`.
+    9. The child `disclose` `chat.attachment`, with `recipient="workbench:upload"`.
+    10. `workbench.upload`.
+    11. `add_attachment`.
 
-    A failed upload writes the child `disclose` `chat.attachment` with `outcome="error"` and `{"reason": "too_large" | token}`, and answers 413 or 502 `{"detail": "The file could not be handed to workbench."}`.
+    A failed upload writes the child `disclose` `chat.attachment` with `outcome="error"` and `{"reason": "too_large" | "storage_full" | token}`, and answers 502 `{"detail": "The file could not be handed to workbench."}`, except for two refusals of workbench's, which are told apart and carry a `code`: its `413` (too large) is 413 `{"detail": "The file is larger than 50 MB.", "code": "too_large"}`, and its `507` (the user's quota is full) is 507 `{"detail": "Your files fill the space workbench allows; delete a chat or wait for files to expire.", "code": "storage_full"}`. Once workbench refused, no attachment row is added and nothing is recorded as a hand-over that succeeded.
   - `GET /api/chats/{chat_id}/files/{file_id}` runs `audited("disclose", "file.download")`. In order:
     1. The chat and `find_file` must match, else 404 `{"detail": "File not found."}`.
     2. `created_at + file_days <= now` is 410 `{"detail": "The file has expired."}`.
@@ -1101,6 +1122,8 @@ async def test_the_file_part_streams_without_being_kept_whole() -> None:
     # a 3 MiB multipart body fed in 64 KiB pieces: chunks arrive before the body ends; filename "sales.xlsx"; the bytes equal what was sent
 async def test_a_body_past_the_cap_stops_reading() -> None:  # max_bytes 1024, part of 2048 -> TooLarge
 async def test_a_body_without_the_file_field_is_refused() -> None:  # only a field "x" -> BadUpload
+@pytest.mark.parametrize("name", ["ä" * 150 + ".pdf", "report.pdf.part", "a/b.pdf"])
+def test_a_name_over_255_bytes_or_ending_in_part_is_a_problem(name: str) -> None:  # name_problem(name) is a message; "Übersicht März #1.xlsx" -> None
 ```
 
 ```python
@@ -1114,6 +1137,12 @@ def test_an_attachment_streams_to_workbench_and_is_kept_by_reference(client, doo
 @pytest.mark.parametrize("name", ["tool.exe", "image.png", "noext"])
 def test_other_types_are_refused_with_415(client, door, audit_stream, name: str) -> None:  # door got no upload; no new event
 def test_a_file_over_50_mib_is_refused_with_413(client, door) -> None:  # Content-Length cap -> 413, no event; door's UploadTooLarge path -> 413, child error too_large
+def test_a_name_that_workbench_would_refuse_is_422(client, door, audit_stream) -> None:  # "ä" * 150 + ".pdf" (304 bytes) -> 422 with a message; door got no upload; no new event
+def test_a_name_with_umlauts_and_spaces_round_trips(client, door) -> None:  # "Übersicht März #1.xlsx" -> 201, name as sent; the door's filename is the same
+@pytest.mark.parametrize(("status", "code"), [(413, "too_large"), (507, "storage_full")])
+def test_workbenchs_refusals_reach_the_user_with_their_code(client, door, audit_stream, status, code) -> None:
+    # door answers the status -> that status with {"detail", "code"}; no attachment row (pending_count 0);
+    # the child disclose has outcome "error" and reason == code
 def test_uploads_need_workbench(tmp_path) -> None:                     # no key -> 503
 def test_more_than_ten_pending_attachments_wait(client) -> None:       # the 11th -> 409
 def test_an_upload_is_recorded_as_collect_then_disclose(client, audit_stream) -> None:
@@ -1219,7 +1248,7 @@ def test_only_actions_the_routes_record_are_reported_as_required(tmp_path) -> No
     1. Record `delete` `retention.chat`, with actor system, target `chat` (ids and count), and criteria `{"period_days": chat_days, "cutoff": iso}`.
     2. Delete each chat in workbench. Its `CallFor` has the owner, and the headers `forward_headers(RequestContext(SYSTEM_ACTOR, None, uuid4().hex))`: the reason `ghostwriter chat` and a fresh request id.
     3. Write the child `delete` `retention.chat.workbench`, with criteria `{"files_deleted": n, "failed": k}` and `outcome="error"` when `k > 0`.
-    4. Delete the rows, even where workbench failed: its files are gone by its own shorter period.
+    4. Delete the rows, even where workbench failed: the chat is due, and workbench's own retention (`WORKBENCH_RETENTION_DAYS`) removes the chat's files on its own. The rows go, and the child of step 3 records `outcome="error"` for the workbench part.
 
     Then the contents:
     1. Record `delete` `retention.tool_content` with target `tool_step` ids, then the same with target `result` ids, both with criteria `{"file_days": n}`.
@@ -1371,7 +1400,7 @@ it('keeps de in step with en', ...)                // Object.keys(de).sort() equ
     - expired: a muted card with a `Badge` "Expired" and no button.
 
     Every fetch goes through `apiFetch`.
-  - `MessageView` shows the user's text and attachment chips, or Ghostwriter's `Trail`, `MarkdownProse` and `ResultCard`s, and `RefreshButton` (regenerate) on the last answer. `Conversation` lists them with `useStickToBottom`.
+  - `MessageView` shows the user's text and attachment chips, or an assistant message's `Trail`, `MarkdownProse` and `ResultCard`s, and `RefreshButton` (regenerate) on the last answer. `Conversation` lists them with `useStickToBottom`.
   - i18n keys, in `en` / `de`:
 
     | Key | en | de |
@@ -1430,8 +1459,8 @@ it('labels every workbench tool, and an unknown one by name', ...)
 **Interfaces:**
 - Consumes: `uploadAttachment`, `transcribe` (Task 12); `useChatStream` (Task 13); `AppConfig`.
 - Produces:
-  - `PendingFile { key: string; name: string; size: number; status: 'uploading' | 'done' | 'error'; attachment?: AttachmentOut; error?: 'type' | 'size' | 'upload' }`
-  - `useAttachments(chatId: string | null, config: AppConfig)` returns `{ pending: PendingFile[]; add(files: File[]): void; clear(): void }`. It checks the extension against `attachment_types` (case-insensitive) and the size against `max_attachment_bytes` before uploading, and uploads at once.
+  - `PendingFile { key: string; name: string; size: number; status: 'uploading' | 'done' | 'error'; attachment?: AttachmentOut; error?: 'type' | 'size' | 'upload' | 'storage_full' }`
+  - `useAttachments(chatId: string | null, config: AppConfig)` returns `{ pending: PendingFile[]; add(files: File[]): void; clear(): void }`. It checks the extension against `attachment_types` (case-insensitive) and the size against `max_attachment_bytes` before uploading, and uploads at once. An answer with `code` `too_large` shows the `size` error, and `storage_full` its own.
   - `RECORDER_TYPES = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4']`. The first that `MediaRecorder.isTypeSupported` accepts wins.
   - `useRecorder({ maxSeconds, onRecorded }: { maxSeconds: number; onRecorded: (blob: Blob, mime: string) => void })` returns `{ state: 'idle' | 'recording' | 'unsupported' | 'denied'; elapsedS: number; start(): Promise<void>; stop(): void }`. It stops itself at `maxSeconds` and stops every track afterwards. The blob stays in memory.
   - `Composer({ chatId, config }: { chatId: string; config: AppConfig })`:
@@ -1453,6 +1482,7 @@ it('labels every workbench tool, and an unknown one by name', ...)
     | `composer.error_type` | "{name}: this file type is not supported." | "{name}: Dieser Dateityp wird nicht unterstützt." |
     | `composer.error_size` | "{name} is larger than 50 MB." | "{name} ist größer als 50 MB." |
     | `composer.error_upload` | "{name} could not be attached." | "{name} konnte nicht angehängt werden." |
+    | `composer.error_storage_full` | "Your files fill the space workbench allows; delete a chat or wait for files to expire." | "Ihre Dateien füllen den von workbench erlaubten Platz; löschen Sie einen Chat oder warten Sie, bis Dateien ablaufen." |
     | `mic.start` | "Dictate" | "Diktieren" |
     | `mic.stop` | "Stop dictating" | "Diktat beenden" |
     | `mic.denied` | "Microphone access was denied." | "Der Zugriff auf das Mikrofon wurde verweigert." |
@@ -1529,11 +1559,11 @@ it('releases the microphone after recording and says when access was denied', ..
 
   - **`docs/retention.md`:**
     - chats: 90 days after start, a 30-day notice for a new or shorter period (the rule, by example);
-    - tool contents and previews: `WORKBENCH_RETENTION_DAYS`, read as expired at once and emptied by the daily sweep;
+    - tool contents and previews: `WORKBENCH_RETENTION_DAYS`, counted from the chat's earliest file so that nothing outlives its file, read as expired at once and emptied by the daily sweep;
     - the delete order;
     - `make retention-dry-run` (and `CHAT_DAYS=n`);
     - the banner.
-  - **`docs/data-flow.md`**, the record of processing: what is stored (the tables and their columns, by period), what is never stored (file bytes, recordings, transcripts, purpose text outside the audit log), where data goes (router: chat and ASR; workbench: tool calls, uploads, downloads, chat delete) under which pseudonyms, and who can read it (the owner only; no admin path).
+  - **`docs/data-flow.md`**, the record of processing: what is stored (the tables and their columns, by period), what is never stored (file bytes, recordings, transcripts, purpose text outside the audit log), where data goes (router: chat and ASR; workbench: tool calls, uploads, downloads, chat delete) under which pseudonyms, and who can read it (the owner only; no admin path). One line on the residual: a call cut short by the message's wall time may still leave outputs in the chat folder without a card; `list_files` shows them, and they go with the chat or after 7 days.
 - [ ] **Step 2: Verify the release.** Quote each output in the PR:
 
 ```bash
@@ -1545,7 +1575,7 @@ make bundle-dev
 
 Expected:
 - `make verify` and `make test` are green.
-- The env check is clean once deploy's env-sync rows and workbench v0.3.0's example have merged. Before that, its only findings are `T5`.
+- The env check prints nothing: deploy's rows are merged before this PR (order step 1). Run before they merge, `T5` is expected.
 - `make bundle-dev` writes `ghostwriter-built-<version>.tar.gz` with `ghostwriter-backend` and `ghostwriter-frontend`, and no pulled tarball.
 - `pyproject.toml` still says `0.1.0`, so the release tag `v0.1.0` is minted on merge.
 - [ ] **Step 3: Commit.** `git commit -m "docs: configuration, audit, retention and the record of processing; release v0.1.0"`
@@ -1562,7 +1592,7 @@ python3 -B ../deploy/scripts/check_env_examples.py .
 make bundle-dev
 ```
 
-Expected: all green. The env check may still report `T5` until deploy's and workbench's rows merge, and nothing else. The controller then:
+Expected: all green, and the env check prints nothing. The controller then:
 - pushes `main` and `feat/ghostwriter-v0.1.0`;
 - opens the PR;
 - confirms that CI ran on the latest push.
@@ -1582,3 +1612,19 @@ The end-to-end checks (spec §9) are the owner's step once workbench v0.3.0, thi
 4. **No single-file delete for this caller.** KeyGate lists `/files/upload`, `/files/view`, `/files/list` and `/files/chat`. A file attached by mistake therefore stays in the chat until the chat is deleted or its 7 days end, and the composer says so. A remove button would need workbench's `DELETE /files/delete` on Ghostwriter's KeyGate list.
 5. **The upload's `id` and the output paths.** The plan relies on `id` (32 hex digits) in Ghostwriter's upload answer, which the workbench plan adds. It refuses an answer without one (502). It also drops any output whose `path` is not inside `/workspace/<X-Session-Id>/`. workbench's tests should produce both in that form.
 6. **Outside the contract: `@infra/ui` icons.** v0.22.0 has no paperclip and no microphone, and its icon policy forbids hand-drawn icons in apps. Task 14 needs one infra-ui minor release with `PaperclipIcon`/`AttachButton` and `MicIcon`/`MicButton`. Schedule it before Task 14; Tasks 1 to 13 do not wait for it.
+
+## Pre-flight rulings applied
+
+- **A1:** the chat role is `assistant` again: `start_assistant_message`, `finish_assistant_message`, `assistant_message_id`, "an assistant message with `tool_calls`", `last_answer` by role, and the answer's `Trail`; Task 4's commit says "the ghostwriter caller".
+- **A2:** the edge secret works as in docint and translator: set and at least 32 characters is checked, set and shorter stops startup, unset is the dev fallback with one warning.
+- **A3:** `add_step` takes the `id` the loop mints before the `running` frame; the two `step` frames share it, pinned in Tasks 7 and 8.
+- **A4:** rule 5 offers no tools below `TOOL_CUTOFF_S` (10 s) of the wall; a call starts only with its `WORKBENCH_TIMEOUT` left, else tools are withdrawn; `MIN_CALL_S` is gone and two tests cover the edges.
+- **A5:** a step's `content_expires_at` and a result's `preview_expires_at` follow the chat's earliest file (spec §5.6); Task 3 tests day 0 and day 6.
+- **A6:** at most 10 distinct ids, duplicates count once; the 11-duplicates body passes and 11 distinct ids is 422.
+- **A7:** Task 1 creates `loguru_caplog` in `tests/conftest.py`, copied from docint.
+- **A8:** Task 9 checks the name (`name_problem`: one segment, 200 characters, 255 UTF-8 bytes, not `.part`) and answers 422; Task 4 writes the multipart filename as httpx encodes it; both have a round-trip test.
+- **A9:** workbench's `413` and `507` become `too_large` and `storage_full` (route, client, SPA message); no attachment row and no successful hand-over; a test each in Tasks 4 and 9.
+- **A10:** Task 15's `docs/data-flow.md` names, in one line, the outputs a cut-short call may leave without a card.
+- **A11:** Task 4 drops the discovery on `-32602`, `-32022` and an unreachable call, as docint does.
+- **A12:** Task 11 step 4 gives the chat being due and workbench's own retention as the reason, and the child records `outcome: error`.
+- **A13:** the env check is expected clean from Task 1; `T5` only if run before deploy's rows merge.
