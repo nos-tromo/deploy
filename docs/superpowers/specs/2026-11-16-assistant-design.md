@@ -125,6 +125,8 @@ These are the federation's invariants:
 | edge-plane | The `/assistant/` route on `:443`, `ASSISTANT_EDGE_SECRET`, a portal tile |
 | deploy | `APP_DIRS`, env-sync groups, `copy-bundles.sh`, ADR 0007, tech-stack pages |
 | obs-plane | The emitter `assistant` / `backend` in the verifier, the scrape target `assistant-backend:8000` |
+| infra-ui v0.23.0 | `AttachButton` and `MicButton` with their icons, for the composer (the icon policy forbids drawing them in an app) |
+| vllm-service | A comment-only release: the assistant joins `OPENAI_API_KEY`'s `[shared: …]` tag (deploy's rule T5) |
 | `infra/CLAUDE.md` | The workspace map (a local file, no PR) |
 
 Retiring Open WebUI is **phase 2**, with its own spec, after the owner accepts the assistant. Phase 2 covers:
@@ -257,7 +259,7 @@ Retiring Open WebUI is **phase 2**, with its own spec, after the owner accepts t
   - ADR 0007, "The assistant replaces Open WebUI".
   - The tech-stack pages (en and de) and `bring-up.md`.
 - **obs-plane.** The pair in `DEFAULT_EMITTERS`, the scrape target and `coverage.md`. It merges before the assistant, or with it.
-- **vllm-service.** Nothing.
+- **vllm-service.** Only the shared tag of `OPENAI_API_KEY` names the assistant (rule T5); nothing else changes.
 
 ## 7. Delivery order
 
