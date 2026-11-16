@@ -40,6 +40,7 @@ stack.
 | [decisions/0004-retire-chorus.md](decisions/0004-retire-chorus.md) | chorus and Neo4j leave the federation: chorus was never used in production, docint covers its use, and Neo4j Community cannot separate users; data-plane runs Qdrant alone |
 | [decisions/0005-workbench-shared-tool-tier.md](decisions/0005-workbench-shared-tool-tier.md) | workbench is the shared tool tier: tool execution is shared, never embedded; the fourth network seam `workbench-net`, the data store `workbench-data` (7 days), the tier between obs and the apps, and what its executor needs from the host |
 | [decisions/0006-docint-calls-workbench-over-mcp.md](decisions/0006-docint-calls-workbench-over-mcp.md) | docint is workbench's second caller over an MCP door: a key, a tool list and limits per caller, inline data that leaves nothing behind, a new trust edge on `workbench-net`, and the `analysis` artifact |
+| [decisions/0007-ghostwriter-replaces-open-webui.md](decisions/0007-ghostwriter-replaces-open-webui.md) | Ghostwriter, a first-party chat app, replaces Open WebUI: workbench's third caller, its own edge secret, SQLite on `ghostwriter-data`, Open WebUI alongside until the owner accepts it |
 
 ## Reference
 

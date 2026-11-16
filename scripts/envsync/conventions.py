@@ -64,7 +64,10 @@ _TEMPLATE = (
 MESSAGES: Dict[str, str] = {
     "F1": "the line must parse, and compose or make must read its value as written",
     "F2": "a line starts with '#' or is KEY=... at column 0; no tab, no trailing blank",
-    "F3": "longer than 79 columns; only a value with no blank and no comment may",
+    "F3": (
+        "longer than 79 columns; only a value with no blank and no comment, "
+        "or a tag line, may"
+    ),
     "F4": "a key is written [A-Z][A-Z0-9_]*",
     "H1": "the file must start with the standard header",
     "H2": "the header holds no setting",
@@ -321,7 +324,10 @@ class _Check:
     def long_allowed(self, raw: str, line: Optional[Line]) -> bool:
         """A setting, commented setting or indented prose example may run
         past 79 columns only for a value without a blank and with no inline
-        comment; a long value's comment goes on the line above."""
+        comment; a long value's comment goes on the line above. A tag line is
+        machine-read and cannot wrap, so it may run long too."""
+        if _TAG_LINE.match(raw):
+            return True
         if line is not None and line.kind in _SETTINGS:
             rest = raw.split("=", 1)[1]
         else:
