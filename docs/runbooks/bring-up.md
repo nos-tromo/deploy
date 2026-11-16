@@ -38,19 +38,22 @@ passes once both have started. The api's `/healthz` needs no key:
 starts without workbench; only its workbench tools need it. `WORKBENCH_DIR`
 empty in `federation.env` skips the tier.
 
-**The caller key.** The api refuses to start without an
-`OPEN_WEBUI_WORKBENCH_KEY` of at least 32 characters (workbench
-`docs/configuration.md`); the gate then times out after `WAIT_TIMEOUT` with a
-refused connection. From workbench v0.2.0 the api starts with either
-`OPEN_WEBUI_WORKBENCH_KEY` or `DOCINT_WORKBENCH_KEY` (at least 32 characters
-each), refuses to start with neither, and `make env ENV_GENERATE=1` also writes
-`DOCINT_WORKBENCH_KEY` into workbench's and docint's `.env` (group
-`workbench-docint-key`). The same command generates `OPEN_WEBUI_WORKBENCH_KEY` into
-workbench's and open-webui-service's `.env` (env-sync group `workbench-key`).
-Until open-webui-service's example carries the key (its workbench release),
-only one member of that group documents it, so the group is skipped and
-nothing is generated. Then set the same value by hand in both `.env` files
-(`openssl rand -hex 32`), or set `WORKBENCH_DIR=` empty.
+**The caller keys.** The api needs at least one caller key and refuses to start
+with none or with two equal ones (workbench `docs/configuration.md`); the gate
+then times out after `WAIT_TIMEOUT` with a refused connection. Each key is at
+least 32 characters, and an unset one switches that caller's door off. The three
+keys are:
+
+- `OPEN_WEBUI_WORKBENCH_KEY` (env-sync group `workbench-key`);
+- `DOCINT_WORKBENCH_KEY`, docint's `WORKBENCH_API_KEY` (group
+  `workbench-docint-key`);
+- from workbench v0.3.0, `GHOSTWRITER_WORKBENCH_KEY`, Ghostwriter's
+  `WORKBENCH_API_KEY` (group `workbench-ghostwriter-key`).
+
+`make env ENV_GENERATE=1` writes a different value for each caller into both of
+its `.env` files. A group is skipped, with a `table` event, while one side's
+example lacks the key (an older checkout: `make pull`, or set the value by hand
+in both `.env` files, `openssl rand -hex 32`).
 
 **Host requirements.** The executor needs cgroup v2 and a cgroup namespace of
 its own, Docker's default on cgroup v2. It refuses to start on cgroup v1,
@@ -111,8 +114,8 @@ workbench is the exception. It has no notice period and no `off`: a changed
 `WORKBENCH_RETENTION_DAYS` applies to every file at the first sweep after a
 restart, so a shorter one deletes at once what it makes due (workbench
 `docs/retention.md`). Announce a change to the users first. Set it in
-workbench's `.env`: `make env` copies it to open-webui-service, whose banner
-names it ([env-sync.md](env-sync.md#shared-values)).
+workbench's `.env`: `make env` copies it to open-webui-service and Ghostwriter,
+whose banners name it ([env-sync.md](env-sync.md#shared-values)).
 
 ## Identity: edge secrets and second factors
 
