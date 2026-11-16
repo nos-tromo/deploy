@@ -1,67 +1,67 @@
-# assistant v0.1.0 Implementation Plan
+# Ghostwriter v0.1.0 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build `nos-tromo/assistant` v0.1.0, a lean chat app that replaces Open WebUI. Users drop a file into a chat, workbench processes it over MCP, and the results come back as cards in the chat: images inline, a preview for tables, and a download button per file. It records references only and deletes on the federation's periods.
+**Goal:** Build `nos-tromo/ghostwriter` v0.1.0, a lean chat app that replaces Open WebUI. Users drop a file into a chat, workbench processes it over MCP, and the results come back as cards in the chat: images inline, a preview for tables, and a download button per file. It records references only and deletes on the federation's periods.
 
 **Architecture:**
-- **Backend.** One FastAPI process holds the chats in SQLite on `assistant-data`, through SQLAlchemy 2.0.
+- **Backend.** One FastAPI process holds the chats in SQLite on `ghostwriter-data`, through SQLAlchemy 2.0.
   - A lean agent loop streams rounds from the router through the OpenAI SDK.
   - The tool schemas come from workbench's `tools/list`, and each call runs over MCP `tools/call`.
-  - Files never rest in the assistant: uploads stream through to workbench's REST door, and downloads stream back from it.
-- **Frontend.** A React SPA under `/assistant/` (`@infra/ui` `AppShell`) reads the chat stream as SSE.
+  - Files never rest in Ghostwriter: uploads stream through to workbench's REST door, and downloads stream back from it.
+- **Frontend.** A React SPA under `/ghostwriter/` (`@infra/ui` `AppShell`) reads the chat stream as SSE.
 
 **Tech Stack:**
 - Backend: Python 3.11, uv, FastAPI, SQLAlchemy 2.0, httpx and anyio (`MockTransport` in tests), the OpenAI SDK, python-multipart's streaming parser, loguru, prometheus-fastapi-instrumentator.
 - Frontend: React 19, Vite, Tailwind v4, `@infra/ui`, react-markdown with remark-gfm and rehype-highlight, react-query, vitest.
 - Serving: nginx-unprivileged.
 
-**Spec:** `docs/superpowers/specs/2026-11-16-assistant-design.md` in the deploy repository. §6.2 and §6.3 bind this plan; §2 (goals, anti-goals) and §5 (owner's decisions) bind every task.
+**Spec:** `docs/superpowers/specs/2026-11-16-ghostwriter-design.md` in the deploy repository. §6.2 and §6.3 bind this plan; §2 (goals, anti-goals) and §5 (owner's decisions) bind every task.
 
 **Where the work happens:**
-- A new repository at `../assistant`, beside the other members. Every path below is relative to its root, and every command runs there.
+- A new repository at `../ghostwriter`, beside the other members. Every path below is relative to its root, and every command runs there.
 - Read-only sources are `../translator` (the template), `../docint`, `../open-webui-service`, `../vllm-service` and `../.github` (the hub's `configs/`). Never edit them or change their git state.
 - workbench v0.3.0 is built in parallel. Tests mock its doors with `httpx.MockTransport` against the shared contract below, so nothing here waits for it.
 
 ## Global Constraints
 
-**The shared contract (verbatim, the assistant-relevant lines):**
+**The shared contract (verbatim, the ghostwriter-relevant lines):**
 
-- **workbench:** the caller name is `assistant`.
-- **Audit:** the emitter is `assistant` / `backend`, and every event's `service` is `assistant`.
-- **Compose:** the project is `name: assistant`, with the services `backend` and `frontend`.
+- **workbench:** the caller name is `ghostwriter`.
+- **Audit:** the emitter is `ghostwriter` / `backend`, and every event's `service` is `ghostwriter`.
+- **Compose:** the project is `name: ghostwriter`, with the services `backend` and `frontend`.
 - **Network aliases:**
-  - `assistant-backend` on `inference-net` and on `workbench-net`;
-  - `assistant-frontend` on `edge-net`.
+  - `ghostwriter-backend` on `inference-net` and on `workbench-net`;
+  - `ghostwriter-frontend` on `edge-net`.
   - The frontend is on edge-net only. The backend is never on edge-net or data-net.
 - **Ports:** the backend listens on 8000 (`/api/...`, `/metrics`) and the frontend's nginx on 8080.
-- **Storage:** the external volume `assistant-data`, mounted at `/var/lib/assistant`. The SQLite file is `/var/lib/assistant/assistant.sqlite3`.
-- **Edge:** the route is `/assistant/` on `:443`. The app's nginx strips the prefix, and the SPA's Vite `base` is `/assistant/`.
-- `ASSISTANT_WORKBENCH_KEY`. Empty means the caller is off. A set key must be at least 32 characters and differ from the other callers' keys.
-- `ASSISTANT_WORKBENCH_TOOLS`, default `list_files,read_document,search_files,run_python,inspect_template,fill_template,write_table,write_document`.
-- **Assistant side:**
+- **Storage:** the external volume `ghostwriter-data`, mounted at `/var/lib/ghostwriter`. The SQLite file is `/var/lib/ghostwriter/ghostwriter.sqlite3`.
+- **Edge:** the route is `/ghostwriter/` on `:443`. The app's nginx strips the prefix, and the SPA's Vite `base` is `/ghostwriter/`.
+- `GHOSTWRITER_WORKBENCH_KEY`. Empty means the caller is off. A set key must be at least 32 characters and differ from the other callers' keys.
+- `GHOSTWRITER_WORKBENCH_TOOLS`, default `list_files,read_document,search_files,run_python,inspect_template,fill_template,write_table,write_document`.
+- **Ghostwriter side:**
   - **workbench connection:**
-    - `WORKBENCH_API_KEY` (the same value as workbench's `ASSISTANT_WORKBENCH_KEY`, generated by env-sync);
+    - `WORKBENCH_API_KEY` (the same value as workbench's `GHOSTWRITER_WORKBENCH_KEY`, generated by env-sync);
     - `WORKBENCH_API_BASE` (default `http://workbench-api:8000`);
     - `WORKBENCH_TIMEOUT`;
     - `WORKBENCH_RETENTION_DAYS` (default 7, the same value as workbench's, shared by env-sync);
     - `WORKBENCH_NET`.
   - **Edge and router:**
-    - `ASSISTANT_EDGE_SECRET` (shared with edge-plane, generated, at least 32 characters);
+    - `GHOSTWRITER_EDGE_SECRET` (shared with edge-plane, generated, at least 32 characters);
     - `OPENAI_API_BASE` (default `http://vllm-router:4000/v1`);
     - `OPENAI_API_KEY` (shared with vllm-service, as translator does);
     - `TEXT_MODEL`;
     - `WHISPER_MODEL`.
-  - **Assistant settings:**
-    - `ASSISTANT_SPEECH_INPUT` (`on`/`off`, default `on`);
-    - `ASSISTANT_CHAT_RETENTION_DAYS` (default 90; `off` only for development);
+  - **Ghostwriter settings:**
+    - `GHOSTWRITER_SPEECH_INPUT` (`on`/`off`, default `on`);
+    - `GHOSTWRITER_CHAT_RETENTION_DAYS` (default 90; `off` only for development);
     - `RETENTION_NOTICE_DAYS` (default 30);
     - `AUDIT_REQUIRE_PURPOSE` (default empty, written colon-less in compose: `${AUDIT_REQUIRE_PURPOSE-}`);
     - `AUDIT_OUTPUT`.
 - `X-User-Id` = the HMAC-SHA256 pseudonym of the user, keyed with `WORKBENCH_API_KEY`, over `workbench-user/v1`, a NUL byte and the owner name, as 64 hex digits.
 - `X-Session-Id` = the same HMAC over `workbench-session/v1`, a NUL byte and the chat's uuid. This is the chat's folder in workbench.
 - These are the same constructions docint uses (`docint/utils/workbench_client.py`). No edge user name and no chat uuid ever reach workbench.
-- `X-Audit-Purpose` is forwarded. Without a stated purpose, the system reason is `assistant chat`.
+- `X-Audit-Purpose` is forwarded. Without a stated purpose, the system reason is `ghostwriter chat`.
 - `X-Request-ID` is forwarded.
 - **`POST /mcp`:** the workspace tools as MCP tools (revision 2026-07-28), on the caller's list.
   - The tool result's `structuredContent` is the tool's REST output model, plus `outputs`.
@@ -71,20 +71,20 @@
 - **`POST /files/upload?directory=/workspace/<X-Session-Id>`:**
   - multipart field `file`, at most 50 MB;
   - answers `{path, size, id}` (add `id` if missing).
-  - For the `assistant` caller, the directory's chat must equal `X-Session-Id`, or the answer is `404 {"detail":"not found"}`.
-- **`GET /files/view?path=/workspace/<X-Session-Id>/<name>`:** for the `assistant` caller, only paths inside the request's chat. Anything else gets the 404.
+  - For the `ghostwriter` caller, the directory's chat must equal `X-Session-Id`, or the answer is `404 {"detail":"not found"}`.
+- **`GET /files/view?path=/workspace/<X-Session-Id>/<name>`:** for the `ghostwriter` caller, only paths inside the request's chat. Anything else gets the 404.
 - **`DELETE /files/chat`:** a new route, not a tool. It deletes the chat named by `X-Session-Id`; `default` is refused with 400. It answers `200 {"deleted": <count>}`, and also when the chat holds nothing.
-- **KeyGate.** The `assistant` key reaches only `/mcp`, `/files/upload`, `/files/view`, `/files/list` and `/files/chat`. Everything else gets the 404.
+- **KeyGate.** The `ghostwriter` key reaches only `/mcp`, `/files/upload`, `/files/view`, `/files/list` and `/files/chat`. Everything else gets the 404.
 - workbench files: 7 days (unchanged).
-- Assistant chats: 90 days after start, with a 30-day notice.
-- Assistant tool contents and previews: emptied after `WORKBENCH_RETENTION_DAYS`.
-- **Versions:** workbench 0.2.0 → 0.3.0; assistant 0.1.0 (new repo `nos-tromo/assistant`).
+- Ghostwriter chats: 90 days after start, with a 30-day notice.
+- Ghostwriter tool contents and previews: emptied after `WORKBENCH_RETENTION_DAYS`.
+- **Versions:** workbench 0.2.0 → 0.3.0; Ghostwriter 0.1.0 (new repo `nos-tromo/ghostwriter`).
 
 **Invariants and anti-goals (spec §2, §3), one rule each:**
 
-- The assistant has no accounts or passwords. Identity is `X-Auth-User`, trusted only with `ASSISTANT_EDGE_SECRET` once that is set.
+- Ghostwriter has no accounts or passwords. Identity is `X-Auth-User`, trusted only with `GHOSTWRITER_EDGE_SECRET` once that is set.
 - No user sees another user's chat, and there is no admin path, `owner` parameter or group check.
-- The assistant stores no file bytes: no spool to disk, no copy in the database. Upload and download stream through.
+- Ghostwriter stores no file bytes: no spool to disk, no copy in the database. Upload and download stream through.
 - A file is reachable only through its own chat: every lookup is by `(owner, chat_id, file_id)`, and every workbench call carries that chat's `X-Session-Id`.
 - Code runs only in workbench.
 - Inference goes only through `OPENAI_API_BASE`, with `X-Cache-Scope` (translator's `cache_scope_for`) and `X-Request-ID`.
@@ -94,7 +94,7 @@
 
 **Calls made here (spec §11, and gaps the spec leaves):**
 
-- **Caps per message** (`assistant/agent/limits.py`):
+- **Caps per message** (`ghostwriter/agent/limits.py`):
   - The model and its rounds:
     - `CONTEXT_TOKENS = 40_000`;
     - `MAX_ANSWER_TOKENS = 4_000`, the `max_tokens` of each round;
@@ -116,23 +116,23 @@
     - `IMAGE_MIMES = {"image/png", "image/jpeg", "image/gif", "image/webp"}`.
 - **What the model reads, and what the cards show.** The model reads a tool result's `content[0].text`, which workbench writes without the previews. The cards are built from `structuredContent.outputs`.
 - **A busy workbench.** A call answered `queue_full`, `wait_timeout` or `executor_busy` is sent once more, after `BUSY_RETRY_S`. The retry is disclosed again, and it goes out only while the wall leaves `MIN_CALL_S` after the pause. A second busy answer goes to the model with the `busy` text, and the model tells the user.
-- **Follow-ups.** Earlier turns are replayed natively: an assistant message with `tool_calls`, then a `tool` message per call, cut to the history caps, for every step whose content has not expired. Whole turns are dropped, oldest first, when the budget is short. When any earlier content has expired, the system prompt carries the expired note (Task 7).
+- **Follow-ups.** Earlier turns are replayed natively: a Ghostwriter message with `tool_calls`, then a `tool` message per call, cut to the history caps, for every step whose content has not expired. Whole turns are dropped, oldest first, when the budget is short. When any earlier content has expired, the system prompt carries the expired note (Task 7).
 - **Speech.**
   - `MAX_RECORDING_S = 120`: the SPA stops the recorder there.
   - `MAX_RECORDING_BYTES = 10 * 1024 * 1024`: the server enforces it.
   - `RECORDING_TYPES = {"audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav", "audio/x-wav"}`, matched on the base type.
   - `TRANSCRIBE_TIMEOUT_S = 60.0`.
-  - With `ASSISTANT_SPEECH_INPUT=off`, the route is not registered (404).
+  - With `GHOSTWRITER_SPEECH_INPUT=off`, the route is not registered (404).
 - **Attachments.** `MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024`, as workbench's `WORKBENCH_UPLOAD_MAX_MB` counts it.
   - The type is decided by extension alone, through a fixed map to the MIME type sent on.
   - At most 10 pending attachments per chat, and 10 per message.
 - **`WORKBENCH_TIMEOUT` default 150** s per tool call: the MCP door's queue wait (5 s), the caller's 120 s wall time, and a margin.
 - **Edge secret and workbench key** (contract amendment).
-  - An unset `ASSISTANT_EDGE_SECRET` is the dev fallback, as in translator. Identity headers are then trusted from any caller, one warning says so at start, and `ASSISTANT_DEFAULT_IDENTITY` counts.
+  - An unset `GHOSTWRITER_EDGE_SECRET` is the dev fallback, as in translator. Identity headers are then trusted from any caller, one warning says so at start, and `GHOSTWRITER_DEFAULT_IDENTITY` counts.
   - A set secret, or a set `WORKBENCH_API_KEY`, shorter than 32 characters stops startup.
   - Compose delivers both as `${VAR:-}`.
-- **workbench headers.** Every request to workbench carries `X-User-Id`, `X-Session-Id` (the chat's pseudonym, never `default`), `X-Audit-Purpose` (the stated purpose, else `assistant chat`) and `X-Request-ID`. That covers discovery, `/mcp` and the three file routes.
-- **One process.** The backend runs as `uvicorn --factory assistant.main:create_app` with one worker. It holds one audit chain, one turn registry and one sweep.
+- **workbench headers.** Every request to workbench carries `X-User-Id`, `X-Session-Id` (the chat's pseudonym, never `default`), `X-Audit-Purpose` (the stated purpose, else `ghostwriter chat`) and `X-Request-ID`. That covers discovery, `/mcp` and the three file routes.
+- **One process.** The backend runs as `uvicorn --factory ghostwriter.main:create_app` with one worker. It holds one audit chain, one turn registry and one sweep.
 - **Chat title.** It is the first line of the first message, cut to 60 characters with `…`. There is no model call.
 
 **Repo conventions (from `../translator`):**
@@ -141,13 +141,13 @@
 - Vendored verbatim and never edited:
   - `make/common.mk` from `configs/make-common`;
   - `scripts/bundle-lib.sh` from `configs/bundle`;
-  - `assistant/utils/audit_event.py` and `assistant/utils/audit_runtime.py` from `configs/audit`;
+  - `ghostwriter/utils/audit_event.py` and `ghostwriter/utils/audit_runtime.py` from `configs/audit`;
   - `frontend/eslint.config.js` from `configs/frontend-eslint`.
 - Workflow `uses:` refs are pinned to the commit SHA translator pins (`2715bedabe594a449e411182393e68da59c791f3 # v3.22`).
 - Images are pinned by digest, at the digests translator's Dockerfiles carry.
 - Licenses: no GPL or AGPL dependency. Every one named here is MIT, BSD or Apache-2.0.
 - SPA rules:
-  - Every request goes through `apiFetch`, which carries the purpose (`withPurpose`, scope `assistant`).
+  - Every request goes through `apiFetch`, which carries the purpose (`withPurpose`, scope `ghostwriter`).
   - Icons come from `@infra/ui` and are never typed.
   - Strings live in `frontend/src/i18n/en.ts` and `de.ts`, with key parity.
 - Tests use invented data only (`user-a`, `case-0001`, `sales.xlsx`), and no paths from a developer's machine.
@@ -184,28 +184,28 @@
 Start the repository at execution time:
 
 ```bash
-mkdir ../assistant && cd ../assistant
+mkdir ../ghostwriter && cd ../ghostwriter
 git init -b main
 git commit --allow-empty -m "chore: initial commit"
-git switch -c feat/assistant-v0.1.0
+git switch -c feat/ghostwriter-v0.1.0
 ```
 
-Every task ends with one commit on that branch. The controller creates `nos-tromo/assistant` on GitHub after the owner's OK, adds the remote, pushes `main` and the branch, and opens one PR after Task 15.
+Every task ends with one commit on that branch. The controller creates `nos-tromo/ghostwriter` on GitHub after the owner's OK, adds the remote, pushes `main` and the branch, and opens one PR after Task 15.
 
 ---
 
 ### Task 1: Scaffolding
 
 **Files:**
-- **Copy from `../translator`,** renaming `translator` to `assistant` and `TRANSLATOR` to `ASSISTANT`:
-  - `.dockerignore`, `.gitignore` (adds `.assistant-version`), `.pre-commit-config.yaml` and `LICENSE`;
+- **Copy from `../translator`,** renaming `translator` to `ghostwriter` and `TRANSLATOR` to `GHOSTWRITER`:
+  - `.dockerignore`, `.gitignore` (adds `.ghostwriter-version`), `.pre-commit-config.yaml` and `LICENSE`;
   - `.github/dependabot.yml`, and `.github/workflows/ci.yml`, `release-tag.yml` and `claude.yml`;
   - `scripts/bundle_images.sh`;
-  - `assistant/log_cfg.py`, without `load_dotenv`;
+  - `ghostwriter/log_cfg.py`, without `load_dotenv`;
   - the frontend skeleton: `frontend/{package.json, tsconfig.json, tsconfig.node.json, postcss.config.js, index.html, .gitignore}`, `frontend/src/{main.tsx, vite-env.d.ts, styles/globals.css, test/setup.ts}` and `frontend/src/i18n/{index.ts, LanguageContext.tsx, en.ts, de.ts}`.
-- **Vendor verbatim** from `../.github/configs/`: `make/common.mk`, `scripts/bundle-lib.sh`, `assistant/utils/audit_event.py`, `assistant/utils/audit_runtime.py` and `frontend/eslint.config.js`.
+- **Vendor verbatim** from `../.github/configs/`: `make/common.mk`, `scripts/bundle-lib.sh`, `ghostwriter/utils/audit_event.py`, `ghostwriter/utils/audit_runtime.py` and `frontend/eslint.config.js`.
 - **Create:**
-  - `Makefile`, `pyproject.toml`, `assistant/__init__.py`, `assistant/utils/__init__.py`, `assistant/config.py` and `assistant/main.py`;
+  - `Makefile`, `pyproject.toml`, `ghostwriter/__init__.py`, `ghostwriter/utils/__init__.py`, `ghostwriter/config.py` and `ghostwriter/main.py`;
   - `docker/Dockerfile.backend`, `docker/Dockerfile.frontend`, `docker/compose.yaml` and `docker/compose.override.yaml`;
   - `frontend/vite.config.ts`, `frontend/src/App.tsx`, `frontend/nginx/default.conf` and `frontend/nginx/security-headers.conf`;
   - `.env.example`, `CLAUDE.md` and `README.md` (stubs, finished in Task 15).
@@ -213,8 +213,8 @@ Every task ends with one commit on that branch. The controller creates `nos-trom
 
 **Interfaces:**
 - Produces:
-  - In `assistant/config.py`:
-    - Constants: `KEY_MIN_LENGTH = 32` and `DB_PATH = "/var/lib/assistant/assistant.sqlite3"`.
+  - In `ghostwriter/config.py`:
+    - Constants: `KEY_MIN_LENGTH = 32` and `DB_PATH = "/var/lib/ghostwriter/ghostwriter.sqlite3"`.
     - `@dataclass(frozen=True) class Settings` with these fields:
       - `edge_secret: str | None`, `default_identity: str | None`;
       - `openai_api_base: str`, `openai_api_key: str`, `text_model: str`, `whisper_model: str`;
@@ -225,7 +225,7 @@ Every task ends with one commit on that branch. The controller creates `nos-trom
 
       Secrets are `field(repr=False)`. The property `workbench_enabled -> bool` is true when the key and the base are set.
     - `load_settings(environ: Mapping[str, str] = os.environ) -> Settings`. It raises `ValueError` naming the variable, never its value.
-  - In `assistant/main.py`: `create_app(settings: Settings | None = None) -> FastAPI`. It serves `GET /api/health` → `{"status": "ok"}` and `/metrics`, and puts `settings` on `app.state.settings`. Later tasks add keyword-only parameters.
+  - In `ghostwriter/main.py`: `create_app(settings: Settings | None = None) -> FastAPI`. It serves `GET /api/health` → `{"status": "ok"}` and `/metrics`, and puts `settings` on `app.state.settings`. Later tasks add keyword-only parameters.
   - In `tests/conftest.py`:
     - `SECRET = "s" * 32`, `KEY = "k" * 32`;
     - `make_settings(tmp_path: Path, **overrides: Any) -> Settings`, which uses a temporary `db_path`;
@@ -234,27 +234,27 @@ Every task ends with one commit on that branch. The controller creates `nos-trom
 - [ ] **Step 1: Write the failing tests**
 
 ```python
-# tests/test_config.py — ENV = {"ASSISTANT_EDGE_SECRET": SECRET}
+# tests/test_config.py — ENV = {"GHOSTWRITER_EDGE_SECRET": SECRET}
 def test_defaults_match_the_contract() -> None:
     s = load_settings(ENV)
     assert (s.chat_days, s.notice_days, s.file_days, s.speech_input, s.workbench_timeout_s) == (90, 30, 7, True, 150.0)
     assert (s.workbench_api_base, s.openai_api_base) == ("http://workbench-api:8000", "http://vllm-router:4000/v1")
     assert (s.text_model, s.whisper_model) == ("Qwen/Qwen3.8-27B-FP8", "openai/whisper-large-v3")
-    assert (s.workbench_enabled, s.require_purpose, s.db_path) == (False, frozenset(), "/var/lib/assistant/assistant.sqlite3")
+    assert (s.workbench_enabled, s.require_purpose, s.db_path) == (False, frozenset(), "/var/lib/ghostwriter/ghostwriter.sqlite3")
 
 def test_an_unset_edge_secret_is_the_dev_fallback(loguru_caplog) -> None:
-    s = load_settings({"ASSISTANT_DEFAULT_IDENTITY": "dev"})
+    s = load_settings({"GHOSTWRITER_DEFAULT_IDENTITY": "dev"})
     assert (s.edge_secret, s.default_identity) == (None, "dev")
-    assert [r for r in loguru_caplog.records if "ASSISTANT_EDGE_SECRET" in r.getMessage()]  # one warning, as translator
+    assert [r for r in loguru_caplog.records if "GHOSTWRITER_EDGE_SECRET" in r.getMessage()]  # one warning, as translator
 def test_a_dev_identity_is_ignored_beside_a_secret() -> None:  # both set -> default_identity None
 
-@pytest.mark.parametrize("name", ["ASSISTANT_EDGE_SECRET", "WORKBENCH_API_KEY"])
+@pytest.mark.parametrize("name", ["GHOSTWRITER_EDGE_SECRET", "WORKBENCH_API_KEY"])
 def test_a_short_secret_or_key_stops_startup(name: str) -> None:  # "x" * 31 -> ValueError naming it; "x" * 31 not in the message
 def test_a_blank_workbench_key_switches_workbench_off() -> None:   # "   " -> workbench_api_key None, workbench_enabled False
 @pytest.mark.parametrize(("raw", "days"), [("off", None), ("30", 30), (" 90 ", 90)])
 def test_chat_retention_is_days_or_off(raw: str, days: int | None) -> None:
 @pytest.mark.parametrize("raw", ["0", "-1", "soon", "3651"])
-def test_chat_retention_refuses_anything_else(raw: str) -> None:   # ValueError matching ASSISTANT_CHAT_RETENTION_DAYS
+def test_chat_retention_refuses_anything_else(raw: str) -> None:   # ValueError matching GHOSTWRITER_CHAT_RETENTION_DAYS
 def test_speech_input_is_on_or_off() -> None:                       # "off" -> False; "maybe" -> ValueError
 @pytest.mark.parametrize("raw", ["0", "-5", "nan", "inf", "soon"])
 def test_the_timeout_must_be_a_positive_finite_number(raw: str) -> None:  # matching WORKBENCH_TIMEOUT
@@ -269,35 +269,35 @@ def test_health_and_metrics_answer(tmp_path) -> None:               # /api/healt
 def test_compose_matches_the_contract() -> None:
     compose = (ROOT / "docker" / "compose.yaml").read_text(encoding="utf-8")
     backend, frontend = _service(compose, "backend"), _service(compose, "frontend")
-    assert "name: assistant\n" in compose and "ports:" not in compose and "data-net" not in compose
-    assert "      inference-net:\n        aliases:\n          - assistant-backend" in backend
-    assert "      workbench-net:\n        aliases:\n          - assistant-backend" in backend
+    assert "name: ghostwriter\n" in compose and "ports:" not in compose and "data-net" not in compose
+    assert "      inference-net:\n        aliases:\n          - ghostwriter-backend" in backend
+    assert "      workbench-net:\n        aliases:\n          - ghostwriter-backend" in backend
     assert "edge-net" not in backend and "inference-net" not in frontend and "workbench-net" not in frontend
-    assert "      edge-net:\n        aliases:\n          - assistant-frontend" in frontend
-    assert "      - assistant-data:/var/lib/assistant" in backend
-    assert "  assistant-data:\n    external: true\n    name: assistant-data" in compose
+    assert "      edge-net:\n        aliases:\n          - ghostwriter-frontend" in frontend
+    assert "      - ghostwriter-data:/var/lib/ghostwriter" in backend
+    assert "  ghostwriter-data:\n    external: true\n    name: ghostwriter-data" in compose
     assert "AUDIT_REQUIRE_PURPOSE: ${AUDIT_REQUIRE_PURPOSE-}" in backend and "AUDIT_OUTPUT: container" in backend
-    assert "ASSISTANT_EDGE_SECRET: ${ASSISTANT_EDGE_SECRET:-}" in backend and "WORKBENCH_API_KEY: ${WORKBENCH_API_KEY:-}" in backend
-    assert '"--factory", "assistant.main:create_app"' in (ROOT / "docker" / "Dockerfile.backend").read_text()
+    assert "GHOSTWRITER_EDGE_SECRET: ${GHOSTWRITER_EDGE_SECRET:-}" in backend and "WORKBENCH_API_KEY: ${WORKBENCH_API_KEY:-}" in backend
+    assert '"--factory", "ghostwriter.main:create_app"' in (ROOT / "docker" / "Dockerfile.backend").read_text()
 def test_every_service_is_hardened() -> None:   # backend, frontend: read_only true, cap_drop ALL, no-new-privileges; volume-permissions network_mode none
 def test_make_knows_the_networks_and_the_volume() -> None:
     mk = (ROOT / "Makefile").read_text(encoding="utf-8")
-    assert "REPO     := assistant" in mk and "NETWORKS := inference-net edge-net workbench-net" in mk
-    assert "VOLUMES  := assistant-data" in mk and "include make/common.mk" in mk
-def test_nginx_serves_under_assistant_streams_and_allows_the_microphone() -> None:
+    assert "REPO     := ghostwriter" in mk and "NETWORKS := inference-net edge-net workbench-net" in mk
+    assert "VOLUMES  := ghostwriter-data" in mk and "include make/common.mk" in mk
+def test_nginx_serves_under_ghostwriter_streams_and_allows_the_microphone() -> None:
     conf = (ROOT / "frontend" / "nginx" / "default.conf").read_text(encoding="utf-8")
-    assert "rewrite ^/assistant(/.+)$ $1;" in conf and "return 302 /assistant/;" in conf
+    assert "rewrite ^/ghostwriter(/.+)$ $1;" in conf and "return 302 /ghostwriter/;" in conf
     stream = _location(conf, "~ ^/api/chats/[^/]+/(messages|regenerate)$")
     assert all(d in stream for d in ("proxy_buffering off;", "proxy_request_buffering off;", "proxy_read_timeout 1h;", "gzip off;"))
     assert "client_max_body_size 51m;" in _location(conf, "~ ^/api/chats/[^/]+/attachments$")
     assert "client_max_body_size 11m;" in _location(conf, "= /api/transcribe")
     assert "microphone=(self)" in (ROOT / "frontend" / "nginx" / "security-headers.conf").read_text()
-def test_the_spa_lives_under_assistant() -> None:  # "base: '/assistant/'" in frontend/vite.config.ts
+def test_the_spa_lives_under_ghostwriter() -> None:  # "base: '/ghostwriter/'" in frontend/vite.config.ts
 def test_env_example_tags_follow_the_contract_amendment() -> None:
     lines = (ROOT / ".env.example").read_text(encoding="utf-8").splitlines()
     tag = lambda key: lines[lines.index(key) - 1]
-    assert tag("# ASSISTANT_EDGE_SECRET=") == "# [secret] [shared: edge-plane]"
-    assert tag("# WORKBENCH_API_KEY=") == "# [secret] [shared: workbench ASSISTANT_WORKBENCH_KEY]"
+    assert tag("# GHOSTWRITER_EDGE_SECRET=") == "# [secret] [shared: edge-plane]"
+    assert tag("# WORKBENCH_API_KEY=") == "# [secret] [shared: workbench GHOSTWRITER_WORKBENCH_KEY]"
     assert tag("OPENAI_API_KEY=") == "# [required] [secret] [shared: vllm-service]"
     assert tag("# WORKBENCH_RETENTION_DAYS=7") == "# [shared: workbench]"
 ```
@@ -309,26 +309,26 @@ def test_env_example_tags_follow_the_contract_amendment() -> None:
 - [ ] **Step 2: Run them to verify they fail.** Run `uv run pytest tests -v`. Expected: FAIL, with an import error and missing files.
 - [ ] **Step 3: Write the scaffolding**
   - **`pyproject.toml`.** Copy translator's, with these changes:
-    - `name = "assistant"`, `version = "0.1.0"`, include `assistant*`;
+    - `name = "ghostwriter"`, `version = "0.1.0"`, include `ghostwriter*`;
     - dependencies `fastapi`, `uvicorn`, `openai`, `httpx`, `anyio`, `sqlalchemy>=2.0`, `python-multipart`, `loguru`, `pydantic` and `prometheus-fastapi-instrumentator`, without `dotenv`, `langcodes` or `emoji-country-flag`;
     - the dev group adds `pytest-asyncio`.
 
     Then `uv lock`.
-  - **`Makefile`.** Translator's, with `REPO := assistant`, `NETWORKS := inference-net edge-net workbench-net` and `VOLUMES := assistant-data`. It adds:
+  - **`Makefile`.** Translator's, with `REPO := ghostwriter`, `NETWORKS := inference-net edge-net workbench-net` and `VOLUMES := ghostwriter-data`. It adds:
     - `up` and `up-dev` depending on `volumes`;
-    - `retention-dry-run`, which runs `$(COMPOSE) exec backend python -m assistant.retention --dry-run $(if $(CHAT_DAYS),--chat-days $(CHAT_DAYS))` (Task 11);
-    - `nuke`, an interactive confirm, then `down` and `docker volume rm assistant-data`.
+    - `retention-dry-run`, which runs `$(COMPOSE) exec backend python -m ghostwriter.retention --dry-run $(if $(CHAT_DAYS),--chat-days $(CHAT_DAYS))` (Task 11);
+    - `nuke`, an interactive confirm, then `down` and `docker volume rm ghostwriter-data`.
 
     `help` names each target.
   - **Dockerfiles.** Copy translator's at the same digests.
-    - The backend's `CMD` is `["uvicorn", "--factory", "assistant.main:create_app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]`.
+    - The backend's `CMD` is `["uvicorn", "--factory", "ghostwriter.main:create_app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]`.
     - The frontend drops the `VITE_DEFAULT_TARGET_LANGUAGE` argument.
   - **`docker/compose.yaml`.** Translator's anchors (no-proxy, env-file, logging, hardened), with these services:
-    - `volume-permissions`: the backend image, `user: "0:0"`, `network_mode: none`, read-only. It runs `find /var/lib/assistant -xdev ! -user 10001 -exec chown -h 10001:10001 {} +`, as docint's does.
+    - `volume-permissions`: the backend image, `user: "0:0"`, `network_mode: none`, read-only. It runs `find /var/lib/ghostwriter -xdev ! -user 10001 -exec chown -h 10001:10001 {} +`, as docint's does.
     - `backend`:
       - hardened, read-only, with `tmpfs /tmp:size=16m`;
       - `depends_on: volume-permissions: condition: service_completed_successfully`;
-      - the volume, and `networks: assistant-net (alias backend), inference-net, workbench-net`;
+      - the volume, and `networks: ghostwriter-net (alias backend), inference-net, workbench-net`;
       - the healthcheck from translator, on `/api/health`.
 
       Its environment:
@@ -342,9 +342,9 @@ def test_env_example_tags_follow_the_contract_amendment() -> None:
       WORKBENCH_API_KEY: ${WORKBENCH_API_KEY:-}
       WORKBENCH_TIMEOUT: ${WORKBENCH_TIMEOUT:-150}
       WORKBENCH_RETENTION_DAYS: ${WORKBENCH_RETENTION_DAYS:-7}
-      ASSISTANT_EDGE_SECRET: ${ASSISTANT_EDGE_SECRET:-}
-      ASSISTANT_SPEECH_INPUT: ${ASSISTANT_SPEECH_INPUT:-on}
-      ASSISTANT_CHAT_RETENTION_DAYS: ${ASSISTANT_CHAT_RETENTION_DAYS:-90}
+      GHOSTWRITER_EDGE_SECRET: ${GHOSTWRITER_EDGE_SECRET:-}
+      GHOSTWRITER_SPEECH_INPUT: ${GHOSTWRITER_SPEECH_INPUT:-on}
+      GHOSTWRITER_CHAT_RETENTION_DAYS: ${GHOSTWRITER_CHAT_RETENTION_DAYS:-90}
       RETENTION_NOTICE_DAYS: ${RETENTION_NOTICE_DAYS:-30}
       RESPONSE_LANGUAGE: ${RESPONSE_LANGUAGE:-en}
       AUDIT_OUTPUT: container
@@ -352,14 +352,14 @@ def test_env_example_tags_follow_the_contract_amendment() -> None:
       ```
 
     - `frontend`:
-      - `networks: assistant-net (alias frontend), edge-net`;
+      - `networks: ghostwriter-net (alias frontend), edge-net`;
       - `depends_on` the backend being healthy;
       - `expose: 8080`.
-    - Networks: `assistant-net: {}`, `inference-net` and `edge-net` as in translator, and `workbench-net` as `external: true` with `name: ${WORKBENCH_NET:-workbench-net}`.
+    - Networks: `ghostwriter-net: {}`, `inference-net` and `edge-net` as in translator, and `workbench-net` as `external: true` with `name: ${WORKBENCH_NET:-workbench-net}`.
   - **`docker/compose.override.yaml`.** Translator's, with these values:
-    - backend `${ASSISTANT_BACKEND_HOST_PORT:-8004}:8000` and `ASSISTANT_DEFAULT_IDENTITY: ${ASSISTANT_DEFAULT_IDENTITY:-dev}`;
-    - frontend `${ASSISTANT_FRONTEND_HOST_PORT:-8504}:8080`.
-  - **`frontend/nginx/default.conf`.** Translator's map and rewrite for `/assistant`, the `scrubbed` log format, the resolver, and `proxy_max_temp_file_size 0`. The locations, each including `security-headers.conf`:
+    - backend `${GHOSTWRITER_BACKEND_HOST_PORT:-8004}:8000` and `GHOSTWRITER_DEFAULT_IDENTITY: ${GHOSTWRITER_DEFAULT_IDENTITY:-dev}`;
+    - frontend `${GHOSTWRITER_FRONTEND_HOST_PORT:-8504}:8080`.
+  - **`frontend/nginx/default.conf`.** Translator's map and rewrite for `/ghostwriter`, the `scrubbed` log format, the resolver, and `proxy_max_temp_file_size 0`. The locations, each including `security-headers.conf`:
     1. `~ ^/api/chats/[^/]+/(messages|regenerate)$`: docint's `/stream_query` block, with `client_max_body_size 1m`.
     2. `~ ^/api/chats/[^/]+/attachments$`: `client_max_body_size 51m`, `proxy_request_buffering off` and `proxy_read_timeout 10m`.
     3. `= /api/transcribe`: `client_max_body_size 11m` and `proxy_request_buffering off`.
@@ -368,25 +368,25 @@ def test_env_example_tags_follow_the_contract_amendment() -> None:
     6. `/assets/` and the SPA fallback, as in translator.
   - **`frontend/nginx/security-headers.conf`.** docint's, with `Permissions-Policy "camera=(), microphone=(self), geolocation=(), interest-cohort=()"`.
   - **The frontend skeleton.**
-    - `vite.config.ts` uses `base: '/assistant/'` and proxies `/assistant/api` to `ASSISTANT_BACKEND_ORIGIN ?? 'http://localhost:8004'`, stripping the prefix.
+    - `vite.config.ts` uses `base: '/ghostwriter/'` and proxies `/ghostwriter/api` to `GHOSTWRITER_BACKEND_ORIGIN ?? 'http://localhost:8004'`, stripping the prefix.
     - `package.json` keeps translator's dependencies at its pins, including `@infra/ui` at `d29e58bd331b98540fac264cdc808320881fbdfa`. It adds docint's `react-markdown`, `remark-gfm` and `@tailwindcss/typography`, plus `rehype-highlight` and `highlight.js`.
     - `App.tsx` renders the app title.
   - **`.env.example`.** The federation format of `../translator/.env.example`, with every line under 80 columns and each tag on the line above its key. Deploy's rule T5 makes a `[shared: …]` tag name every partner, and rule X2 makes the rows of one group agree on `[required]`, so the shared keys carry exactly the tags of the contract amendment:
     - Required: `OPENAI_API_KEY=` with `# [required] [secret] [shared: vllm-service]`, as in translator.
-    - Auth & identity: `# ASSISTANT_EDGE_SECRET=`, commented and not `[required]`, with `# [secret] [shared: edge-plane]`. Its comment: at least 32 characters; unset is the dev fallback, which trusts identity headers from any caller.
+    - Auth & identity: `# GHOSTWRITER_EDGE_SECRET=`, commented and not `[required]`, with `# [secret] [shared: edge-plane]`. Its comment: at least 32 characters; unset is the dev fallback, which trusts identity headers from any caller.
     - Network & proxy: `# INFERENCE_NETWORK=inference-net`, `# EDGE_NET=edge-net`, `# WORKBENCH_NET=workbench-net` and `# EXTRA_NO_PROXY=`.
     - Inference: `# OPENAI_API_BASE=http://vllm-router:4000/v1`, `# TEXT_MODEL=Qwen/Qwen3.8-27B-FP8` and `# WHISPER_MODEL=openai/whisper-large-v3`.
     - `# --- workbench ---`:
-      - `# WORKBENCH_API_KEY=`, commented and not `[required]`, with `# [secret] [shared: workbench ASSISTANT_WORKBENCH_KEY]`. Unset, tools and attachments are off; a set key under 32 characters stops startup;
+      - `# WORKBENCH_API_KEY=`, commented and not `[required]`, with `# [secret] [shared: workbench GHOSTWRITER_WORKBENCH_KEY]`. Unset, tools and attachments are off; a set key under 32 characters stops startup;
       - `# WORKBENCH_API_BASE=http://workbench-api:8000`;
       - `# WORKBENCH_TIMEOUT=150`.
-    - assistant: `# RESPONSE_LANGUAGE=en` and `# ASSISTANT_SPEECH_INPUT=on`.
+    - ghostwriter: `# RESPONSE_LANGUAGE=en` and `# GHOSTWRITER_SPEECH_INPUT=on`.
     - Audit & retention:
       - `# AUDIT_REQUIRE_PURPOSE=`;
-      - `# ASSISTANT_CHAT_RETENTION_DAYS=90`;
+      - `# GHOSTWRITER_CHAT_RETENTION_DAYS=90`;
       - `# RETENTION_NOTICE_DAYS=30`;
       - `# WORKBENCH_RETENTION_DAYS=7` with `# [shared: workbench]`.
-    - Development only, each `[dev]`: `# ASSISTANT_DEFAULT_IDENTITY=dev`, `# ASSISTANT_FRONTEND_HOST_PORT=8504` and `# ASSISTANT_BACKEND_HOST_PORT=8004`.
+    - Development only, each `[dev]`: `# GHOSTWRITER_DEFAULT_IDENTITY=dev`, `# GHOSTWRITER_FRONTEND_HOST_PORT=8504` and `# GHOSTWRITER_BACKEND_HOST_PORT=8004`.
   - **`CLAUDE.md`.** Translator's "Data confidentiality — hard rule" section verbatim, plus one paragraph on what the repo is.
 - [ ] **Step 4: Implement `load_settings` and `create_app`.**
   - `load_settings`: a blank variable counts as unset, and a base loses its trailing `/`. The edge secret and the default identity behave as translator's `get_edge_secret` and `get_default_identity`. `chat_days` is 1 to 3650 or `off`; `off` logs a warning. `notice_days` is 0 to 365, and `file_days` 1 to 3650. `require_purpose` uses `parse_required_actions(..., known=ACTIONS - {"lifecycle"})`.
@@ -395,19 +395,19 @@ def test_env_example_tags_follow_the_contract_amendment() -> None:
   - Run `uv run pytest tests -v`: PASS.
   - Run `uv run pre-commit run --all-files`: green.
   - Run `cd frontend && pnpm install && pnpm lint && pnpm build`: green.
-  - Run `python3 -B ../deploy/scripts/check_env_examples.py .`. Until deploy's env-sync rows and workbench v0.3.0's example have merged, the only expected findings are `T5`, on `ASSISTANT_EDGE_SECRET`, `WORKBENCH_API_KEY` and `WORKBENCH_RETENTION_DAYS`. Any other finding (`X2`, `X3`, `T3`, …) is a defect to fix here.
-- [ ] **Step 6: Commit.** `git add -A && git commit -m "chore: scaffold assistant from translator: compose, nginx, CI, settings"`
+  - Run `python3 -B ../deploy/scripts/check_env_examples.py .`. Until deploy's env-sync rows and workbench v0.3.0's example have merged, the only expected findings are `T5`, on `GHOSTWRITER_EDGE_SECRET`, `WORKBENCH_API_KEY` and `WORKBENCH_RETENTION_DAYS`. Any other finding (`X2`, `X3`, `T3`, …) is a defect to fix here.
+- [ ] **Step 6: Commit.** `git add -A && git commit -m "chore: scaffold ghostwriter from translator: compose, nginx, CI, settings"`
 
 ### Task 2: Identity and audit
 
 **Files:**
 - Create:
-  - `assistant/identity.py`, a copy of `../docint/docint/core/auth/principal.py`;
-  - `assistant/audit.py`: translator's emitter glue plus docint's `Operation`, `begin` and `audited`;
-  - `assistant/api/__init__.py`;
-  - `assistant/api/meta.py` (`GET /api/whoami`).
+  - `ghostwriter/identity.py`, a copy of `../docint/docint/core/auth/principal.py`;
+  - `ghostwriter/audit.py`: translator's emitter glue plus docint's `Operation`, `begin` and `audited`;
+  - `ghostwriter/api/__init__.py`;
+  - `ghostwriter/api/meta.py` (`GET /api/whoami`).
 - Modify:
-  - `assistant/main.py`: the lifespan opens the chain. It adds the parameter `audit_stream: TextIO | None = None`.
+  - `ghostwriter/main.py`: the lifespan opens the chain. It adds the parameter `audit_stream: TextIO | None = None`.
   - `tests/conftest.py`: `audit_stream`, a copy of translator's `CapturedAuditStream`. It runs `verify_chain` at teardown and has `events(stream) -> list[dict]`.
 - Test: `tests/test_identity.py`, `tests/test_audit.py`
 
@@ -422,7 +422,7 @@ def test_env_example_tags_follow_the_contract_amendment() -> None:
 
     Both read `request.app.state.settings`. Drop docint's groups, admin and `owner`.
   - In `audit.py`, constants and context:
-    - `SERVICE = "assistant"`, `CHAT_REASON = "assistant chat"`, `SYSTEM_ACTOR`, `ENDPOINT_ACTIONS = frozenset({"query", "collect", "modify", "delete", "disclose", "ai_call"})`.
+    - `SERVICE = "ghostwriter"`, `CHAT_REASON = "ghostwriter chat"`, `SYSTEM_ACTOR`, `ENDPOINT_ACTIONS = frozenset({"query", "collect", "modify", "delete", "disclose", "ai_call"})`.
     - `@dataclass(frozen=True) class RequestContext: actor: Actor; purpose: Purpose | None; request_id: str`.
   - In `audit.py`, `@dataclass class Operation`. Copy docint's `Operation` with `record`, `child` and `fail`, and drop `transfers`. Its fields are `emitter`, `context`, `action`, `operation`, `container: str | None`, `event_id` and `settled`.
   - In `audit.py`, functions:
@@ -450,9 +450,9 @@ def test_no_parameter_or_header_lets_a_user_act_as_another(client) -> None:  # ?
 def test_a_required_purpose_is_refused_with_428_and_recorded(tmp_path, audit_stream) -> None:
     # require_purpose {"ai_call"}: POST /test -> 428 {"detail": "A stated purpose is required for this request."}
     assert [(e["action"], e["operation"], e["outcome"]) for e in events(audit_stream)][-1] == ("collect", "test.op", "denied")
-def test_an_unstated_purpose_is_forwarded_as_assistant_chat() -> None:
+def test_an_unstated_purpose_is_forwarded_as_ghostwriter_chat() -> None:
     assert forward_headers(RequestContext(ACTOR, None, "req-0001")) == {
-        "X-Audit-Purpose": encode_purpose(None, "assistant chat"), "X-Request-ID": "req-0001"}
+        "X-Audit-Purpose": encode_purpose(None, "ghostwriter chat"), "X-Request-ID": "req-0001"}
 def test_a_stated_purpose_is_forwarded_as_stated() -> None:  # Purpose("case-0001", "review") -> encode_purpose("case-0001", "review")
 @pytest.mark.parametrize("sent", [None, "bad id!"])
 def test_a_request_without_a_valid_id_gets_one(client, audit_stream, sent) -> None:  # event request_id matches [0-9a-f]{32}
@@ -467,15 +467,15 @@ def test_a_failed_audit_write_refuses_the_request(tmp_path) -> None:  # a stream
 - [ ] **Step 2: Run them to verify they fail.** Run `uv run pytest tests/test_identity.py tests/test_audit.py -v`. Expected: FAIL (import error).
 - [ ] **Step 3: Implement both modules as listed.** Copy, and drop what no route uses: groups, admin, owner, meter and collection.
 - [ ] **Step 4: Run them to verify they pass**, then `uv run pre-commit run --all-files && uv run pytest`: green.
-- [ ] **Step 5: Commit.** `git commit -m "feat(audit): edge-verified identity, the assistant/backend chain, purpose and request id"`
+- [ ] **Step 5: Commit.** `git commit -m "feat(audit): edge-verified identity, the ghostwriter/backend chain, purpose and request id"`
 
 ### Task 3: Storage and the retention rule
 
 **Files:**
 - Create:
-  - `assistant/db.py`, `assistant/models.py`, `assistant/schemas.py` and `assistant/store.py`;
-  - `assistant/retention_rule.py`: copy `RetentionPeriodState`, `deadline_under`, `next_period_state`, `is_due` and `run_retention_loop` from `../docint/docint/core/retention.py`, unchanged.
-- Modify: `assistant/main.py`. The lifespan calls `init_db`, builds `ChatStore` on `app.state.store`, and calls `apply_periods(settings.chat_days)`.
+  - `ghostwriter/db.py`, `ghostwriter/models.py`, `ghostwriter/schemas.py` and `ghostwriter/store.py`;
+  - `ghostwriter/retention_rule.py`: copy `RetentionPeriodState`, `deadline_under`, `next_period_state`, `is_due` and `run_retention_loop` from `../docint/docint/core/retention.py`, unchanged.
+- Modify: `ghostwriter/main.py`. The lifespan calls `init_db`, builds `ChatStore` on `app.state.store`, and calls `apply_periods(settings.chat_days)`.
 - Test: `tests/test_db.py`, `tests/test_store.py`, and `tests/test_retention_rule.py` (copy the period cases of `../docint/tests/test_retention_period_change.py`).
 
 **Interfaces:**
@@ -485,7 +485,7 @@ def test_a_failed_audit_write_refuses_the_request(tmp_path) -> None:  # a stream
     - `utcnow() -> datetime`.
     - `class UtcDateTime(TypeDecorator[datetime])`: it stores naive UTC, returns aware UTC, and raises `ValueError` on naive input.
     - `make_engine(path: str) -> Engine`. Every connection runs `PRAGMA journal_mode=WAL`, `foreign_keys=ON`, `busy_timeout=5000` and `secure_delete=ON`.
-    - `init_db(engine: Engine) -> None`. With `user_version` 0 and no table, it runs `create_all` and sets the version. Below `SCHEMA_VERSION`, it runs the migrations in order, one transaction each. Above it, it raises `RuntimeError("database is from a newer assistant")`.
+    - `init_db(engine: Engine) -> None`. With `user_version` 0 and no table, it runs `create_all` and sets the version. Below `SCHEMA_VERSION`, it runs the migrations in order, one transaction each. Above it, it raises `RuntimeError("database is from a newer Ghostwriter")`.
   - In `models.py`, the tables. Ids are `String(36)` uuid4; times are `UtcDateTime`; every FK is `ondelete="CASCADE"` unless noted.
 
     | Table | Columns |
@@ -512,13 +512,13 @@ def test_a_failed_audit_write_refuses_the_request(tmp_path) -> None:  # a stream
     - `chat_counts(self, chat_id: str) -> dict[str, int]`, with keys `messages`, `steps`, `results` and `attachments`.
     - `delete_chat_rows(self, chat_id: str) -> None`.
     - `add_user_message(self, owner: str, chat_id: str, content: str, attachment_ids: Sequence[str]) -> MessageOut`. It binds pending attachments of this chat (raising `AttachmentNotPending` otherwise), names an untitled chat, and touches `updated_at`.
-    - `start_assistant_message(self, chat_id: str) -> str` and `finish_assistant_message(self, message_id: str, content: str) -> None`.
+    - `start_ghostwriter_message(self, chat_id: str) -> str` and `finish_ghostwriter_message(self, message_id: str, content: str) -> None`.
     - `add_step(self, message_id: str, *, position: int, round: int, call_id: str, tool: str, arguments: str, result: str, status: str) -> StepOut`.
     - `add_result(self, message_id: str, *, kind: str, file_id: str, path: str, name: str, mime: str, size: int, preview: Mapping[str, Any] | None) -> ResultOut`.
     - `add_attachment(self, chat_id: str, *, file_id: str, path: str, name: str, size: int, mime: str) -> AttachmentOut`.
     - `pending_count(self, chat_id: str) -> int`.
     - `find_file(self, owner: str, chat_id: str, file_id: str) -> FileRef | None`, with `@dataclass(frozen=True) class FileRef: path: str; created_at: datetime`.
-    - `last_answer(self, owner: str, chat_id: str) -> str | None`, the id of the last message when it is the assistant's.
+    - `last_answer(self, owner: str, chat_id: str) -> str | None`, the id of the last message when it is Ghostwriter's.
     - `drop_message(self, message_id: str) -> None`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -566,7 +566,7 @@ def test_deleting_a_chat_takes_every_row_with_it(store) -> None:  # delete_chat_
 ### Task 4: The workbench client
 
 **Files:**
-- Create: `assistant/workbench.py`, and `tests/fakes.py` (`FakeDoor`)
+- Create: `ghostwriter/workbench.py`, and `tests/fakes.py` (`FakeDoor`)
 - Test: `tests/test_workbench.py`
 
 **Interfaces:**
@@ -577,7 +577,7 @@ def test_deleting_a_chat_takes_every_row_with_it(store) -> None:  # delete_chat_
     - `_post`, `_message`, `_result` and `_detached`;
     - the discovery cache, which is single-flight, kept per `ttlMs` and retried at most once per 60 s;
     - `user_pseudonym(key: str, owner: str) -> str` and `session_pseudonym(key: str, chat_id: str) -> str`;
-    - the phase timeouts, `trust_env=False`, and `clientInfo {"name": "assistant", "version": __version__}`.
+    - the phase timeouts, `trust_env=False`, and `clientInfo {"name": "ghostwriter", "version": __version__}`.
   - New constants:
     - `MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024`;
     - `FILE_ID = re.compile(r"[0-9a-f]{32}")`;
@@ -619,7 +619,7 @@ def test_discovery_offers_the_tools_workbench_lists() -> None:
 def test_discovery_offers_nothing_without_the_revision_and_a_usable_tool(change: str) -> None:  # -> None
 def test_each_result_is_cached_for_its_ttl() -> None:                         # as docint: +299 s no request, +2 s tools/list again
 def test_a_failed_discovery_is_tried_again_at_most_once_a_minute() -> None:   # 503; +59 s no request; +2 s requests again
-def test_every_request_states_the_modern_revision() -> None:                  # headers and params._meta as docint, clientInfo name "assistant"
+def test_every_request_states_the_modern_revision() -> None:                  # headers and params._meta as docint, clientInfo name "ghostwriter"
 def test_a_call_carries_the_chats_pseudonyms_purpose_and_request_id() -> None:
     req, body = door.requests[-1]
     assert req.headers["x-user-id"] == hmac.new(KEY.encode(), b"workbench-user/v1\x00user-a", hashlib.sha256).hexdigest()
@@ -634,7 +634,7 @@ def test_a_missing_preview_or_row_count_is_kept_as_none() -> None:
     # a csv output with "preview": None -> OutputFile.preview None; a preview with "row_count": None -> TablePreview(..., None, True)
 def test_every_request_carries_the_session_purpose_and_request_id() -> None:
     # discover(call=CALL), call_tool, upload, view and delete_chat: each request's x-session-id == session_pseudonym(KEY, CHAT),
-    # x-user-id set, x-request-id "req-0001", x-audit-purpose == encode_purpose(None, "assistant chat") without a stated purpose
+    # x-user-id set, x-request-id "req-0001", x-audit-purpose == encode_purpose(None, "ghostwriter chat") without a stated purpose
 @pytest.mark.parametrize("path", ["/workspace/other/x.csv", "{FOLDER}/../x.csv", "{FOLDER}"])
 def test_an_output_outside_the_chats_folder_is_dropped(path: str) -> None:   # also id "xyz" and size -1 -> dropped
 def test_a_preview_is_clamped_or_dropped() -> None:
@@ -664,13 +664,13 @@ def test_the_log_holds_no_names_or_content(loguru_caplog) -> None:   # "sales.xl
   - **The upload body.** It is built as an async generator: the part headers (`Content-Disposition: form-data; name="file"; filename="<name>"` and `Content-Type: <mime>`), the chunks counted against the cap, and the closing boundary. It is sent with `content=` and a fresh `secrets.token_hex(16)` boundary. The caller guarantees a name without `"`, CR or LF (Task 9).
   - **The view.** It is `client.stream("GET", "/files/view", params={"path": path})`. The REST routes use `httpx.AsyncClient(trust_env=False)` with the phase timeouts and `WORKBENCH_TIMEOUT` for reads.
 - [ ] **Step 4: Run them to verify they pass**, then `uv run pre-commit run --all-files && uv run pytest`: green.
-- [ ] **Step 5: Commit.** `git commit -m "feat(workbench): MCP tools and REST files for the assistant caller, with keyed pseudonyms"`
+- [ ] **Step 5: Commit.** `git commit -m "feat(workbench): MCP tools and REST files for Ghostwriter caller, with keyed pseudonyms"`
 
 ### Task 5: The chats API
 
 **Files:**
-- Create: `assistant/api/chats.py` and `assistant/turns.py`
-- Modify: `assistant/main.py`. It adds the parameter `workbench_transport: httpx.AsyncBaseTransport | None = None`, and puts `WorkbenchClient` (or `None` while `workbench_enabled` is false) and `TurnRegistry` on `app.state`.
+- Create: `ghostwriter/api/chats.py` and `ghostwriter/turns.py`
+- Modify: `ghostwriter/main.py`. It adds the parameter `workbench_transport: httpx.AsyncBaseTransport | None = None`, and puts `WorkbenchClient` (or `None` while `workbench_enabled` is false) and `TurnRegistry` on `app.state`.
 - Test: `tests/test_api_chats.py`
 
 **Interfaces:**
@@ -735,11 +735,11 @@ def test_events_name_chats_by_id_only(client, audit_stream) -> None:            
 
 **Files:**
 - Create:
-  - `assistant/inference.py`;
-  - `assistant/agent/__init__.py`;
-  - `assistant/agent/stream.py`;
-  - `assistant/agent/reasoning.py`: copy `ReasoningStripper` and the helpers it uses from `../docint/docint/utils/llm_sanitize.py`;
-  - `assistant/agent/limits.py`, holding the constants of Global Constraints.
+  - `ghostwriter/inference.py`;
+  - `ghostwriter/agent/__init__.py`;
+  - `ghostwriter/agent/stream.py`;
+  - `ghostwriter/agent/reasoning.py`: copy `ReasoningStripper` and the helpers it uses from `../docint/docint/utils/llm_sanitize.py`;
+  - `ghostwriter/agent/limits.py`, holding the constants of Global Constraints.
 - Modify: `tests/fakes.py`. It gains:
   - `FakeOpenAI`, a stand-in for `openai.OpenAI`'s `chat.completions.create` and `audio.transcriptions.create`. It answers scripted rounds and records every call's keyword arguments.
   - The chunk builders `text_chunk(t)`, `call_chunk(index, id, name, args)` and `usage_chunk(prompt, completion, model)`, as dicts shaped like the SDK's.
@@ -789,9 +789,9 @@ def test_every_round_carries_the_cache_scope_and_request_id() -> None:
 ### Task 7: The agent loop
 
 **Files:**
-- Create: `assistant/agent/tools.py`, `assistant/agent/context.py`, `assistant/agent/prompt.py` and `assistant/agent/loop.py`
+- Create: `ghostwriter/agent/tools.py`, `ghostwriter/agent/context.py`, `ghostwriter/agent/prompt.py` and `ghostwriter/agent/loop.py`
 - Modify:
-  - `assistant/store.py`: `past_turns`, and `StepOut.detail` through `step_detail`.
+  - `ghostwriter/store.py`: `past_turns`, and `StepOut.detail` through `step_detail`.
   - `tests/fakes.py`: `FakeWorkbench` (`discover`, plus `call_tool` answering from a script and recording each call) and `RecordingAudit`.
 - Test: `tests/test_agent_loop.py`, `tests/test_agent_context.py`
 
@@ -836,16 +836,16 @@ def test_every_round_carries_the_cache_scope_and_request_id() -> None:
   - `fit(system: str, tools: list[dict[str, Any]], past: Sequence[PastTurn], current: list[dict[str, Any]], *, budget: int = PROMPT_TOKENS) -> list[dict[str, Any]]`:
     1. The system message and `current` are kept.
     2. While over budget, the oldest `tool` message of `current` gets the content `CLEARED`.
-    3. Past turns are added newest first, whole, while they fit. Each is replayed as its user message, then per round an assistant message with `tool_calls` and one `tool` message per call (the arguments cut to `HISTORY_ARGUMENT_CHARS`, the result to `HISTORY_RESULT_CHARS`), then the answer.
+    3. Past turns are added newest first, whole, while they fit. Each is replayed as its user message, then per round a Ghostwriter message with `tool_calls` and one `tool` message per call (the arguments cut to `HISTORY_ARGUMENT_CHARS`, the result to `HISTORY_RESULT_CHARS`), then the answer.
     4. The result is in chronological order.
 - Produces, in `agent/prompt.py`: `system_prompt(*, today: date, folder: str | None, file_days: int, expired: bool) -> str`. The exact text, joined by single spaces:
-  - Always: "You are the assistant in this organisation's workspace. Today is {today:%Y-%m-%d}. Answer in the language of the user's last message, in Markdown; write tables as Markdown tables."
+  - Always: "You are Ghostwriter in this organisation's workspace. Today is {today:%Y-%m-%d}. Answer in the language of the user's last message, in Markdown; write tables as Markdown tables."
   - With `folder`: "This chat's files are in {folder}; files the user attached are named in their message. Read a file with the tools before you answer about it, and never guess its content. Python runs in a sandbox without network. Files a tool writes are shown to the user below your answer with a download button: name them, and do not repeat their content or write links to them. Files and tool results are deleted {file_days} days after they were made."
   - Without `folder`: "You have no tools in this chat, and files cannot be read."
   - With `expired`: "Some files and tool results of earlier messages in this chat have been deleted, as {file_days} days had passed. Say so when the user asks about them, and ask them to attach the file again."
 - Produces, in `store.py`: `past_turns(self, chat_id: str, *, before_position: int) -> tuple[list[PastTurn], bool]`, which also returns whether anything has expired.
 - Produces, in `agent/loop.py`:
-  - `@dataclass(frozen=True) class Turn: chat_id: str; owner: str; user_message_id: str; assistant_message_id: str; call: CallFor; request_id: str; cancel: threading.Event`
+  - `@dataclass(frozen=True) class Turn: chat_id: str; owner: str; user_message_id: str; ghostwriter_message_id: str; call: CallFor; request_id: str; cancel: threading.Event`
   - The events:
     - `TokenEvent(text: str)`
     - `StepEvent(step: StepOut)`
@@ -881,7 +881,7 @@ The loop, in order:
    4. a busy failure (token in `BUSY_TOKENS`) waits `BUSY_RETRY_S` and repeats steps 2 and 3 once, with `attempt=2`. That happens only while `MIN_CALL_S` of the wall is left after the pause, and the pause also ends early when `cancel` is set;
    5. `add_step`, then one `add_result` per new output (deduplicated by id, up to `MAX_RESULTS_PER_MESSAGE`);
    6. `StepEvent` with `ok` or `error`, and the `ResultEvent`s.
-7. The assistant message with the round's `tool_calls`, and its `tool` messages, are appended to `current`.
+7. Ghostwriter message with the round's `tool_calls`, and its `tool` messages, are appended to `current`.
 8. A model error ends the turn: `ErrorEvent("model", "The model did not answer.")`, and `model_called(outcome="error")`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -954,9 +954,9 @@ def test_the_stored_answer_is_what_was_streamed(loop_env) -> None:  # "Ich lese.
 
 **Files:**
 - Create:
-  - `assistant/sse.py`, holding `sse_frame` and `aiter_sync_gen`, the latter copied from `_aiter_sync_gen` in `../docint/docint/core/api.py` with the same poll interval;
-  - `assistant/api/messages.py`.
-- Modify: `assistant/main.py`. It adds the parameter `model: ModelClient | None = None` and puts `AgentLoop` on `app.state`.
+  - `ghostwriter/sse.py`, holding `sse_frame` and `aiter_sync_gen`, the latter copied from `_aiter_sync_gen` in `../docint/docint/core/api.py` with the same poll interval;
+  - `ghostwriter/api/messages.py`.
+- Modify: `ghostwriter/main.py`. It adds the parameter `model: ModelClient | None = None` and puts `AgentLoop` on `app.state`.
 - Test: `tests/test_api_messages.py`
 
 **Interfaces:**
@@ -980,7 +980,7 @@ def test_the_stored_answer_is_what_was_streamed(loop_env) -> None:  # "Ich lese.
     2. `turns.begin`, else 409 `{"detail": "An answer is still being written in this chat."}`.
     3. Every attachment is pending in this chat, else 400 `{"detail": "Unknown attachment."}`.
     4. The primary is recorded: target `message` [user message id, minted first], container chat id, criteria `{"attachments": n, "chars": len(content)}`.
-    5. `add_user_message`, then `start_assistant_message`.
+    5. `add_user_message`, then `start_ghostwriter_message`.
     6. The stream.
   - `POST /api/chats/{chat_id}/regenerate` runs `audited("modify", "chat.regenerate", also=("ai_call", "disclose"))`. The target is `message` [the replaced id]. With no answer to replace, it is 409 `{"detail": "There is no answer to regenerate."}`. It runs `drop_message`, then the same stream; `user_message_id` is `None`.
   - `POST /api/chats/{chat_id}/stop` answers 204. It is idempotent, gives 404 for another owner's chat, and records no event.
@@ -1020,8 +1020,8 @@ def test_the_turn_is_recorded_with_its_children(client, audit_stream) -> None:
     assert {e["parent_event_id"] for e in events(audit_stream)[-3:]} == {events(audit_stream)[-4]["event_id"]}
     assert "Summe der Spalte B" not in audit_stream.getvalue() and "sales.xlsx" not in audit_stream.getvalue()
 def test_a_required_purpose_refuses_before_anything_is_stored(tmp_path) -> None:  # require_purpose {"disclose"} -> 428; the chat holds no message
-def test_workbench_hears_the_purpose_or_assistant_chat(client, door) -> None:
-    # X-Audit-Purpose case-0001/review -> door's tools/call header encode_purpose("case-0001", "review"); none -> reason "assistant chat"
+def test_workbench_hears_the_purpose_or_ghostwriter_chat(client, door) -> None:
+    # X-Audit-Purpose case-0001/review -> door's tools/call header encode_purpose("case-0001", "review"); none -> reason "ghostwriter chat"
 def test_an_audit_failure_mid_turn_ends_with_an_error_frame(client, door) -> None:  # the second write fails -> error {"code": "audit"}, then final; door got no tools/call
 ```
 
@@ -1033,7 +1033,7 @@ def test_an_audit_failure_mid_turn_ends_with_an_error_frame(client, door) -> Non
 ### Task 9: Attachments and downloads
 
 **Files:**
-- Create: `assistant/upload.py` and `assistant/api/files.py`
+- Create: `ghostwriter/upload.py` and `ghostwriter/api/files.py`
 - Test: `tests/test_upload.py` and `tests/test_api_files.py`
 
 **Interfaces:**
@@ -1133,11 +1133,11 @@ def test_an_expired_file_is_gone(client, door, clock) -> None:          # 8 days
 ### Task 10: Speech input and `/api/config`
 
 **Files:**
-- Create: `assistant/api/speech.py`
+- Create: `ghostwriter/api/speech.py`
 - Modify:
-  - `assistant/inference.py`: `transcribe`.
-  - `assistant/api/meta.py`: `GET /api/config`.
-  - `assistant/main.py`: it registers the speech router only while `settings.speech_input` is on.
+  - `ghostwriter/inference.py`: `transcribe`.
+  - `ghostwriter/api/meta.py`: `GET /api/config`.
+  - `ghostwriter/main.py`: it registers the speech router only while `settings.speech_input` is on.
 - Test: `tests/test_api_speech.py`, `tests/test_api_meta.py`
 
 **Interfaces:**
@@ -1192,10 +1192,10 @@ def test_only_actions_the_routes_record_are_reported_as_required(tmp_path) -> No
 ### Task 11: The retention sweep and the dry run
 
 **Files:**
-- Create: `assistant/retention.py`
+- Create: `ghostwriter/retention.py`
 - Modify:
-  - `assistant/store.py`: `due_chats`, `due_contents`, `empty_contents` and `checkpoint`.
-  - `assistant/main.py`: the lifespan starts `run_retention_loop(sweeper.sweep, first_delay=FIRST_SWEEP_DELAY_S, interval=SWEEP_INTERVAL_S)` as a task and cancels it at shutdown.
+  - `ghostwriter/store.py`: `due_chats`, `due_contents`, `empty_contents` and `checkpoint`.
+  - `ghostwriter/main.py`: the lifespan starts `run_retention_loop(sweeper.sweep, first_delay=FIRST_SWEEP_DELAY_S, interval=SWEEP_INTERVAL_S)` as a task and cancels it at shutdown.
 - Test: `tests/test_retention.py`
 
 **Interfaces:**
@@ -1217,7 +1217,7 @@ def test_only_actions_the_routes_record_are_reported_as_required(tmp_path) -> No
 
     A failed record raises before anything of its batch is deleted. Each batch of chats goes through these steps:
     1. Record `delete` `retention.chat`, with actor system, target `chat` (ids and count), and criteria `{"period_days": chat_days, "cutoff": iso}`.
-    2. Delete each chat in workbench. Its `CallFor` has the owner, and the headers `forward_headers(RequestContext(SYSTEM_ACTOR, None, uuid4().hex))`: the reason `assistant chat` and a fresh request id.
+    2. Delete each chat in workbench. Its `CallFor` has the owner, and the headers `forward_headers(RequestContext(SYSTEM_ACTOR, None, uuid4().hex))`: the reason `ghostwriter chat` and a fresh request id.
     3. Write the child `delete` `retention.chat.workbench`, with criteria `{"files_deleted": n, "failed": k}` and `outcome="error"` when `k > 0`.
     4. Delete the rows, even where workbench failed: its files are gone by its own shorter period.
 
@@ -1233,7 +1233,7 @@ def test_only_actions_the_routes_record_are_reported_as_required(tmp_path) -> No
     This run deletes nothing.
     ```
 
-  - `main(argv: Sequence[str] | None = None) -> int` takes `--dry-run` (required in v0.1.0) and `--chat-days N`. It reads `load_settings()`. `python -m assistant.retention` runs it.
+  - `main(argv: Sequence[str] | None = None) -> int` takes `--dry-run` (required in v0.1.0) and `--chat-days N`. It reads `load_settings()`. `python -m ghostwriter.retention` runs it.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1248,7 +1248,7 @@ async def test_the_notice_holds_for_chats_older_than_a_new_period(env) -> None:
 async def test_workbench_failures_do_not_keep_expired_chats(env, door) -> None:  # 503 -> rows gone; child outcome error, criteria failed 1
 async def test_the_sweep_names_the_chat_and_the_system_reason_to_workbench(env, door) -> None:
     # DELETE /files/chat: x-session-id == session_pseudonym(KEY, cid), x-user-id == user_pseudonym(KEY, "user-a"),
-    # x-audit-purpose == encode_purpose(None, "assistant chat"), x-request-id 32 hex
+    # x-audit-purpose == encode_purpose(None, "ghostwriter chat"), x-request-id 32 hex
 async def test_tool_contents_and_previews_are_emptied_after_the_file_period(env) -> None:
     # a step made 7 d + 1 s ago -> arguments/result None, tool and status kept; a preview None, name kept;
     # two retention.tool_content events with target kinds "tool_step" and "result"
@@ -1272,7 +1272,7 @@ async def test_the_sweep_runs_daily_and_survives_a_failure() -> None:
 
 **Files:**
 - Create, in `frontend/src/`:
-  - `api/client.ts`: copy translator's `apiFetch`/`withPurpose` client, with `apiBase` → `${base}/api` and `PURPOSE_SCOPE = 'assistant'`, and add `apiPatch` and `apiDelete`;
+  - `api/client.ts`: copy translator's `apiFetch`/`withPurpose` client, with `apiBase` → `${base}/api` and `PURPOSE_SCOPE = 'ghostwriter'`, and add `apiPatch` and `apiDelete`;
   - `api/types.ts` and `api/chats.ts`;
   - `hooks/useConfig.ts`, `hooks/useWhoami.ts` and `hooks/useChats.ts`;
   - `layout/Shell.tsx`, copied from `../docint/frontend/src/layout/Shell.tsx` without the ingest stream and the preview dialog;
@@ -1316,13 +1316,13 @@ async def test_the_sweep_runs_daily_and_survives_a_failure() -> None:
 - [ ] **Step 1: Write the failing tests**
 
 ```tsx
-it('lists chats and starts a new one', ...)        // NewButton -> fetch '/assistant/api/chats' POST; onSelect(new id)
+it('lists chats and starts a new one', ...)        // NewButton -> fetch '/ghostwriter/api/chats' POST; onSelect(new id)
 it('renames a chat in place', ...)                 // Menu > Rename, type "Q3 Zahlen", Enter -> PATCH body {"title":"Q3 Zahlen"}
 it('deletes a chat after confirming', ...)         // Delete, confirm -> DELETE; onSelect(null) when it was selected
 it('shows an untitled chat as "New chat"', ...)
 it('names both retention periods', ...)            // {chat_retention_days: 90, file_retention_days: 7} -> both sentences; de with the de strings
 it('names only the file period while chats are kept', ...)  // chat_retention_days null -> only retention.files
-it('sends every request under /assistant/api with the stated purpose', ...)  // setPurpose('assistant', {reason: 'review'}) -> X-Audit-Purpose header
+it('sends every request under /ghostwriter/api with the stated purpose', ...)  // setPurpose('ghostwriter', {reason: 'review'}) -> X-Audit-Purpose header
 it('keeps de in step with en', ...)                // Object.keys(de).sort() equals Object.keys(en).sort()
 ```
 
@@ -1371,7 +1371,7 @@ it('keeps de in step with en', ...)                // Object.keys(de).sort() equ
     - expired: a muted card with a `Badge` "Expired" and no button.
 
     Every fetch goes through `apiFetch`.
-  - `MessageView` shows the user's text and attachment chips, or the assistant's `Trail`, `MarkdownProse` and `ResultCard`s, and `RefreshButton` (regenerate) on the last answer. `Conversation` lists them with `useStickToBottom`.
+  - `MessageView` shows the user's text and attachment chips, or Ghostwriter's `Trail`, `MarkdownProse` and `ResultCard`s, and `RefreshButton` (regenerate) on the last answer. `Conversation` lists them with `useStickToBottom`.
   - i18n keys, in `en` / `de`:
 
     | Key | en | de |
@@ -1404,7 +1404,7 @@ it('streams tokens, steps and results into the draft, then refetches the chat', 
   // a mocked SSE body: step running, step ok (read_document, "sales.xlsx"), result table, token "Summe", final -> "Read sales.xlsx", the table caption, "Summe"; getChat called after final
 it('highlights code without any network request', ...)   // "```python\nprint(1)\n```" -> a .hljs-built_in span; fetch not called
 it('shows raw HTML in an answer as text', ...)            // '<img src=x onerror=alert(1)>' -> no <img>
-it('shows an image result inline from a blob fetched with the purpose', ...)  // fetch '/assistant/api/chats/c1/files/F' with X-Audit-Purpose; img src starts with "blob:"
+it('shows an image result inline from a blob fetched with the purpose', ...)  // fetch '/ghostwriter/api/chats/c1/files/F' with X-Audit-Purpose; img src starts with "blob:"
 it('previews at most five rows and counts the rest', ...) // row_count 12 -> 5 rows and "7 more rows"; row_count 3, 3 rows -> no line
 it('says more rows follow when they were not counted', ...)  // row_count null, truncated true -> "More rows in the file"
 it('shows a csv without a preview as a plain file', ...)     // kind "file", mime text/csv -> name, size, Download; no table
@@ -1465,13 +1465,13 @@ it('labels every workbench tool, and an unknown one by name', ...)
 
 ```tsx
 it('uploads a dropped file into the chat and sends it with the message', ...)
-  // drop sales.xlsx -> POST '/assistant/api/chats/c1/attachments' (FormData "file"); chip done; type "Summe", Enter -> body {"content":"Summe","attachment_ids":["a1"]}
+  // drop sales.xlsx -> POST '/ghostwriter/api/chats/c1/attachments' (FormData "file"); chip done; type "Summe", Enter -> body {"content":"Summe","attachment_ids":["a1"]}
 it('uploads files pasted from the clipboard', ...)
 it('refuses unsupported types and files over 50 MB before uploading', ...)  // tool.exe, a 51 MB pdf -> no fetch; both chips show their error
 it('sends on Enter, adds a line on Shift+Enter, and turns into Stop while streaming', ...)
 it('hides the microphone with speech off and the paperclip without workbench', ...)
 it('records, stops at the limit and inserts the transcript at the cursor', ...)
-  // fake MediaRecorder and timers: stop at 120 s -> POST '/assistant/api/transcribe'; the textarea holds "Summe der Spalte B"; nothing sent
+  // fake MediaRecorder and timers: stop at 120 s -> POST '/ghostwriter/api/transcribe'; the textarea holds "Summe der Spalte B"; nothing sent
 it('picks the first recording format the browser supports', ...)  // isTypeSupported true only for 'audio/mp4' -> mimeType 'audio/mp4'
 it('releases the microphone after recording and says when access was denied', ...)  // track.stop() called; NotAllowedError -> mic.denied
 ```
@@ -1493,7 +1493,7 @@ it('releases the microphone after recording and says when access was denied', ..
   - Short pages; the owner rejects verbose docs. One changed default is one line.
 
 - [ ] **Step 1: Write the pages**
-  - **`README.md`**, at most 40 lines: what the assistant is; `cp .env.example .env`, `make dev` and `make up`; where the detail lives.
+  - **`README.md`**, at most 40 lines: what Ghostwriter is; `cp .env.example .env`, `make dev` and `make up`; where the detail lives.
   - **`CLAUDE.md`:**
     - the data-confidentiality rule (from Task 1);
     - where it fits: the networks, the aliases, the volume and the edge route;
@@ -1501,12 +1501,12 @@ it('releases the microphone after recording and says when access was denied', ..
     - the invariants of Global Constraints;
     - the commands (`make verify`, `make test`, `make retention-dry-run`, `make nuke`);
     - the single-process rule.
-  - **`docs/configuration.md`:** one table row per variable of `.env.example`, with its default and effect. Then the caps of Global Constraints as a second table, naming `assistant/agent/limits.py` as their home.
+  - **`docs/configuration.md`:** one table row per variable of `.env.example`, with its default and effect. Then the caps of Global Constraints as a second table, naming `ghostwriter/agent/limits.py` as their home.
   - **`docs/audit.md`:**
-    - the emitter (`assistant` / `backend`);
+    - the emitter (`ghostwriter` / `backend`);
     - "references only";
     - fail closed;
-    - the purpose: optional, 428 when required, `assistant chat` towards workbench;
+    - the purpose: optional, 428 when required, `ghostwriter chat` towards workbench;
     - the request id, minted when the gateway sends none.
 
     Then the catalogue, one row per route, plus the sweep:
@@ -1546,13 +1546,13 @@ make bundle-dev
 Expected:
 - `make verify` and `make test` are green.
 - The env check is clean once deploy's env-sync rows and workbench v0.3.0's example have merged. Before that, its only findings are `T5`.
-- `make bundle-dev` writes `assistant-built-<version>.tar.gz` with `assistant-backend` and `assistant-frontend`, and no pulled tarball.
+- `make bundle-dev` writes `ghostwriter-built-<version>.tar.gz` with `ghostwriter-backend` and `ghostwriter-frontend`, and no pulled tarball.
 - `pyproject.toml` still says `0.1.0`, so the release tag `v0.1.0` is minted on merge.
 - [ ] **Step 3: Commit.** `git commit -m "docs: configuration, audit, retention and the record of processing; release v0.1.0"`
 
 ## Final verification
 
-From the assistant's root, quoting each output in the PR:
+From Ghostwriter's root, quoting each output in the PR:
 
 ```bash
 uv run pre-commit run --all-files
@@ -1563,7 +1563,7 @@ make bundle-dev
 ```
 
 Expected: all green. The env check may still report `T5` until deploy's and workbench's rows merge, and nothing else. The controller then:
-- pushes `main` and `feat/assistant-v0.1.0`;
+- pushes `main` and `feat/ghostwriter-v0.1.0`;
 - opens the PR;
 - confirms that CI ran on the latest push.
 
@@ -1571,14 +1571,14 @@ The end-to-end checks (spec §9) are the owner's step once workbench v0.3.0, thi
 
 ## Contract notes
 
-1. **An internal network beside the external ones.** The frontend's nginx must reach the backend, and the backend is never on `edge-net`. Both services therefore also join `assistant-net`, a project-internal network that is not external, as translator's `translator-net` does. Of the external networks, the frontend joins only `edge-net`, as the contract says.
+1. **An internal network beside the external ones.** The frontend's nginx must reach the backend, and the backend is never on `edge-net`. Both services therefore also join `ghostwriter-net`, a project-internal network that is not external, as translator's `translator-net` does. Of the external networks, the frontend joins only `edge-net`, as the contract says.
 2. **Variables beyond the contract's list.** All are member-local, and none is shared:
    - `RESPONSE_LANGUAGE`, the federation's uniform UI language;
-   - `ASSISTANT_DEFAULT_IDENTITY`, `ASSISTANT_FRONTEND_HOST_PORT` and `ASSISTANT_BACKEND_HOST_PORT` (dev);
+   - `GHOSTWRITER_DEFAULT_IDENTITY`, `GHOSTWRITER_FRONTEND_HOST_PORT` and `GHOSTWRITER_BACKEND_HOST_PORT` (dev);
    - `INFERENCE_NETWORK`, `EDGE_NET` and `EXTRA_NO_PROXY`.
 
    None needs an env-sync row.
 3. **Discovery carries the turn's headers.** The workbench plan refuses its confined caller without `X-Session-Id` on every route. So `server/discover` and `tools/list` carry the asking turn's `X-User-Id`, `X-Session-Id`, purpose and request id, although their answer is cached for every chat. If workbench reads no principal on discovery, the headers are simply unused.
-4. **No single-file delete for this caller.** KeyGate lists `/files/upload`, `/files/view`, `/files/list` and `/files/chat`. A file attached by mistake therefore stays in the chat until the chat is deleted or its 7 days end, and the composer says so. A remove button would need workbench's `DELETE /files/delete` on the assistant's KeyGate list.
-5. **The upload's `id` and the output paths.** The plan relies on `id` (32 hex digits) in the assistant's upload answer, which the workbench plan adds. It refuses an answer without one (502). It also drops any output whose `path` is not inside `/workspace/<X-Session-Id>/`. workbench's tests should produce both in that form.
+4. **No single-file delete for this caller.** KeyGate lists `/files/upload`, `/files/view`, `/files/list` and `/files/chat`. A file attached by mistake therefore stays in the chat until the chat is deleted or its 7 days end, and the composer says so. A remove button would need workbench's `DELETE /files/delete` on Ghostwriter's KeyGate list.
+5. **The upload's `id` and the output paths.** The plan relies on `id` (32 hex digits) in Ghostwriter's upload answer, which the workbench plan adds. It refuses an answer without one (502). It also drops any output whose `path` is not inside `/workspace/<X-Session-Id>/`. workbench's tests should produce both in that form.
 6. **Outside the contract: `@infra/ui` icons.** v0.22.0 has no paperclip and no microphone, and its icon policy forbids hand-drawn icons in apps. Task 14 needs one infra-ui minor release with `PaperclipIcon`/`AttachButton` and `MicIcon`/`MicButton`. Schedule it before Task 14; Tasks 1 to 13 do not wait for it.

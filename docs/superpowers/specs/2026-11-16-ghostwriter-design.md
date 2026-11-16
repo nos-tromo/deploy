@@ -1,4 +1,4 @@
-# Design: the assistant, a lean chat app in place of Open WebUI
+# Design: Ghostwriter, a lean chat app in place of Open WebUI
 
 Date: 2026-11-16
 Status: approved by the owner
@@ -21,7 +21,7 @@ What remains costs a lot:
 
 open-webui-service#67 eases the workbench flow as a bridge until the replacement lands.
 
-**Goal: the assistant.** It is an ad-hoc chat app of the federation's own, for the same signed-in users. Drop a file into a chat, workbench processes it, and the result can be downloaded in the chat. docint stays the platform for larger analyses.
+**Goal: the ghostwriter.** It is an ad-hoc chat app of the federation's own, for the same signed-in users. Drop a file into a chat, workbench processes it, and the result can be downloaded in the chat. docint stays the platform for larger analyses.
 
 ## 2. Goals, non-goals, anti-goals
 
@@ -53,7 +53,7 @@ open-webui-service#67 eases the workbench flow as a bridge until the replacement
 
 ### Anti-goals
 
-The assistant has failed, even if it works, if any of these happen:
+Ghostwriter has failed, even if it works, if any of these happen:
 - It has accounts or passwords of its own.
 - A copy of a user's file exists outside workbench.
 - A file is visible in another chat.
@@ -69,11 +69,11 @@ These are the federation's invariants:
 
 - **Inference** goes only through the router: `vllm-router`, `TEXT_MODEL`, with `X-Cache-Scope` and `X-Request-ID`.
 - **Tools and file processing** run only in workbench.
-- **State** lives on an external volume, `assistant-data`.
+- **State** lives on an external volume, `ghostwriter-data`.
 - **Networks:**
   - The frontend joins only `edge-net`.
   - The backend joins only `inference-net` and `workbench-net`.
-  - The backend checks its own `ASSISTANT_EDGE_SECRET` (edge-plane `docs/identity-contract.md`).
+  - The backend checks its own `GHOSTWRITER_EDGE_SECRET` (edge-plane `docs/identity-contract.md`).
 - **Airgap, images and hardening:**
   - Airgap-first, with `make bundle`.
   - Images pinned by digest.
@@ -86,13 +86,13 @@ These are the federation's invariants:
 
 ## 4. Approaches
 
-- **A. The assistant as a third caller on workbench's REST tool door.**
+- **A. Ghostwriter as a third caller on workbench's REST tool door.**
   - The least work in workbench: the nine tools and the file routes exist and are tested.
   - But that door is Open WebUI's terminal protocol. It would stay as a special path for one caller once Open WebUI is gone.
 - **B. Tools over workbench's MCP door, files over REST (chosen).**
   - The workspace tools move onto the MCP door that docint uses.
   - Upload, download and deleting a chat stay REST for the same caller, because the MCP door takes at most 2 MiB per request.
-  - The assistant reuses docint's MCP transport, and purpose and request id reach the tool events.
+  - Ghostwriter reuses docint's MCP transport, and purpose and request id reach the tool events.
   - When Open WebUI goes, the terminal door goes with it, and workbench is left with one tool protocol for every AI service.
   - This is more work in workbench and reverses a v2 non-goal ("no workspace tools over MCP"). That reversal is deliberate.
 - **C. A mode in docint.** Rejected:
@@ -108,11 +108,13 @@ These are the federation's invariants:
 4. **A chat is kept 90 days after it starts.** A new or shorter period takes effect only after a 30-day notice.
 5. **Stating a purpose is optional.**
    - An operator can require it with `AUDIT_REQUIRE_PURPOSE`.
-   - Without a stated purpose, the assistant sends the fixed reason `assistant chat` to workbench.
+   - Without a stated purpose, Ghostwriter sends the fixed reason `ghostwriter chat` to workbench.
 6. **Tool results expire with the files.**
    - Code, output, document excerpts and table previews are deleted when workbench deletes the chat's files, after 7 days. The conversation text stays 90 days.
    - Follow-ups work for a week; after that the cards say "expired".
    - Nothing derived from a file outlives the file.
+
+7. **The name is Ghostwriter**, everywhere: the repo `nos-tromo/ghostwriter`, the path `/ghostwriter/`, the env prefix `GHOSTWRITER_*`, the compose project, the volume, the audit emitter and the workbench caller. It writes the tables and documents the user hands in.
 
 ## 6. Design
 
@@ -120,16 +122,16 @@ These are the federation's invariants:
 
 | Part | What |
 |---|---|
-| `assistant` (new repo, v0.1.0) | Backend (FastAPI), SPA (React 19, Vite, Tailwind v4, `@infra/ui`), compose, bundles, CI. The template is translator. |
-| workbench v0.3.0 | The caller `assistant`: tools over MCP, files over REST, delete a chat, limits per caller, a table preview |
-| edge-plane | The `/assistant/` route on `:443`, `ASSISTANT_EDGE_SECRET`, a portal tile |
+| `ghostwriter` (new repo, v0.1.0) | Backend (FastAPI), SPA (React 19, Vite, Tailwind v4, `@infra/ui`), compose, bundles, CI. The template is translator. |
+| workbench v0.3.0 | The caller `ghostwriter`: tools over MCP, files over REST, delete a chat, limits per caller, a table preview |
+| edge-plane | The `/ghostwriter/` route on `:443`, `GHOSTWRITER_EDGE_SECRET`, a portal tile |
 | deploy | `APP_DIRS`, env-sync groups, `copy-bundles.sh`, ADR 0007, tech-stack pages |
-| obs-plane | The emitter `assistant` / `backend` in the verifier, the scrape target `assistant-backend:8000` |
+| obs-plane | The emitter `ghostwriter` / `backend` in the verifier, the scrape target `ghostwriter-backend:8000` |
 | infra-ui v0.23.0 | `AttachButton` and `MicButton` with their icons, for the composer (the icon policy forbids drawing them in an app) |
-| vllm-service | A comment-only release: the assistant joins `OPENAI_API_KEY`'s `[shared: …]` tag (deploy's rule T5) |
+| vllm-service | A comment-only release: Ghostwriter joins `OPENAI_API_KEY`'s `[shared: …]` tag (deploy's rule T5) |
 | `infra/CLAUDE.md` | The workspace map (a local file, no PR) |
 
-Retiring Open WebUI is **phase 2**, with its own spec, after the owner accepts the assistant. Phase 2 covers:
+Retiring Open WebUI is **phase 2**, with its own spec, after the owner accepts the ghostwriter. Phase 2 covers:
 - the repo, and the `open-webui-data` volume;
 - workbench's terminal door (v0.4);
 - edge-plane's `:8443`, `/webui` and ADR 0002;
@@ -137,12 +139,12 @@ Retiring Open WebUI is **phase 2**, with its own spec, after the owner accepts t
 - obs-plane's rules;
 - vllm-service's JWT attribution.
 
-### 6.2 The assistant's backend
+### 6.2 Ghostwriter's backend
 
 - **Identity.**
-  - A copy of docint's `core/auth/principal.py`, with `ASSISTANT_EDGE_SECRET` (at least 32 characters, or the backend does not start) and `X-Auth-User`.
+  - A copy of docint's `core/auth/principal.py`, with `GHOSTWRITER_EDGE_SECRET` (at least 32 characters, or the backend does not start) and `X-Auth-User`.
   - There is no admin access to other users' chats, and no `owner` parameter. This matches Open WebUI's `ENABLE_ADMIN_CHAT_ACCESS=false` today.
-- **Storage.** SQLite on `assistant-data`, through SQLAlchemy 2.0, as in docint.
+- **Storage.** SQLite on `ghostwriter-data`, through SQLAlchemy 2.0, as in docint.
 
   | Table | Columns | Kept |
   |---|---|---|
@@ -152,7 +154,7 @@ Retiring Open WebUI is **phase 2**, with its own spec, after the owner accepts t
   | `attachments` | id, chat_id, workbench_file_id, name, size, mime, created_at | with the chat |
   | `results` | id, message_id, kind (`image`, `table` or `file`), workbench_file_id, name, mime, size, preview (JSON), preview_expires_at | the preview (a header and at most 5 rows, cells cut short) until `preview_expires_at` |
 
-  The assistant stores no file bytes. Images and downloads are fetched from workbench on request.
+  Ghostwriter stores no file bytes. Images and downloads are fetched from workbench on request.
 - **Context for follow-ups.**
   - While a chat's tool results exist, later turns give the model the earlier tool calls and results, cut to the context budget.
   - After that, the model gets the conversation text and a note that the files have expired.
@@ -163,7 +165,7 @@ Retiring Open WebUI is **phase 2**, with its own spec, after the owner accepts t
   - The tool schemas come from workbench's `tools/list`.
   - Each message has a cap on tool rounds, a wall time and a context budget, sized for a 40k context. The plan sets the values.
 - **Identity towards workbench.**
-  - The assistant sends HMAC pseudonyms, as docint does, keyed with its own workbench key.
+  - Ghostwriter sends HMAC pseudonyms, as docint does, keyed with its own workbench key.
   - `X-User-Id` is the user's pseudonym.
   - `X-Session-Id` is the chat's pseudonym, which becomes the chat's folder in workbench.
 - **Attachments.** `POST /api/chats/{id}/attachments` (multipart):
@@ -182,10 +184,10 @@ Retiring Open WebUI is **phase 2**, with its own spec, after the owner accepts t
   - **A banner** names both periods.
 - **Speech input.** `POST /api/transcribe` passes the recording to the router's `/v1/audio/transcriptions`.
   - The recording is held in memory only and never stored.
-  - `ASSISTANT_SPEECH_INPUT=on|off`, `on` by default. With `off`, the route answers 404 and `/api/config` reports the feature as off.
+  - `GHOSTWRITER_SPEECH_INPUT=on|off`, `on` by default. With `off`, the route answers 404 and `/api/config` reports the feature as off.
   - The plan sets the limits on length and size.
 - **Audit.**
-  - The emitter is `assistant` / `backend`, recording references only. An action whose event cannot be written does not happen.
+  - The emitter is `ghostwriter` / `backend`, recording references only. An action whose event cannot be written does not happen.
   - Events:
     - a chat message, with `ai_call` children;
     - an attachment (`collect`, and the hand-over to workbench as `disclose`);
@@ -196,9 +198,9 @@ Retiring Open WebUI is **phase 2**, with its own spec, after the owner accepts t
 - **Purpose.**
   - It is stated through `@infra/ui`'s `PurposeBar`, as in docint.
   - A set `AUDIT_REQUIRE_PURPOSE` requires it (HTTP 428).
-  - Without a purpose, `assistant chat` goes to workbench.
+  - Without a purpose, `ghostwriter chat` goes to workbench.
 
-### 6.3 The assistant's UI
+### 6.3 Ghostwriter's UI
 
 - **Layout.** `AppShell` from `@infra/ui`.
   - On the left, the chat list: new, rename, delete.
@@ -207,35 +209,35 @@ Retiring Open WebUI is **phase 2**, with its own spec, after the owner accepts t
 - **Taken from docint.** `sse.ts`, `MarkdownProse` (react-markdown with remark-gfm) and the trail disclosure.
 - **Code highlighting** is bundled, with no CDN; the plan picks the library.
 - **Result cards** are modelled on docint's `AnalysisCard`: images inline, a table preview, a file with its size and a download button, and an "expired" state.
-- **The recorder** is built in the assistant. It moves to `@infra/ui` only once a second app needs it.
+- **The recorder** is built in the ghostwriter. It moves to `@infra/ui` only once a second app needs it.
 - **nginx:**
-  - the SPA lives under `/assistant/`, and the prefix is stripped;
+  - the SPA lives under `/ghostwriter/`, and the prefix is stripped;
   - a streaming location like docint's `/stream_query`;
   - a `client_max_body_size` that fits 50 MB;
   - `Permissions-Policy microphone=(self)`.
 
 ### 6.4 workbench v0.3.0
 
-- **The caller `assistant`.**
-  - `ASSISTANT_WORKBENCH_KEY`: at least 32 characters, a key of its own.
+- **The caller `ghostwriter`.**
+  - `GHOSTWRITER_WORKBENCH_KEY`: at least 32 characters, a key of its own.
   - `door=mcp`, `files=workspace`.
-  - The tool list comes from `ASSISTANT_WORKBENCH_TOOLS`. By default it holds the eight workspace tools without `display_file`, which is Open WebUI's card.
+  - The tool list comes from `GHOSTWRITER_WORKBENCH_TOOLS`. By default it holds the eight workspace tools without `display_file`, which is Open WebUI's card.
   - Its own `wall_s` and `slots`.
 - **Workspace tools over MCP.**
   - Each workspace tool gets a `run` adapter and an `input_schema`.
   - A result refers to its output files by path and file id, never by bytes.
-  - `assistant` is the only caller that combines MCP with workspace files.
+  - `ghostwriter` is the only caller that combines MCP with workspace files.
 - **Table preview.**
   - For every csv or xlsx output, workbench's executor reads the header and at most 5 rows, with cells cut short. The result carries them beside the file reference.
-  - Reading office files thus stays in workbench, as the invariant requires. The assistant parses no file, and the preview costs no extra job or event.
+  - Reading office files thus stays in workbench, as the invariant requires. Ghostwriter parses no file, and the preview costs no extra job or event.
 - **Files over REST, for this caller only.** Upload, view, list, and a new `DELETE` that deletes a chat.
-  - `KeyGate` lets the assistant's key reach only `/mcp` and these routes.
+  - `KeyGate` lets Ghostwriter's key reach only `/mcp` and these routes.
   - Deleting a chat:
     1. records the `delete` event by id first;
     2. then removes the chat's files, jobs and folder;
     3. refuses late outputs of jobs still running.
 - **Limits per caller** for the workspace tools, as for docint's inline tool.
-- **Audit.** Purpose and request id reach the assistant's workspace events.
+- **Audit.** Purpose and request id reach Ghostwriter's workspace events.
 - **Unchanged:** Open WebUI's terminal door (both run side by side), docint's inline mode, and the 7-day retention.
 - **Docs.** Short additions to `docs/data-flow.md` (the record of processing), `permissions.md`, `audit.md` and `configuration.md`.
 - **Tests.** A conformance test against the official MCP client.
@@ -244,30 +246,30 @@ Retiring Open WebUI is **phase 2**, with its own spec, after the owner accepts t
 
 - **edge-plane.**
   - A `handle` block like translator's.
-  - `ASSISTANT_EDGE_SECRET` in compose and `.env.example`.
+  - `GHOSTWRITER_EDGE_SECRET` in compose and `.env.example`.
   - `NO_PROXY`.
-  - A portal tile "Assistant". The "Chat" tile stays until phase 2.
+  - A portal tile "Ghostwriter". The "Chat" tile stays until phase 2.
   - The info pages and docs.
 - **deploy.**
   - `APP_DIRS` and `federation.env.example`.
   - env-sync groups:
-    - `assistant-edge`: edge-plane and assistant, generated;
-    - `router-key`: the assistant's `OPENAI_API_KEY`;
-    - `workbench-assistant-key`: workbench `ASSISTANT_WORKBENCH_KEY` and assistant `WORKBENCH_API_KEY`, generated;
-    - `workbench-period`: the assistant's `WORKBENCH_RETENTION_DAYS`.
+    - `ghostwriter-edge`: edge-plane and ghostwriter, generated;
+    - `router-key`: Ghostwriter's `OPENAI_API_KEY`;
+    - `workbench-ghostwriter-key`: workbench `GHOSTWRITER_WORKBENCH_KEY` and ghostwriter `WORKBENCH_API_KEY`, generated;
+    - `workbench-period`: Ghostwriter's `WORKBENCH_RETENTION_DAYS`.
   - A line in `copy-bundles.sh`.
-  - ADR 0007, "The assistant replaces Open WebUI".
+  - ADR 0007, "Ghostwriter replaces Open WebUI".
   - The tech-stack pages (en and de) and `bring-up.md`.
-- **obs-plane.** The pair in `DEFAULT_EMITTERS`, the scrape target and `coverage.md`. It merges before the assistant, or with it.
-- **vllm-service.** Only the shared tag of `OPENAI_API_KEY` names the assistant (rule T5); nothing else changes.
+- **obs-plane.** The pair in `DEFAULT_EMITTERS`, the scrape target and `coverage.md`. It merges before Ghostwriter, or with it.
+- **vllm-service.** Only the shared tag of `OPENAI_API_KEY` names Ghostwriter (rule T5); nothing else changes.
 
 ## 7. Delivery order
 
-0. **The v2 PRs merge first:** deploy#80, workbench#10, docint#764, then open-webui-service#66 and #67. Every assistant plan builds on the merged `main`, and the assistant takes its transport from the merged docint.
+0. **The v2 PRs merge first:** deploy#80, workbench#10, docint#764, then open-webui-service#66 and #67. Every Ghostwriter plan builds on the merged `main`, and Ghostwriter takes its transport from the merged docint.
 1. deploy: the env-sync rows and ADR 0007. Rule T5 needs them before the members' tags.
 2. obs-plane: the emitter and the scrape target.
 3. workbench v0.3.0.
-4. assistant v0.1.0.
+4. Ghostwriter v0.1.0.
 5. edge-plane: the route and the tile.
 6. The map in `infra/CLAUDE.md`.
 7. The owner's end-to-end acceptance, with Open WebUI still running alongside.
@@ -277,7 +279,7 @@ Retiring Open WebUI is **phase 2**, with its own spec, after the owner accepts t
 
 - **Prompt injection.** File content can steer the code. The code runs only in workbench's network-less sandbox, and outputs are only read back and offered for download.
 - **Two periods.** Files are kept 7 days and chats 90, so older chats show "expired".
-- **The router does not see the user.** The assistant records the user and forwards `X-Request-ID`.
+- **The router does not see the user.** Ghostwriter records the user and forwards `X-Request-ID`.
 - **Database growth.** SQLite grows only with text and small previews, and holds no file bytes.
 - **The microphone** needs the browser's permission and HTTPS, which edge-plane provides.
 - **One chat model.** Answer quality rests on `TEXT_MODEL` and the host's context size.
@@ -285,7 +287,7 @@ Retiring Open WebUI is **phase 2**, with its own spec, after the owner accepts t
 ## 9. End-to-end checks (after the merges)
 
 1. `make env ENV_GENERATE=1` gives each new key pair one value on both sides.
-2. **Sign-in.** Sign in through `/assistant/`. Without the matching edge secret the backend answers 401. One user sees no chat of another.
+2. **Sign-in.** Sign in through `/ghostwriter/`. Without the matching edge secret the backend answers 401. One user sees no chat of another.
 3. **The main flow.** Drop an XLSX into a chat and ask "sum column B by month, as Excel and as a chart". Then check:
    - the trail shows the tool steps;
    - the card shows the chart inline and the xlsx with a download button;
@@ -293,12 +295,12 @@ Retiring Open WebUI is **phase 2**, with its own spec, after the owner accepts t
 4. **Chats are separate.** A second chat does not see the file.
 5. **Deleting a chat.** Delete the chat:
    - its workbench files are gone at once;
-   - the assistant's trail holds `delete`, and workbench's trail holds `chat.delete`.
-6. **Speech input.** Dictation works. With `ASSISTANT_SPEECH_INPUT=off`, the microphone is gone and the route answers 404.
+   - Ghostwriter's trail holds `delete`, and workbench's trail holds `chat.delete`.
+6. **Speech input.** Dictation works. With `GHOSTWRITER_SPEECH_INPUT=off`, the microphone is gone and the route answers 404.
 7. **Audit.**
-   - obs-plane's verifier accepts the `assistant` / `backend` chain.
+   - obs-plane's verifier accepts the `ghostwriter` / `backend` chain.
    - Events hold references only.
-   - workbench's tool events carry the purpose `assistant chat`.
+   - workbench's tool events carry the purpose `ghostwriter chat`.
 8. **Retention.** The dry run shows the chats that are due, and the notice period holds.
 9. **Airgap.** `make bundle` and deploy's transfer work, and nothing is fetched at runtime.
 10. **Side by side.** Open WebUI keeps running unchanged.
@@ -308,9 +310,9 @@ Retiring Open WebUI is **phase 2**, with its own spec, after the owner accepts t
 These were made by the designer, not the owner:
 
 - No admin access to other users' chats.
-- No file bytes in the assistant.
+- No file bytes in the ghostwriter.
 - The table preview comes from workbench's executor.
-- The recorder is built in the assistant first.
+- The recorder is built in Ghostwriter first.
 - No model picker.
 - Eight tools, without `display_file`.
 - This spec lives in deploy, because it spans the federation.
