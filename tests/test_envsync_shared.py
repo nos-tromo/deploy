@@ -45,10 +45,12 @@ ROUTER = (
     "router-key  Nextext             OPENAI_API_KEY\n"
     "router-key  translator          OPENAI_API_KEY\n"
     "router-key  open-webui-service  OPENAI_API_KEY\n"
+    "router-key  ghostwriter         OPENAI_API_KEY\n"
 )
 PERIOD = (
     "workbench-period  workbench           WORKBENCH_RETENTION_DAYS  source\n"
     "workbench-period  open-webui-service  WORKBENCH_RETENTION_DAYS\n"
+    "workbench-period  ghostwriter         WORKBENCH_RETENTION_DAYS\n"
 )
 WORKBENCH_KEY = (
     "workbench-key  workbench           OPEN_WEBUI_WORKBENCH_KEY  gen\n"
@@ -57,6 +59,14 @@ WORKBENCH_KEY = (
 DOCINT_KEY = (
     "workbench-docint-key  workbench  DOCINT_WORKBENCH_KEY  gen\n"
     "workbench-docint-key  docint     WORKBENCH_API_KEY     gen\n"
+)
+GHOSTWRITER_KEY = (
+    "workbench-ghostwriter-key  workbench    GHOSTWRITER_WORKBENCH_KEY  gen\n"
+    "workbench-ghostwriter-key  ghostwriter  WORKBENCH_API_KEY          gen\n"
+)
+GHOSTWRITER_EDGE = (
+    "ghostwriter-edge  edge-plane   GHOSTWRITER_EDGE_SECRET  gen\n"
+    "ghostwriter-edge  ghostwriter  GHOSTWRITER_EDGE_SECRET  gen\n"
 )
 TOKENS = (
     "nextext-token  docint   NEXTEXT_API_KEY         gen\n"
@@ -69,6 +79,7 @@ GROUP_NAMES = [
     "docint-edge",
     "nextext-edge",
     "translator-edge",
+    "ghostwriter-edge",
     "open-webui-edge",
     "grafana-edge",
     "audit-edge",
@@ -78,6 +89,7 @@ GROUP_NAMES = [
     "router-key",
     "workbench-key",
     "workbench-docint-key",
+    "workbench-ghostwriter-key",
     "workbench-period",
 ]
 
@@ -178,7 +190,7 @@ class TableTests(unittest.TestCase):
         groups = load_table(text)
         self.assertEqual([group.name for group in groups], GROUP_NAMES)
         rows = {(row.member, row.key): row for group in groups for row in group.rows}
-        self.assertEqual(len(rows), 32)
+        self.assertEqual(len(rows), 38)
         self.assertEqual(
             sorted(key for key, row in rows.items() if row.source),
             [
@@ -226,11 +238,52 @@ class TableTests(unittest.TestCase):
                 {
                     "OPEN_WEBUI_WORKBENCH_KEY",
                     "DOCINT_WORKBENCH_KEY",
+                    "GHOSTWRITER_WORKBENCH_KEY",
                     "WORKBENCH_RETENTION_DAYS",
                 }
             ),
         )
+        self.assertEqual(
+            shared_keys_for(groups, "ghostwriter"),
+            frozenset(
+                {
+                    "GHOSTWRITER_EDGE_SECRET",
+                    "OPENAI_API_KEY",
+                    "WORKBENCH_API_KEY",
+                    "WORKBENCH_RETENTION_DAYS",
+                }
+            ),
+        )
+        self.assertIn(
+            "GHOSTWRITER_EDGE_SECRET", shared_keys_for(groups, "edge-plane")
+        )
         self.assertEqual(shared_keys_for(groups, "deploy"), frozenset())
+
+    def test_the_ghostwriter_rows(self) -> None:
+        groups = {g.name: g for g in load_table((ROOT / "env-sync.conf").read_text())}
+        for name, rows in (
+            (
+                "ghostwriter-edge",
+                [
+                    ("edge-plane", "GHOSTWRITER_EDGE_SECRET"),
+                    ("ghostwriter", "GHOSTWRITER_EDGE_SECRET"),
+                ],
+            ),
+            (
+                "workbench-ghostwriter-key",
+                [
+                    ("workbench", "GHOSTWRITER_WORKBENCH_KEY"),
+                    ("ghostwriter", "WORKBENCH_API_KEY"),
+                ],
+            ),
+        ):
+            self.assertEqual([(r.member, r.key) for r in groups[name].rows], rows)
+            self.assertTrue(all(r.gen and not r.source for r in groups[name].rows))
+        self.assertEqual(groups["router-key"].rows[-1].member, "ghostwriter")
+        self.assertEqual(
+            [r.member for r in groups["workbench-period"].rows],
+            ["workbench", "open-webui-service", "ghostwriter"],
+        )
 
     def test_placeholder_values(self) -> None:
         groups = load_table(AUDIT + HOST)
@@ -637,6 +690,11 @@ class FillTests(SharedCase):
             "# Inference\n# OPENAI_API_KEY=ollama\nTEXT_MODEL=m\n",
             "TEXT_MODEL=m\n",
         )
+        self.member(
+            "ghostwriter",
+            "# Inference\n# OPENAI_API_KEY=ollama\nTEXT_MODEL=m\n",
+            "TEXT_MODEL=m\n",
+        )
         self.assertEqual(self.apply(), [])
         filled = Entry(
             "OPENAI_API_KEY",
@@ -644,17 +702,18 @@ class FillTests(SharedCase):
             "sk-no-key-required",
             "filled",
         )
-        for name in ("open-webui-service", "translator"):
+        for name in ("open-webui-service", "translator", "ghostwriter"):
             with self.subTest(name):
                 self.assertEqual(self.plan(name).entries["OPENAI_API_KEY"], filled)
                 self.assertEqual(
                     items(self.plan(name), "filled"),
                     ["OPENAI_API_KEY (from vllm-service)"],
                 )
-        self.assertEqual(
-            self.text("translator"),
-            "# Inference\nOPENAI_API_KEY=sk-no-key-required\nTEXT_MODEL=m\n",
-        )
+        for name in ("translator", "ghostwriter"):
+            self.assertEqual(
+                self.text(name),
+                "# Inference\nOPENAI_API_KEY=sk-no-key-required\nTEXT_MODEL=m\n",
+            )
         self.assertEqual(self.plan("docint").entries["OPENAI_API_KEY"].origin, "kept")
         self.assertIsNone(event(self.plan("docint"), "filled"))
 
@@ -663,33 +722,36 @@ class FillTests(SharedCase):
         # commented line is unset on both sides, the source included.
         example = "# WORKBENCH_RETENTION_DAYS=7\n"
         key = "WORKBENCH_RETENTION_DAYS"
-        with self.subTest("both commented: silent"):
+        members = ("workbench", "open-webui-service", "ghostwriter")
+        with self.subTest("all commented: silent"):
             self.start(PERIOD)
-            self.member("workbench", example, example)
-            self.member("open-webui-service", example, example)
+            for member in members:
+                self.member(member, example, example)
             self.assertEqual(self.apply(), [])
-            for name in ("workbench", "open-webui-service"):
+            for name in members:
                 self.assertNotIn(key, self.plan(name).entries)
                 self.assertIsNone(event(self.plan(name), "filled"))
                 self.assertEqual(self.text(name), example)
-        for name, setter, filled in (
-            ("the source set", "workbench", "open-webui-service"),
-            ("only open-webui-service set", "open-webui-service", "workbench"),
+        for name, setter in (
+            ("the source set", "workbench"),
+            ("only open-webui-service set", "open-webui-service"),
+            ("only ghostwriter set", "ghostwriter"),
         ):
             with self.subTest(name):
                 self.start(PERIOD)
-                for member in ("workbench", "open-webui-service"):
+                for member in members:
                     env = f"{key}=14\n" if member == setter else example
                     self.member(member, example, env)
                 self.assertEqual(self.apply(), [])
-                self.assertEqual(
-                    self.plan(filled).entries[key],
-                    Entry(key, f"{key}=14", "14", "filled"),
-                )
-                self.assertEqual(
-                    items(self.plan(filled), "filled"), [f"{key} (from {setter})"]
-                )
-                self.assertEqual(self.text(filled), f"{key}=14\n")
+                for filled in (m for m in members if m != setter):
+                    self.assertEqual(
+                        self.plan(filled).entries[key],
+                        Entry(key, f"{key}=14", "14", "filled"),
+                    )
+                    self.assertEqual(
+                        items(self.plan(filled), "filled"), [f"{key} (from {setter})"]
+                    )
+                    self.assertEqual(self.text(filled), f"{key}=14\n")
                 self.assertEqual(self.plan(setter).entries[key].origin, "kept")
                 self.assertIsNone(event(self.plan(setter), "filled"))
 
@@ -1097,23 +1159,40 @@ class GenerateTests(SharedCase):
 
 class WorkbenchDocintKeyTests(SharedCase):
     def test_each_caller_gets_its_own_generated_key(self) -> None:
-        self.start(WORKBENCH_KEY + DOCINT_KEY)
+        self.start(WORKBENCH_KEY + DOCINT_KEY + GHOSTWRITER_KEY)
         for name, key in (
-            ("workbench", "OPEN_WEBUI_WORKBENCH_KEY=\nDOCINT_WORKBENCH_KEY=\n"),
+            (
+                "workbench",
+                "OPEN_WEBUI_WORKBENCH_KEY=\nDOCINT_WORKBENCH_KEY=\n"
+                "GHOSTWRITER_WORKBENCH_KEY=\n",
+            ),
             ("open-webui-service", "OPEN_WEBUI_WORKBENCH_KEY=\n"),
             ("docint", "WORKBENCH_API_KEY=\n"),
+            ("ghostwriter", "WORKBENCH_API_KEY=\n"),
         ):
             self.member(name, key, key)
-        self.assertEqual(self.apply(True, Tokens("a" * 64, "b" * 64)), [])
+        self.assertEqual(
+            self.apply(True, Tokens("a" * 64, "b" * 64, "c" * 64)), []
+        )
         for name, key, value in (
             ("workbench", "OPEN_WEBUI_WORKBENCH_KEY", "a" * 64),
             ("open-webui-service", "OPEN_WEBUI_WORKBENCH_KEY", "a" * 64),
             ("workbench", "DOCINT_WORKBENCH_KEY", "b" * 64),
             ("docint", "WORKBENCH_API_KEY", "b" * 64),
+            ("workbench", "GHOSTWRITER_WORKBENCH_KEY", "c" * 64),
+            ("ghostwriter", "WORKBENCH_API_KEY", "c" * 64),
         ):
             with self.subTest(name=name, key=key):
                 entry = self.plan(name).entries[key]
                 self.assertEqual((entry.value, entry.origin), (value, "generated"))
+        # workbench refuses to start when two callers hold one key
+        callers = (
+            "OPEN_WEBUI_WORKBENCH_KEY",
+            "DOCINT_WORKBENCH_KEY",
+            "GHOSTWRITER_WORKBENCH_KEY",
+        )
+        generated = {self.plan("workbench").entries[key].value for key in callers}
+        self.assertEqual(len(generated), 3)
 
     def test_the_group_waits_until_both_examples_document_the_key(self) -> None:
         self.start(DOCINT_KEY)
@@ -1130,6 +1209,42 @@ class WorkbenchDocintKeyTests(SharedCase):
                 )
             ],
         )
+        self.assertEqual(self.snapshot(), before)
+
+
+class GhostwriterGroupTests(SharedCase):
+    def test_the_ghostwriter_key_waits_until_both_examples_document_it(self) -> None:
+        self.start(GHOSTWRITER_KEY)
+        self.member("workbench", "OTHER=1\n", "OTHER=1\n")
+        self.member("ghostwriter", "WORKBENCH_API_KEY=\n", "WORKBENCH_API_KEY=\n")
+        before = self.snapshot()
+        self.assertEqual(
+            self.apply(True),
+            [
+                Event(
+                    "table",
+                    [
+                        "env-sync.conf: GHOSTWRITER_WORKBENCH_KEY is not in "
+                        "workbench's example"
+                    ],
+                    "warn",
+                )
+            ],
+        )
+        self.assertEqual(self.snapshot(), before)
+
+    def test_the_ghostwriter_groups_stay_silent_until_the_ghostwriter_is_on_the_host(
+        self,
+    ) -> None:
+        self.start(GHOSTWRITER_KEY + GHOSTWRITER_EDGE)
+        self.member(
+            "workbench", "GHOSTWRITER_WORKBENCH_KEY=\n", "GHOSTWRITER_WORKBENCH_KEY=\n"
+        )
+        self.member(
+            "edge-plane", "GHOSTWRITER_EDGE_SECRET=\n", "GHOSTWRITER_EDGE_SECRET=\n"
+        )
+        before = self.snapshot()
+        self.assertEqual(self.apply(True), [])
         self.assertEqual(self.snapshot(), before)
 
 

@@ -3,6 +3,7 @@
 Status: accepted (2026-06-28)
 Date: 2026-06-28
 Recorded: 2026-08-22 (retroactively, from the README's *Known integration points*)
+Lapses with phase 2 of [0007](0007-ghostwriter-replaces-open-webui.md), which retires open-webui-service.
 
 ## Context
 

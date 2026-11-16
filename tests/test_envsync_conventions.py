@@ -295,6 +295,22 @@ class FileRuleTests(unittest.TestCase):
         text = mutate(VALID, '# DASHBOARD_TITLE="Synthetic federation"', title)
         self.assertIn(("F3", "DASHBOARD_TITLE"), found(text))
 
+    def test_f3_a_tag_line_may_pass_79_columns(self) -> None:
+        anchor = "# DATA_NET=data-net\n"
+        tag = "# [required] [secret] [shared: " + ", ".join(
+            f"member-{n}" for n in range(8)
+        ) + "]"
+        self.assertGreater(len(tag), 79)
+        text = mutate(VALID, anchor, anchor + f"\n# A synthetic key.\n{tag}\n# SYNTHETIC_KEY=\n")
+        self.assertNotIn("F3", [rule for rule, _ in found(text)])
+        note = "# [" + "see the runbook for the long note about this key " * 2 + "]"
+        self.assertGreater(len(note), 79)
+        text = mutate(
+            VALID, anchor, anchor + f"\n# A synthetic key.\n{note}\n# SYNTHETIC_KEY=\n"
+        )
+        rules = {rule for rule, _ in found(text)}
+        self.assertTrue(rules & {"T1", "T2"}, rules)
+
     def test_f4_lowercase_key(self) -> None:
         text = mutate(
             VALID, "# --- metrics ---\n", "# --- metrics ---\n# A note.\n# name=x\n"
@@ -511,6 +527,42 @@ class TagRuleTests(unittest.TestCase):
             self.assertNotIn(("T5", key), found(text, member, groups=real))
             wrong = mutate(text, tag, "[secret]")
             self.assertIn(("T5", key), found(wrong, member, groups=real))
+
+    def test_t5_ghostwriter_tags(self) -> None:
+        real = load_table((ROOT / "env-sync.conf").read_text())
+        anchor = "# DATA_NET=data-net\n"
+        for member, key, tag in (
+            ("edge-plane", "GHOSTWRITER_EDGE_SECRET", "[secret] [shared: ghostwriter]"),
+            ("ghostwriter", "GHOSTWRITER_EDGE_SECRET", "[secret] [shared: edge-plane]"),
+            (
+                "workbench",
+                "GHOSTWRITER_WORKBENCH_KEY",
+                "[secret] [shared: ghostwriter WORKBENCH_API_KEY]",
+            ),
+            (
+                "ghostwriter",
+                "WORKBENCH_API_KEY",
+                "[secret] [shared: workbench GHOSTWRITER_WORKBENCH_KEY]",
+            ),
+            ("ghostwriter", "OPENAI_API_KEY", "[secret] [shared: vllm-service]"),
+            ("ghostwriter", "WORKBENCH_RETENTION_DAYS", "[shared: workbench]"),
+            (
+                "vllm-service",
+                "OPENAI_API_KEY",
+                "[secret] [shared: docint, Nextext, translator, open-webui-service,"
+                " ghostwriter]",
+            ),
+            (
+                "workbench",
+                "WORKBENCH_RETENTION_DAYS",
+                "[shared: open-webui-service, ghostwriter]",
+            ),
+        ):
+            block = f"\n# A synthetic key.\n# {tag}\n# {key}=\n"
+            good = mutate(VALID, anchor, anchor + block)
+            bad = mutate(VALID, anchor, anchor + block.replace(tag, "[secret]"))
+            self.assertNotIn(("T5", key), found(good, member, groups=real))
+            self.assertIn(("T5", key), found(bad, member, groups=real))
 
     def test_t6_dev_tag(self) -> None:
         text = mutate(VALID, "# DATA_NET=data-net", "# [dev]\n# DATA_NET=data-net")
@@ -756,6 +808,41 @@ class GroupRequiredTests(unittest.TestCase):
         )
         agree = {m: sibling(m, self.REQUIRED) for m in ("edge-plane", "obs-plane")}
         self.assertEqual(check_group_required(agree, GROUPS), [])
+
+    def test_the_ghostwriter_keys_must_agree_on_required(self) -> None:
+        real = load_table((ROOT / "env-sync.conf").read_text())
+
+        def body(key: str, required: bool) -> str:
+            if required:
+                return f"# [required] [secret]\n{key}=\n"
+            return f"# [secret]\n# {key}=\n"
+
+        for (a, a_key, a_req), (b, b_key, b_req), flagged in (
+            (
+                ("edge-plane", "GHOSTWRITER_EDGE_SECRET", False),
+                ("ghostwriter", "GHOSTWRITER_EDGE_SECRET", True),
+                "GHOSTWRITER_EDGE_SECRET",
+            ),
+            (
+                ("workbench", "GHOSTWRITER_WORKBENCH_KEY", False),
+                ("ghostwriter", "WORKBENCH_API_KEY", True),
+                "WORKBENCH_API_KEY",
+            ),
+            (
+                ("vllm-service", "OPENAI_API_KEY", True),
+                ("ghostwriter", "OPENAI_API_KEY", False),
+                "OPENAI_API_KEY",
+            ),
+        ):
+            for second_req, expected in ((b_req, [("X2", flagged)]), (a_req, [])):
+                got = check_group_required(
+                    {
+                        a: sibling(a, body(a_key, a_req)),
+                        b: sibling(b, body(b_key, second_req)),
+                    },
+                    real,
+                )
+                self.assertEqual([(f.rule, f.key) for f in got], expected)
 
     def test_unmigrated_and_absent_members_are_skipped(self) -> None:
         required = sibling("edge-plane", self.REQUIRED)

@@ -107,7 +107,7 @@ Tags go on one line directly above the setting, in this order:
 
 ### Form
 
-- English, at most 79 columns. A value with no blank in it may run longer (a digest, for example).
+- English, at most 79 columns. A value with no blank in it may run longer (a digest, for example), and so may a tag line, which cannot wrap.
 - Inline comments are allowed only on commented lines that carry a value. Never:
   - on active lines;
   - after an empty value;
@@ -322,7 +322,7 @@ Each finding names a line number, a rule and a key, never a value.
 **File (F)**
 - F1: `load_example` parses the file, and `dotenv.lint` is clean.
 - F2: Every line starts with `#` or is `KEY=…` at column 0; no tabs, no trailing blanks.
-- F3: At most 79 characters, except a line whose value contains no blank.
+- F3: At most 79 characters, except a line whose value contains no blank, and a tag line.
 - F4: Keys match `^[A-Z][A-Z0-9_]*$`.
 
 **Header (H)**
