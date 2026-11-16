@@ -21,12 +21,13 @@ What remains costs a lot:
 
 open-webui-service#67 eases the workbench flow as a bridge until the replacement lands.
 
-**Goal: the ghostwriter.** It is an ad-hoc chat app of the federation's own, for the same signed-in users. Drop a file into a chat, workbench processes it, and the result can be downloaded in the chat. docint stays the platform for larger analyses.
+**Goal: Ghostwriter.** It is the federation's own chat assistant, for the same signed-in users: first a chat for plain conversation, and also a way to work with files. Drop a file into a chat, workbench processes it, and the result can be downloaded in the chat. A chat needs no file and no workbench: with workbench off or unreachable, Ghostwriter answers without tools. docint stays the platform for larger analyses.
 
 ## 2. Goals, non-goals, anti-goals
 
 ### Goals (day one)
 
+- **Conversation.** Ghostwriter is a chat assistant first: questions, writing, explaining, with or without a file. Every description of it says so, and files are presented as what it can also do.
 - **Answers.** Streamed answers with Markdown, code highlighting and tables. Stop and regenerate.
 - **Chat list.** New, rename, delete.
 - **Attachments.** By drag and drop or paste, for the formats workbench reads: PDF, DOCX, XLSX, PPTX, CSV, TXT, MD, ODT, ODS, EML, HTML. At most 50 MB per file.

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build `nos-tromo/ghostwriter` v0.1.0, a lean chat app that replaces Open WebUI. Users drop a file into a chat, workbench processes it over MCP, and the results come back as cards in the chat: images inline, a preview for tables, and a download button per file. It records references only and deletes on the federation's periods.
+**Goal:** Build `nos-tromo/ghostwriter` v0.1.0, a lean chat app that replaces Open WebUI: a chat assistant for plain conversation first, which can also work with files. Users can drop a file into a chat, workbench processes it over MCP, and the results come back as cards in the chat: images inline, a preview for tables, and a download button per file. It records references only and deletes on the federation's periods.
 
 **Architecture:**
 - **Backend.** One FastAPI process holds the chats in SQLite on `ghostwriter-data`, through SQLAlchemy 2.0.
@@ -25,6 +25,7 @@
 
 ## Global Constraints
 
+- **Framing (owner, 2026-11-16).** Ghostwriter is a chat assistant first; files are what it can also do. Every description (README, CLAUDE.md, docs, package descriptions, the page title, the empty state of a new chat) says so. A chat without any file, and with workbench off or unreachable, is a full use: the loop answers without tools (Task 7, `test_without_workbench_no_tool_is_offered`), and the composer hides the paperclip while `/api/config` reports `attachments: false`. Task 13 renders an empty state under a chat with no messages, i18n key `chat.empty`: "Ask anything, or attach a document." / "Frag, was du willst, oder hänge ein Dokument an." (without attachments: `chat.empty_text_only`, "Ask anything." / "Frag, was du willst."), pinned by `it('invites a question, and a document only when attachments are on', ...)`.
 **The shared contract (verbatim, the ghostwriter-relevant lines):**
 
 - **workbench:** the caller name is `ghostwriter`.
