@@ -50,8 +50,9 @@ signed-in users.**
 
 ## Consequences
 
-- A new trust edge on `workbench-net`: the key is a bearer secret, and workbench
-  confines it to one chat (workbench v0.3.0).
+- A new trust edge on `workbench-net`: the key is a bearer secret, one for the
+  caller, and workbench confines each call to one chat's files (workbench
+  v0.3.0).
 - The delivery order is the design's § 7. deploy's wiring (`APP_DIRS`) lands in
   a later PR, once the repo has a release.
 - Residual risks (design § 8): prompt injection into a network-less sandbox;

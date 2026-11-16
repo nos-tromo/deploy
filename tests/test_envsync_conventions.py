@@ -303,6 +303,13 @@ class FileRuleTests(unittest.TestCase):
         self.assertGreater(len(tag), 79)
         text = mutate(VALID, anchor, anchor + f"\n# A synthetic key.\n{tag}\n# SYNTHETIC_KEY=\n")
         self.assertNotIn("F3", [rule for rule, _ in found(text)])
+        note = "# [" + "see the runbook for the long note about this key " * 2 + "]"
+        self.assertGreater(len(note), 79)
+        text = mutate(
+            VALID, anchor, anchor + f"\n# A synthetic key.\n{note}\n# SYNTHETIC_KEY=\n"
+        )
+        rules = {rule for rule, _ in found(text)}
+        self.assertTrue(rules & {"T1", "T2"}, rules)
 
     def test_f4_lowercase_key(self) -> None:
         text = mutate(

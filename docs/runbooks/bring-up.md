@@ -114,8 +114,8 @@ workbench is the exception. It has no notice period and no `off`: a changed
 `WORKBENCH_RETENTION_DAYS` applies to every file at the first sweep after a
 restart, so a shorter one deletes at once what it makes due (workbench
 `docs/retention.md`). Announce a change to the users first. Set it in
-workbench's `.env`: `make env` copies it to open-webui-service, whose banner
-names it ([env-sync.md](env-sync.md#shared-values)).
+workbench's `.env`: `make env` copies it to open-webui-service and Ghostwriter,
+whose banners name it ([env-sync.md](env-sync.md#shared-values)).
 
 ## Identity: edge secrets and second factors
 
