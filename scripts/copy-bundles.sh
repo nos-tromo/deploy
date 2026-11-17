@@ -189,6 +189,10 @@ copy_project "$INFRA_ROOT/translator" translator \
     "$INFRA_ROOT/translator/.translator-version" \
     "$INFRA_ROOT/translator/.env.example"
 
+copy_project "$INFRA_ROOT/ghostwriter" ghostwriter \
+    "$INFRA_ROOT/ghostwriter/.ghostwriter-version" \
+    "$INFRA_ROOT/ghostwriter/.env.example"
+
 # workbench: both images (api, executor) are built locally; nothing is mounted
 # from the repo.
 copy_project "$INFRA_ROOT/workbench" workbench \

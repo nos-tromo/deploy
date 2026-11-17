@@ -44,7 +44,7 @@ sequenced differently.
 
 ### What writes to the trail
 
-Hash-chained events come from the three apps' backends, vllm-service's router
+Hash-chained events come from the four apps' backends, vllm-service's router
 (one `ai_call` per model call, naming Open WebUI's user when step 5 is done),
 workbench's `api` (uploads, reads, views, tool runs on files, new files and
 deletions, by file id), edge-plane's `auth-audit` (login attempts and account
@@ -74,7 +74,8 @@ Rules that follow from it:
   name who made them ([host-audit.md](host-audit.md)).
 - **Queries and disclosures need a stated purpose.** docint and Nextext
   default to `AUDIT_REQUIRE_PURPOSE=query,disclose`; translator,
-  which stores nothing, requires none unless set.
+  which stores nothing, and Ghostwriter require none unless
+  `AUDIT_REQUIRE_PURPOSE` is set.
   - In the apps, the purpose bar in the header holds a case reference and a
     reason for the session; every request carries it, and a request that
     needs one and has none opens the bar.

@@ -33,7 +33,7 @@ INFRA_ROOT   ?= ..
 VLLM_DIR     ?= vllm-service
 DATA_DIR     ?= data-plane
 # The first-party (common.mk) apps — built locally, brought up in the app tier.
-APP_DIRS     ?= docint Nextext translator
+APP_DIRS     ?= docint Nextext translator ghostwriter
 # open-webui-service is the upstream chat UI (pulled image, bespoke Makefile),
 # kept in its own variable rather than folded into APP_DIRS because it is a
 # distinct pulled-image member. It still participates in every app-tier loop

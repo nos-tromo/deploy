@@ -1,19 +1,19 @@
 # nos-tromo federation — tech stack
 
-Last updated: 2026-08-23. German version: [tech-stack.de.md](tech-stack.de.md).
+Last updated: 2026-11-17. German version: [tech-stack.de.md](tech-stack.de.md).
 Versions below are taken from each repo's manifests (`pyproject.toml`,
 `package.json`, `compose.yaml`, Dockerfiles, `VERSION`) at time of writing;
 the manifests remain the source of truth.
 
-The federation is twelve independent repositories under the `nos-tromo`
+The federation is thirteen independent repositories under the `nos-tromo`
 GitHub account (a personal user account, not an organization), each with its
 own git history, CI, and release cycle, joined at runtime by four external
 Docker networks:
 
 - **`inference-net`** — app backends ↔ `vllm-service` (LiteLLM router, alias `vllm-router`)
 - **`data-net`** — app backends ↔ `data-plane` (alias `qdrant`)
-- **`workbench-net`** — tool callers (Open WebUI, docint's backend, alias `docint-backend`) ↔ `workbench` (alias `workbench-api`)
-- **`edge-net`** — edge gateway ↔ app frontends (aliases `docint-frontend`, `nextext-frontend`, `translator-frontend`, `open-webui`, `grafana`)
+- **`workbench-net`** — tool callers (Open WebUI, docint's backend, alias `docint-backend`, Ghostwriter's backend, alias `ghostwriter-backend`) ↔ `workbench` (alias `workbench-api`)
+- **`edge-net`** — edge gateway ↔ app frontends (aliases `docint-frontend`, `nextext-frontend`, `translator-frontend`, `ghostwriter-frontend`, `open-webui`, `grafana`)
 
 Bring-up order is inference → state → obs (optional) → workbench
 (optional) → apps → edge (optional), automated by `deploy`. Everything is
@@ -118,7 +118,7 @@ never embedded: compute tools live here, data tools stay with their owner.
 
 | Component | Technology |
 |---|---|
-| `api` | FastAPI + Uvicorn (one process), Pydantic v2, prometheus-client; uid 10001, alias `workbench-api` (port 8000) on `workbench-net`, not published in production (`up-dev`: host loopback only); one bearer key per caller (open-webui-service on the terminal door, docint's backend on an MCP door; ADR 0006) |
+| `api` | FastAPI + Uvicorn (one process), Pydantic v2, prometheus-client; uid 10001, alias `workbench-api` (port 8000) on `workbench-net`, not published in production (`up-dev`: host loopback only); one bearer key per caller (open-webui-service on the terminal door, docint's backend on an MCP door, Ghostwriter's backend on the MCP door with files over REST; ADR 0006, 0007) |
 | `executor` | No network; a root supervisor with six capabilities runs each job as one of up to 16 slot uids, under a seccomp filter of its own and per-job limits; the api reaches it over a Unix socket |
 | Tool libraries | pandas, numpy, scipy, matplotlib, openpyxl, xlsxwriter, python-docx, docxtpl, python-pptx, pypdf, odfpy, lxml, beautifulsoup4, markdown-it-py (executor image only) |
 | Python / images | `>=3.12,<3.13`; both images on `python:3.12-slim-trixie`, built locally |
@@ -147,14 +147,14 @@ digest-pinned images.
 | Retention | `auth-retention` (pinned `python`, no network): deletes Authelia's login records after `EDGE_AUTH_RETENTION_DAYS` (30), login attempts only once exported; each batch recorded as a `delete` audit event |
 | TLS | Internal CA (`make ca-export`) or org-issued certs via `EDGE_TLS`; `EDGE_HOST` must be a dotted hostname or IP |
 | State | External `edge-state` / `edge-ca` volumes |
-| Routing | Each SPA under its canonical sub-path (`/docint/`, `/nextext/`, `/translator/`); Open WebUI (no sub-path support) on the dedicated `:8443` site |
+| Routing | Each SPA under its canonical sub-path (`/docint/`, `/nextext/`, `/translator/`, `/ghostwriter/`); Open WebUI (no sub-path support) on the dedicated `:8443` site |
 | Networks | `edge-net` only — never `inference-net` / `data-net`. `edge-net` is a trusted zone: members accept the identity headers unverified |
 
 ---
 
 ## Tier: applications
 
-All three Python apps share the same shape: FastAPI backend + React SPA
+All four Python apps share the same shape: FastAPI backend + React SPA
 frontend, env-driven config in one `env_cfg.py` dataclass module, `uv`-managed
 deps, docker files under `docker/` (production-shape `compose.yaml`, dev
 overlay `compose.override.yaml` publishing ports), Makefile on the shared
@@ -200,7 +200,16 @@ Dependabot-bumped.
 | Backend | FastAPI + Uvicorn, `openai` SDK against an instruction-tuned Gemma-class model (env-selected via `TEXT_MODEL`, no local weights), langcodes/langdetect/pycountry |
 | Frontend | Minimal React 19 SPA (TanStack Query only) |
 
-### `open-webui-service` — chat UI (deployment wrapper, v0.1.2)
+### `ghostwriter` — chat assistant
+
+| | |
+|---|---|
+| Version / Python | 0.1.0 · `>=3.11,<3.12` (3.11 only) |
+| Backend | FastAPI + Uvicorn, `openai` SDK against the router; workbench is its tool tier (tools over MCP, files over REST); alias `ghostwriter-backend` on `inference-net` and `workbench-net` |
+| Frontend | React 19 SPA on `@infra/ui`; alias `ghostwriter-frontend` on `edge-net`, served under `/ghostwriter/` |
+| State | SQLite on the external `ghostwriter-data` volume; chats kept 90 days |
+
+### `open-webui-service` — chat UI (deployment wrapper, v0.1.2; being retired in favour of Ghostwriter)
 
 | | |
 |---|---|
@@ -234,7 +243,7 @@ across members.
 | Stack | React 19 (peer dep), Tailwind CSS v4 tokens, class-variance-authority + clsx + tailwind-merge |
 | Primitives | UI primitives + AppHeader, light/dark theming (`useTheme`, CSS vars), **ForceGraph** (canvas force simulation + graph export, consumed by docint), **PurposeBar** (the purpose every audited request states, with `withPurpose` for the fetch wrappers) |
 | Build | tsup → **committed prebuilt `dist/`** (build-time only, no install-time rebuild); vitest + Testing Library + happy-dom; ESLint 9 + Prettier |
-| Consumption | Pinned pnpm dependency on a **commit-SHA codeload tarball** (`https://codeload.github.com/nos-tromo/infra-ui/tar.gz/<sha>`) in all three app frontends — deliberately never a tag; per-app theming via `--app-accent`; requires a Tailwind `@source` line |
+| Consumption | Pinned pnpm dependency on a **commit-SHA codeload tarball** (`https://codeload.github.com/nos-tromo/infra-ui/tar.gz/<sha>`) in all four app frontends — deliberately never a tag; per-app theming via `--app-accent`; requires a Tailwind `@source` line |
 | CI | Includes a dist-guard (dist must match src) |
 
 ### `pr-notify` — Telegram notifier (tooling)
@@ -250,14 +259,14 @@ shared `uv` / `common.mk` conventions apply.
 
 ## Shared toolchain & conventions
 
-**Python (docint, Nextext, translator, workbench; lint-only for vllm-service):**
+**Python (docint, Nextext, translator, ghostwriter, workbench; lint-only for vllm-service):**
 `uv` + `uv.lock` as dependency source of truth; ruff `0.15.14` (lint + format,
 Google docstrings, 120-col) and pyrefly `1.1.1` strict preset — both mirroring
 canonical configs in `nos-tromo/.github/configs/python-strict/` (drift fails
 CI); pytest 9; pre-commit 4. `make verify` is the local pre-push gate
 (pre-commit + frontend `pnpm lint`/`pnpm build` where present).
 
-**Frontend (all three apps + infra-ui):** pnpm 9.12, TypeScript ~6.0 strict
+**Frontend (all four apps + infra-ui):** pnpm 9.12, TypeScript ~6.0 strict
 (`tsc -b` in the build), Vite 8, Vitest 4 + Testing Library + happy-dom,
 ESLint 9 flat config + typescript-eslint 8 (shared config in
 `.github/configs/frontend-eslint/`), Tailwind v4 via `@tailwindcss/postcss`,
