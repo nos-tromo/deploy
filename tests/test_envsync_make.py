@@ -47,6 +47,29 @@ class MakeTargetsTest(unittest.TestCase):
                 self.assertIn("env_sync.py", done.stdout)
             self.assertFalse((deploy / ".env-sync").exists())
 
+    def test_the_ghostwriter_is_in_every_app_loop(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            deploy = Path(tmp) / "deploy"
+            deploy.mkdir()
+            shutil.copy(MAKEFILE, deploy / "Makefile")
+            shutil.copytree(
+                ROOT / "scripts",
+                deploy / "scripts",
+                ignore=shutil.ignore_patterns("__pycache__"),
+            )
+            for target, needle in (
+                ("ps", "translator ghostwriter open-webui-service"),
+                ("env", "../ghostwriter"),
+            ):
+                done = subprocess.run(
+                    ["make", "-n", target],
+                    cwd=deploy,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertIn(needle, done.stdout)
+
     def test_up_runs_env_check_first(self) -> None:
         done = subprocess.run(
             ["make", "-pq", "help"], cwd=ROOT, capture_output=True, text=True

@@ -169,7 +169,7 @@ The Makefile assumes every member listed in
 
 Four members honor that same `network`/`volumes`/`down`/`bundle` contract with a **bespoke
 Makefile** rather than `common.mk`: `data-plane`, `obs-plane`, `edge-plane`, and
-`open-webui-service`. Only `docint`, `Nextext`, `translator`, `vllm-service` and `workbench`
+`open-webui-service`. Only `docint`, `Nextext`, `translator`, `ghostwriter`, `vllm-service` and `workbench`
 `include make/common.mk`. Delegation here must therefore never assume a `common.mk`-only
 target exists on a member.
 

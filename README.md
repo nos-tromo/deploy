@@ -23,7 +23,7 @@ your host differs.
   data-plane/        # state tier (Qdrant + its volumes)
   obs-plane/         # observability tier (Prometheus, Grafana, Loki)
   workbench/         # tool tier (tool API + sandboxed executor, ADR 0005)
-  docint/ Nextext/ translator/ open-webui-service/   # app tier
+  docint/ Nextext/ translator/ ghostwriter/ open-webui-service/   # app tier
   edge-plane/        # edge tier (Caddy gateway + Authelia — the entry point)
   deploy/            # this repo
 ```
@@ -176,7 +176,7 @@ Rehearse both together on a scratch host before staging/production; the
 - **edge tier** (`EDGE_DIR`) — last up, first down; gated on `caddy:443`,
   production-pinned in both modes. [Design](docs/2026-07-24-edge-tier-wiring-design.md).
 - **open-webui-service** (`OPENWEBUI_DIR`) — a full lifecycle member kept out of
-  `APP_DIRS`. [ADR 0002](docs/decisions/0002-open-webui-lifecycle-member.md).
+  `APP_DIRS`, being retired in favour of Ghostwriter. [ADR 0002](docs/decisions/0002-open-webui-lifecycle-member.md).
 
 Each is disabled by setting its variable empty in `federation.env`.
 

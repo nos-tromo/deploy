@@ -39,6 +39,7 @@ the trail itself.
    -w $root/docint/.env -p wa -k fed-config
    -w $root/Nextext/.env -p wa -k fed-config
    -w $root/translator/.env -p wa -k fed-config
+   -w $root/ghostwriter/.env -p wa -k fed-config
    -w $root/vllm-service/.env -p wa -k fed-config
    -w $root/data-plane/.env -p wa -k fed-config
    -w $root/obs-plane/.env -p wa -k fed-config

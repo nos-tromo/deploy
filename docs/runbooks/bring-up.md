@@ -83,13 +83,14 @@ for the notice period first. The settings, in each member's `.env`:
 |---|---|---|---|
 | docint | `DOCUMENT_RETENTION_DAYS` | `365` | Each document, that many days after its ingest; chats, reports, extracts and topic runs built from it no later |
 | open-webui-service | `OPEN_WEBUI_CHAT_RETENTION_DAYS` | `365` | Each chat, that many days after it was started, with its files |
+| ghostwriter | `GHOSTWRITER_CHAT_RETENTION_DAYS` | `90` | Each chat, that many days after it was started, with its files in workbench; tool contents expire with the files |
 | Nextext | `NEXTEXT_CLI_RETENTION_DAYS` | `365` | Command-line inputs and results, that many days after they were stored |
 | data-plane | `BACKUP_RETENTION_DAYS` | `30` | Backups, that many days after they were taken ([backups.md](backups.md)) |
 | edge-plane | `EDGE_AUTH_RETENTION_DAYS` | `30` | Authelia's login records, that many days after they were recorded or ended: login attempts once `auth-audit` exported them to the audit trail, one-time codes, identity verifications, the TOTP history, ended bans (edge-plane `docs/audit.md#retention`) |
 | each of the above | `RETENTION_NOTICE_DAYS` | `30` | — the notice before a deletion, and the grace a new or shorter period gives; changing it alone moves nothing |
 | workbench | `WORKBENCH_RETENTION_DAYS` | `7` | Each workspace file and job record, that many days after it was made; no notice period (below) |
 
-docint, open-webui-service, Nextext and edge-plane also accept `off`, for
+docint, open-webui-service, ghostwriter, Nextext and edge-plane also accept `off`, for
 development only, logged as a warning; data-plane does not. An invalid value
 stops the app at startup, and makes data-plane refuse the backup run. The
 first start of a release that brings a period, and switching it on again
@@ -127,7 +128,8 @@ edge-plane's docs:
   (edge-plane `docs/identity-contract.md` § Edge secret). Generate one value
   per app with `openssl rand -hex 32`, and put it into edge-plane's
   `.env` and the app's `.env` under the same name: `DOCINT_EDGE_SECRET`,
-  `NEXTEXT_EDGE_SECRET`, `TRANSLATOR_EDGE_SECRET`, `OPEN_WEBUI_EDGE_SECRET`.
+  `NEXTEXT_EDGE_SECRET`, `TRANSLATOR_EDGE_SECRET`, `GHOSTWRITER_EDGE_SECRET`,
+  `OPEN_WEBUI_EDGE_SECRET`.
   obs-plane's two Grafanas work the same way, with the values in obs-plane's
   `.env`: `GRAFANA_EDGE_SECRET` (optional)
   and `AUDIT_EDGE_SECRET` (required: without it the audit-trail viewer
