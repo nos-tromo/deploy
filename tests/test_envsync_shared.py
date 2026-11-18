@@ -80,14 +80,11 @@ GROUP_NAMES = [
     "nextext-edge",
     "translator-edge",
     "ghostwriter-edge",
-    "open-webui-edge",
     "grafana-edge",
     "audit-edge",
     "qdrant-key",
-    "openwebui-jwt",
     "nextext-token",
     "router-key",
-    "workbench-key",
     "workbench-docint-key",
     "workbench-ghostwriter-key",
     "workbench-period",
@@ -190,7 +187,7 @@ class TableTests(unittest.TestCase):
         groups = load_table(text)
         self.assertEqual([group.name for group in groups], GROUP_NAMES)
         rows = {(row.member, row.key): row for group in groups for row in group.rows}
-        self.assertEqual(len(rows), 38)
+        self.assertEqual(len(rows), 29)
         self.assertEqual(
             sorted(key for key, row in rows.items() if row.source),
             [
@@ -236,7 +233,6 @@ class TableTests(unittest.TestCase):
             shared_keys_for(groups, "workbench"),
             frozenset(
                 {
-                    "OPEN_WEBUI_WORKBENCH_KEY",
                     "DOCINT_WORKBENCH_KEY",
                     "GHOSTWRITER_WORKBENCH_KEY",
                     "WORKBENCH_RETENTION_DAYS",
@@ -282,7 +278,7 @@ class TableTests(unittest.TestCase):
         self.assertEqual(groups["router-key"].rows[-1].member, "ghostwriter")
         self.assertEqual(
             [r.member for r in groups["workbench-period"].rows],
-            ["workbench", "open-webui-service", "ghostwriter"],
+            ["workbench", "ghostwriter"],
         )
 
     def test_placeholder_values(self) -> None:

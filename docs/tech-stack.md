@@ -5,15 +5,15 @@ Versions below are taken from each repo's manifests (`pyproject.toml`,
 `package.json`, `compose.yaml`, Dockerfiles, `VERSION`) at time of writing;
 the manifests remain the source of truth.
 
-The federation is thirteen independent repositories under the `nos-tromo`
+The federation is twelve independent repositories under the `nos-tromo`
 GitHub account (a personal user account, not an organization), each with its
 own git history, CI, and release cycle, joined at runtime by four external
 Docker networks:
 
 - **`inference-net`** — app backends ↔ `vllm-service` (LiteLLM router, alias `vllm-router`)
 - **`data-net`** — app backends ↔ `data-plane` (alias `qdrant`)
-- **`workbench-net`** — tool callers (Open WebUI, docint's backend, alias `docint-backend`, Ghostwriter's backend, alias `ghostwriter-backend`) ↔ `workbench` (alias `workbench-api`)
-- **`edge-net`** — edge gateway ↔ app frontends (aliases `docint-frontend`, `nextext-frontend`, `translator-frontend`, `ghostwriter-frontend`, `open-webui`, `grafana`)
+- **`workbench-net`** — tool callers (docint's backend, alias `docint-backend`, Ghostwriter's backend, alias `ghostwriter-backend`) ↔ `workbench` (alias `workbench-api`)
+- **`edge-net`** — edge gateway ↔ app frontends (aliases `docint-frontend`, `nextext-frontend`, `translator-frontend`, `ghostwriter-frontend`, `grafana`)
 
 Bring-up order is inference → state → obs (optional) → workbench
 (optional) → apps → edge (optional), automated by `deploy`. Everything is
@@ -113,19 +113,19 @@ Known v1 gap: LiteLLM metrics are license-gated.
 ### `workbench` (v0.1.0)
 
 The shared tool tier (ADR 0005): typed tools over a short-lived workspace per
-user, which Open WebUI reaches as a terminal server. Tool execution is shared,
-never embedded: compute tools live here, data tools stay with their owner.
+user. Tool execution is shared, never embedded: compute tools live here,
+data tools stay with their owner.
 
 | Component | Technology |
 |---|---|
-| `api` | FastAPI + Uvicorn (one process), Pydantic v2, prometheus-client; uid 10001, alias `workbench-api` (port 8000) on `workbench-net`, not published in production (`up-dev`: host loopback only); one bearer key per caller (open-webui-service on the terminal door, docint's backend on an MCP door, Ghostwriter's backend on the MCP door with files over REST; ADR 0006, 0007) |
+| `api` | FastAPI + Uvicorn (one process), Pydantic v2, prometheus-client; uid 10001, alias `workbench-api` (port 8000) on `workbench-net`, not published in production (`up-dev`: host loopback only); one bearer key per caller (docint's backend on an MCP door, Ghostwriter's backend on the MCP door with files over REST; ADR 0006, 0007) |
 | `executor` | No network; a root supervisor with six capabilities runs each job as one of up to 16 slot uids, under a seccomp filter of its own and per-job limits; the api reaches it over a Unix socket |
 | Tool libraries | pandas, numpy, scipy, matplotlib, openpyxl, xlsxwriter, python-docx, docxtpl, python-pptx, pypdf, odfpy, lxml, beautifulsoup4, markdown-it-py (executor image only) |
 | Python / images | `>=3.12,<3.13`; both images on `python:3.12-slim-trixie`, built locally |
 | State | External `workbench-data` volume; every file and job record deleted `WORKBENCH_RETENTION_DAYS` (7) days after it was made; `make nuke` gate |
 | Host | cgroup v2 with Docker's default cgroup namespace |
 | Lifecycle | Vendored `common.mk`; version in `pyproject.toml`; one bundle with both images |
-| Tests | pytest; CI also runs the executor's tests as root, the isolation tests on a live stack, and the terminal contract against the pinned Open WebUI image |
+| Tests | pytest; CI also runs the executor's tests as root and the isolation tests on a live stack |
 
 ---
 
@@ -134,9 +134,8 @@ never embedded: compute tools live here, data tools stay with their owner.
 ### `edge-plane` (v0.4.3)
 
 Federation entry point and the only published host ports in production:
-`:443`, `:8443` (the dedicated Open WebUI site), and `:80`, which serves
-nothing but a permanent redirect to `https://`. Pure infra — pulled
-digest-pinned images.
+`:443` and `:80`, which serves nothing but a permanent redirect to
+`https://`. Pure infra — pulled digest-pinned images.
 
 | Component | Technology |
 |---|---|
@@ -147,7 +146,7 @@ digest-pinned images.
 | Retention | `auth-retention` (pinned `python`, no network): deletes Authelia's login records after `EDGE_AUTH_RETENTION_DAYS` (30), login attempts only once exported; each batch recorded as a `delete` audit event |
 | TLS | Internal CA (`make ca-export`) or org-issued certs via `EDGE_TLS`; `EDGE_HOST` must be a dotted hostname or IP |
 | State | External `edge-state` / `edge-ca` volumes |
-| Routing | Each SPA under its canonical sub-path (`/docint/`, `/nextext/`, `/translator/`, `/ghostwriter/`); Open WebUI (no sub-path support) on the dedicated `:8443` site |
+| Routing | Each SPA under its canonical sub-path (`/docint/`, `/nextext/`, `/translator/`, `/ghostwriter/`) |
 | Networks | `edge-net` only — never `inference-net` / `data-net`. `edge-net` is a trusted zone: members accept the identity headers unverified |
 
 ---
@@ -209,16 +208,6 @@ Dependabot-bumped.
 | Frontend | React 19 SPA on `@infra/ui`; alias `ghostwriter-frontend` on `edge-net`, served under `/ghostwriter/` |
 | State | SQLite on the external `ghostwriter-data` volume; chats kept 90 days |
 
-### `open-webui-service` — chat UI (deployment wrapper, v0.1.2; being retired in favour of Ghostwriter)
-
-| | |
-|---|---|
-| Image | Pulled upstream `ghcr.io/open-webui/open-webui:0.11.0` (digest-pinned) — no app source |
-| Config | `.env` as source of truth; bundled providers hard-disabled so all inference exits via the LiteLLM endpoint on `inference-net` |
-| Entry | Via edge-plane's dedicated `:8443` site (no sub-path support), alias `open-webui` on `edge-net` |
-| State | External `open-webui-data` volume; `make nuke` gate |
-| Lifecycle | Bespoke Makefile (not on `common.mk`); one-line `VERSION` file |
-
 ---
 
 ## Tier: orchestration, shared frontend & tooling
@@ -277,7 +266,7 @@ bundle scripts source a vendored `scripts/bundle-lib.sh` — both canonical in
 `nos-tromo/.github` (currently v3.x line) and CI-drift-checked. `make bundle`
 builds the latest annotated tag reachable from HEAD (tag-versioned artifact);
 `make bundle-dev` bundles the working tree for dev/staging soak. `data-plane`,
-`obs-plane`, `edge-plane`, and `open-webui-service` keep bespoke Makefiles.
+`obs-plane` and `edge-plane` keep bespoke Makefiles.
 
 **CI / release:** GitHub Flow (short-lived `feature/*`/`fix/*` → PR → CI →
 `main`); reusable GitHub Actions workflows from `nos-tromo/.github`, every

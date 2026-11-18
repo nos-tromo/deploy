@@ -549,13 +549,12 @@ class TagRuleTests(unittest.TestCase):
             (
                 "vllm-service",
                 "OPENAI_API_KEY",
-                "[secret] [shared: docint, Nextext, translator, open-webui-service,"
-                " ghostwriter]",
+                "[secret] [shared: docint, Nextext, translator, ghostwriter]",
             ),
             (
                 "workbench",
                 "WORKBENCH_RETENTION_DAYS",
-                "[shared: open-webui-service, ghostwriter]",
+                "[shared: ghostwriter]",
             ),
         ):
             block = f"\n# A synthetic key.\n# {tag}\n# {key}=\n"

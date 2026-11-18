@@ -3,6 +3,7 @@
 Status: accepted (2026-11-15)
 Date: 2026-11-15
 Extended by [0006](0006-docint-calls-workbench-over-mcp.md) and [0007](0007-ghostwriter-replaces-open-webui.md).
+Open WebUI's caller lapsed with [0008](0008-retire-open-webui.md).
 
 ## Context
 

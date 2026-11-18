@@ -23,7 +23,7 @@ your host differs.
   data-plane/        # state tier (Qdrant + its volumes)
   obs-plane/         # observability tier (Prometheus, Grafana, Loki)
   workbench/         # tool tier (tool API + sandboxed executor, ADR 0005)
-  docint/ Nextext/ translator/ ghostwriter/ open-webui-service/   # app tier
+  docint/ Nextext/ translator/ ghostwriter/   # app tier
   edge-plane/        # edge tier (Caddy gateway + Authelia — the entry point)
   deploy/            # this repo
 ```
@@ -36,8 +36,9 @@ start**).
 
 `inference (vllm-service) → state (data-plane) → obs (obs-plane) → workbench → apps → edge (edge-plane)`.
 Each tier must be healthy before the next starts — the apps assume the router and
-the database are already reachable on `inference-net` / `data-net`, and Open
-WebUI finds workbench on `workbench-net`. See `../CLAUDE.md` for the invariant.
+the database are already reachable on `inference-net` / `data-net`, and docint
+and Ghostwriter find workbench on `workbench-net`. See `../CLAUDE.md` for the
+invariant.
 
 `make up` enforces this, health-gating each tier before starting the next, and
 `make setup` creates all four network seams up front so no tier can fail on a
@@ -175,8 +176,6 @@ Rehearse both together on a scratch host before staging/production; the
   [ADR 0005](docs/decisions/0005-workbench-shared-tool-tier.md).
 - **edge tier** (`EDGE_DIR`) — last up, first down; gated on `caddy:443`,
   production-pinned in both modes. [Design](docs/2026-07-24-edge-tier-wiring-design.md).
-- **open-webui-service** (`OPENWEBUI_DIR`) — a full lifecycle member kept out of
-  `APP_DIRS`, being retired in favour of Ghostwriter. [ADR 0002](docs/decisions/0002-open-webui-lifecycle-member.md).
 
 Each is disabled by setting its variable empty in `federation.env`.
 
@@ -189,8 +188,6 @@ recorded here, since `deploy` is the layer that operates the whole stack:
 - `0001-container-engine-docker.md` — Docker Engine stays the federation
   runtime; conformance effort goes into container/host hardening instead of a
   Podman migration.
-- `0002-open-webui-lifecycle-member.md` — `open-webui-service` is a full
-  lifecycle member, carried in `OPENWEBUI_DIR` rather than `APP_DIRS`.
 - `0005-workbench-shared-tool-tier.md` — workbench is the shared tool tier:
   tool execution is shared, never embedded; a fourth network seam
   (`workbench-net`) and a new data store (`workbench-data`, 7 days).

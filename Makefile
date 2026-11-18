@@ -10,7 +10,7 @@
 # layout). Override INFRA_ROOT / the dir + app lists in federation.env.
 #
 # NOTE: every member's `make up` is now detached + `--no-build` (the apps via
-# common.mk v3.2; data-plane/open-webui via their bespoke Makefiles), so this
+# common.mk v3.2; data-plane via its bespoke Makefile), so this
 # layer delegates `make up` per tier — like it already does for
 # network/volumes/down/bundle — instead of driving compose directly. Each
 # member's `make up-dev` is detached too, so `make up-dev` sequences a dev-shape
@@ -34,15 +34,6 @@ VLLM_DIR     ?= vllm-service
 DATA_DIR     ?= data-plane
 # The first-party (common.mk) apps — built locally, brought up in the app tier.
 APP_DIRS     ?= docint Nextext translator ghostwriter
-# open-webui-service is the upstream chat UI (pulled image, bespoke Makefile),
-# kept in its own variable rather than folded into APP_DIRS because it is a
-# distinct pulled-image member. It still participates in every app-tier loop
-# below (setup/up/down/ps/logs) and the bundle/load fan-out — it honors the same
-# network/volumes/down/bundle contract as the apps (its volume target was renamed
-# from the singular `volume` to `volumes` to match). Set empty to drop it from the
-# federation entirely. (deploy itself carries no service images — its `bundle`
-# contributes only the wait-healthy probe image tarball, saved in this repo.)
-OPENWEBUI_DIR ?= open-webui-service
 # obs-plane is the observability plane (Prometheus + Grafana + Loki) — a
 # pulled-image member with a bespoke Makefile (data-plane pattern). Its tier
 # comes up after state and before the apps so app bring-up is observed
@@ -96,7 +87,7 @@ export PRUNE_UPSTREAM
 # make env / env-check (scripts/env_sync.py): every .env this host uses —
 # deploy's own federation.env plus each member's. Neither recipe may mention
 # $(MAKE): `make -n` executes such lines, and env-check must never write.
-ENV_DIRS = . $(addprefix $(INFRA_ROOT)/,$(VLLM_DIR) $(DATA_DIR) $(OBS_DIR) $(WORKBENCH_DIR) $(EDGE_DIR) $(APP_DIRS) $(OPENWEBUI_DIR))
+ENV_DIRS = . $(addprefix $(INFRA_ROOT)/,$(VLLM_DIR) $(DATA_DIR) $(OBS_DIR) $(WORKBENCH_DIR) $(EDGE_DIR) $(APP_DIRS))
 ENV_SYNC = python3 -B ./scripts/env_sync.py
 
 # bundle-exists.sh switches a skipped member to its tag. `make -n` still runs
@@ -126,7 +117,7 @@ help:
 	@echo "  make env       bring every .env (and federation.env) in step with its example; prints what changed (ENV_GENERATE=1 also generates missing shared secrets)"
 	@echo "  make env-check show what 'make env' would change, without writing; 'up' runs it first and stops while a .env is behind (ENV_ALLOW_DRIFT=1 overrides)"
 	@echo
-	@echo "Apps on this host: $(APP_DIRS) $(OPENWEBUI_DIR)   obs: $(if $(OBS_DIR),$(OBS_DIR),disabled)   workbench: $(if $(WORKBENCH_DIR),$(WORKBENCH_DIR),disabled)   edge: $(if $(EDGE_DIR),$(EDGE_DIR),disabled)   data-plane profile: $(DATA_PROFILE)"
+	@echo "Apps on this host: $(APP_DIRS)   obs: $(if $(OBS_DIR),$(OBS_DIR),disabled)   workbench: $(if $(WORKBENCH_DIR),$(WORKBENCH_DIR),disabled)   edge: $(if $(EDGE_DIR),$(EDGE_DIR),disabled)   data-plane profile: $(DATA_PROFILE)"
 
 # One-time host setup. Each repo knows its own networks/volumes (common.mk).
 setup:
@@ -135,7 +126,7 @@ setup:
 	[ -z "$(OBS_DIR)" ] || $(MAKE) -C $(INFRA_ROOT)/$(OBS_DIR) network volumes
 	[ -z "$(WORKBENCH_DIR)" ] || $(MAKE) -C $(INFRA_ROOT)/$(WORKBENCH_DIR) network volumes
 	[ -z "$(EDGE_DIR)" ] || $(MAKE) -C $(INFRA_ROOT)/$(EDGE_DIR) network volumes
-	@for a in $(APP_DIRS) $(OPENWEBUI_DIR); do $(MAKE) -C $(INFRA_ROOT)/$$a network volumes; done
+	@for a in $(APP_DIRS); do $(MAKE) -C $(INFRA_ROOT)/$$a network volumes; done
 
 # `up` and `up-dev` share one recipe so the bring-up order + health gates can't
 # drift between them. $(MODE_UP) selects `up` vs `up-dev` for the mode-sensitive
@@ -167,7 +158,7 @@ up up-dev: env-check setup
 	[ -z "$(WORKBENCH_DIR)" ] || $(MAKE) -C $(INFRA_ROOT)/$(WORKBENCH_DIR) $(MODE_UP)
 	[ -z "$(WORKBENCH_DIR)" ] || ./scripts/wait-healthy.sh workbench-net workbench-api:8000
 	@echo "== app tier ($(MODE_UP)) =="
-	@for a in $(APP_DIRS) $(OPENWEBUI_DIR); do echo ">> $$a"; $(MAKE) -C $(INFRA_ROOT)/$$a $(MODE_UP); done
+	@for a in $(APP_DIRS); do echo ">> $$a"; $(MAKE) -C $(INFRA_ROOT)/$$a $(MODE_UP); done
 	@[ -z "$(EDGE_DIR)" ] || echo "== edge tier ($(EDGE_DIR), production up) =="
 	[ -z "$(EDGE_DIR)" ] || $(MAKE) -C $(INFRA_ROOT)/$(EDGE_DIR) up
 	[ -z "$(EDGE_DIR)" ] || ./scripts/wait-healthy.sh edge-net caddy:443
@@ -177,7 +168,7 @@ up up-dev: env-check setup
 # only data-plane's `make nuke` can, per the workspace invariant).
 down:
 	[ -z "$(EDGE_DIR)" ] || $(MAKE) -C $(INFRA_ROOT)/$(EDGE_DIR) down
-	@for a in $(APP_DIRS) $(OPENWEBUI_DIR); do $(MAKE) -C $(INFRA_ROOT)/$$a down; done
+	@for a in $(APP_DIRS); do $(MAKE) -C $(INFRA_ROOT)/$$a down; done
 	[ -z "$(WORKBENCH_DIR)" ] || $(MAKE) -C $(INFRA_ROOT)/$(WORKBENCH_DIR) down
 	[ -z "$(OBS_DIR)" ] || $(MAKE) -C $(INFRA_ROOT)/$(OBS_DIR) down
 	$(MAKE) -C $(INFRA_ROOT)/$(DATA_DIR) down
@@ -189,10 +180,10 @@ ps:
 	@[ -z "$(OBS_DIR)" ] || { echo "== $(OBS_DIR) =="; $(call compose,$(OBS_DIR)) ps; }
 	@[ -z "$(WORKBENCH_DIR)" ] || { echo "== $(WORKBENCH_DIR) =="; $(call compose,$(WORKBENCH_DIR)) ps; }
 	@[ -z "$(EDGE_DIR)" ] || { echo "== $(EDGE_DIR) =="; $(call compose,$(EDGE_DIR)) ps; }
-	@for a in $(APP_DIRS) $(OPENWEBUI_DIR); do echo "== $$a =="; $(call compose,$$a) ps; done
+	@for a in $(APP_DIRS); do echo "== $$a =="; $(call compose,$$a) ps; done
 
 logs:
-	@for a in $(VLLM_DIR) $(DATA_DIR) $(OBS_DIR) $(WORKBENCH_DIR) $(EDGE_DIR) $(APP_DIRS) $(OPENWEBUI_DIR); do echo "== $$a =="; $(call compose,$$a) logs --tail=50; done
+	@for a in $(VLLM_DIR) $(DATA_DIR) $(OBS_DIR) $(WORKBENCH_DIR) $(EDGE_DIR) $(APP_DIRS); do echo "== $$a =="; $(call compose,$$a) logs --tail=50; done
 
 # Populate a bare host: clone every federation member missing under INFRA_ROOT.
 # Fills in gaps only — an existing directory is left untouched (refreshing is
@@ -206,7 +197,7 @@ logs:
 clone:
 	@failed=""; cloned=0; skipped=0; \
 	mkdir -p "$(INFRA_ROOT)"; \
-	for d in $(VLLM_DIR) $(DATA_DIR) $(OBS_DIR) $(WORKBENCH_DIR) $(EDGE_DIR) $(APP_DIRS) $(OPENWEBUI_DIR); do \
+	for d in $(VLLM_DIR) $(DATA_DIR) $(OBS_DIR) $(WORKBENCH_DIR) $(EDGE_DIR) $(APP_DIRS); do \
 	  if [ -d "$(INFRA_ROOT)/$$d" ]; then \
 	    echo ">> $$d already present — skipping"; skipped=$$((skipped+1)); continue; \
 	  fi; \
@@ -226,7 +217,7 @@ clone:
 # pulled here.)
 pull:
 	@failed=""; \
-	for r in . $(addprefix $(INFRA_ROOT)/,$(VLLM_DIR) $(DATA_DIR) $(OBS_DIR) $(WORKBENCH_DIR) $(EDGE_DIR) $(APP_DIRS) $(OPENWEBUI_DIR)); do \
+	for r in . $(addprefix $(INFRA_ROOT)/,$(VLLM_DIR) $(DATA_DIR) $(OBS_DIR) $(WORKBENCH_DIR) $(EDGE_DIR) $(APP_DIRS)); do \
 	  echo ">> $$r"; \
 	  git -C "$$r" switch main && git -C "$$r" pull --ff-only \
 	    || { echo "WARNING: $$r not updated (dirty tree or diverged history?) — skipping."; failed="$$failed $$r"; }; \
@@ -250,7 +241,7 @@ bundle:
 	[ -z "$(OBS_DIR)" ] || $(BUNDLE_EXISTS) $(INFRA_ROOT)/$(OBS_DIR) || $(MAKE) -C $(INFRA_ROOT)/$(OBS_DIR) bundle
 	[ -z "$(WORKBENCH_DIR)" ] || $(BUNDLE_EXISTS) $(INFRA_ROOT)/$(WORKBENCH_DIR) || $(MAKE) -C $(INFRA_ROOT)/$(WORKBENCH_DIR) bundle
 	[ -z "$(EDGE_DIR)" ] || $(BUNDLE_EXISTS) $(INFRA_ROOT)/$(EDGE_DIR) || $(MAKE) -C $(INFRA_ROOT)/$(EDGE_DIR) bundle
-	@for a in $(APP_DIRS) $(OPENWEBUI_DIR); do echo ">> $$a"; $(BUNDLE_EXISTS) $(INFRA_ROOT)/$$a || $(MAKE) -C $(INFRA_ROOT)/$$a bundle; done
+	@for a in $(APP_DIRS); do echo ">> $$a"; $(BUNDLE_EXISTS) $(INFRA_ROOT)/$$a || $(MAKE) -C $(INFRA_ROOT)/$$a bundle; done
 	@echo ">> wait-healthy probe image ($(WAIT_PROBE_PIN) -> $(WAIT_PROBE_IMAGE))"
 	docker pull "$(WAIT_PROBE_PIN)"
 	docker tag "$(WAIT_PROBE_PIN)" "$(WAIT_PROBE_IMAGE)"
@@ -260,7 +251,7 @@ bundle:
 # Airgapped host: load every image tarball produced by `make bundle` — the
 # members' plus deploy's own probe-image tarball (the bare *.tar.gz glob).
 load:
-	@found=0; for f in *.tar.gz $(INFRA_ROOT)/$(VLLM_DIR)/*.tar.gz $(INFRA_ROOT)/$(DATA_DIR)/*.tar.gz $(foreach a,$(OBS_DIR) $(WORKBENCH_DIR) $(EDGE_DIR) $(APP_DIRS) $(OPENWEBUI_DIR),$(INFRA_ROOT)/$(a)/*.tar.gz); do \
+	@found=0; for f in *.tar.gz $(INFRA_ROOT)/$(VLLM_DIR)/*.tar.gz $(INFRA_ROOT)/$(DATA_DIR)/*.tar.gz $(foreach a,$(OBS_DIR) $(WORKBENCH_DIR) $(EDGE_DIR) $(APP_DIRS),$(INFRA_ROOT)/$(a)/*.tar.gz); do \
 	  [ -e "$$f" ] || continue; found=1; echo ">> docker load -i $$f"; docker load -i "$$f"; \
 	done; [ $$found -eq 1 ] || echo "no *.tar.gz found under deploy or the member repos — run 'make bundle' on the build host first."
 
@@ -274,7 +265,7 @@ load:
 # (images are a host resource; no member has a prune target) — see
 # scripts/prune-images.sh. Afterwards `make load` (or rebuild) before `make up`.
 prune:
-	./scripts/prune-images.sh $(addprefix $(INFRA_ROOT)/,$(VLLM_DIR) $(DATA_DIR) $(OBS_DIR) $(WORKBENCH_DIR) $(EDGE_DIR) $(APP_DIRS) $(OPENWEBUI_DIR))
+	./scripts/prune-images.sh $(addprefix $(INFRA_ROOT)/,$(VLLM_DIR) $(DATA_DIR) $(OBS_DIR) $(WORKBENCH_DIR) $(EDGE_DIR) $(APP_DIRS))
 
 env:
 	$(ENV_SYNC) $(if $(filter 1,$(ENV_GENERATE)),--generate) $(ENV_DIRS)

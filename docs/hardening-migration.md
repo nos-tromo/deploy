@@ -30,7 +30,6 @@ future member.
 | vllm-service | huggingface-cache (main stack and every `*-only` shape) |
 | docint | docling-cache, sessions-storage, source-preview-cache, pipeline-storage |
 | Nextext | spacy-cache, tmp-jobs |
-| open-webui-service | open-webui-data |
 
 Out of scope — **never chown these to 10001**: data-plane, obs-plane, and
 edge-plane volumes. Their third-party images manage their own uids, and

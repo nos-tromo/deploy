@@ -695,6 +695,19 @@ class CheckTests(CliCase):
         self.assertIn("   added      RETRY_LIMIT=3\n", proc.stdout)
         self.assertEqual(proc.stderr, warning)
 
+    def test_a_retired_key_is_not_an_error(self) -> None:
+        edge, obs = self.members()
+        self.assertExit(self.sync(edge, obs), 0)
+        with (edge / ".env").open("a", encoding="utf-8") as env:
+            env.write("OPEN_WEBUI_EDGE_SECRET=SENTINEL-retired\n")
+        proc = self.sync("--check", edge, obs)
+        self.assertExit(proc, 0)
+        self.assertIn(
+            "   unknown    OPEN_WEBUI_EDGE_SECRET "
+            "(not in the example; kept at the end)\n",
+            proc.stdout,
+        )
+
     def test_comment_change_is_not_behind(self) -> None:
         edge, obs = self.members()
         self.assertExit(self.sync(edge, obs), 0)

@@ -167,9 +167,8 @@ Do not pin with a comment a key that a member's Makefile reads straight from
 its `.env` (`grep -E '^KEY=' .env | cut -d= -f2`): the comment ends up in the
 value. These are data-plane's `PROFILE`, `DATA_NET`, `BACKUP_RECIPIENTS`,
 `BACKUP_RETENTION_DAYS` and `RETENTION_NOTICE_DAYS`, and the `*_NET` keys of
-obs-plane (`INFERENCE_NET`, `DATA_NET`, `EDGE_NET`), edge-plane (`EDGE_NET`) and
-open-webui-service (`INFERENCE_NET`, `EDGE_NET`). Their defaults rarely change,
-and the `*RETENTION*` ones are held anyway.
+obs-plane (`INFERENCE_NET`, `DATA_NET`, `EDGE_NET`) and edge-plane (`EDGE_NET`).
+Their defaults rarely change, and the `*RETENTION*` ones are held anyway.
 
 ## Shared values
 
@@ -204,14 +203,14 @@ points an app at another provider, remove that app's `router-key` row from
 or, while that key is unset or a placeholder, writes the router key into it.
 
 The `workbench-period` group carries no secret: it copies workbench's file
-period, `WORKBENCH_RETENTION_DAYS`, to open-webui-service and Ghostwriter,
-whose banners name it. workbench's example comments it out at its default,
-and a commented line counts as unset on both sides, so nothing is copied until
-a host sets an active line. An active line in workbench's `.env` counts as set
-even when it holds the default, since workbench is the source. Set it in
-workbench's `.env`. A value set only in open-webui-service's or Ghostwriter's
-`.env` is copied into workbench's as well, and workbench then deletes by it,
-with no notice period ([bring-up.md](bring-up.md#retention-periods)).
+period, `WORKBENCH_RETENTION_DAYS`, to Ghostwriter, whose banner names it.
+workbench's example comments it out at its default, and a commented line counts
+as unset on both sides, so nothing is copied until a host sets an active line.
+An active line in workbench's `.env` counts as set even when it holds the
+default, since workbench is the source. Set it in workbench's `.env`. A value
+set only in Ghostwriter's `.env` is copied into workbench's as well, and
+workbench then deletes by it, with no notice period
+([bring-up.md](bring-up.md#retention-periods)).
 
 `ENV_GENERATE=1 make env` generates a fresh 64-hex value for each group that is
 unset in every present member, and only when all its rows can take it. Secrets

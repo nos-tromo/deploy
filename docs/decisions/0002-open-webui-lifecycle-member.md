@@ -1,6 +1,6 @@
 # 0002 — open-webui-service as a lifecycle member via `OPENWEBUI_DIR`
 
-Status: accepted (2026-06-28)
+Status: Lapsed (2026-11-17, [0008](0008-retire-open-webui.md))
 Date: 2026-06-28
 Recorded: 2026-08-22 (retroactively, from the README's *Known integration points*)
 Lapses with phase 2 of [0007](0007-ghostwriter-replaces-open-webui.md), which retires open-webui-service.

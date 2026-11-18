@@ -65,8 +65,8 @@ already reachable when they start, and the edge tier assumes the apps it fronts 
 `make up` enforces it by health-gating each tier with `wait-healthy.sh` before starting the next.
 The obs tier is gated on `prometheus:9090` over `data-net`; it is optional (`OBS_DIR` empty skips
 it) but when present its position is fixed. The workbench tier (ADR 0005) is gated on
-`workbench-api:8000` over `workbench-net`, after obs and before the apps, whose Open WebUI calls it;
-`WORKBENCH_DIR` empty skips it. The edge tier (Caddy + Authelia) is gated on
+`workbench-api:8000` over `workbench-net`, after obs and before the apps, whose callers (docint,
+Ghostwriter) need it; `WORKBENCH_DIR` empty skips it. The edge tier (Caddy + Authelia) is gated on
 `caddy:443` over `edge-net`, comes up last, and — like inference — is pinned to production `up`
 in both `up` and `up-dev` (never published in dev shape); `EDGE_DIR` empty skips it. **Never
 reorder these tiers.**
@@ -87,7 +87,7 @@ drive compose directly. Keep this split:
 1. **Lifecycle + uniform targets: delegate via `$(MAKE) -C`.** `setup` (`network` + `volumes`), `up`,
    `up-dev`, `down`, `bundle` are delegated to each member, never reimplemented here. `up` can be delegated
    because every member's `make up` is now detached + `--no-build` (apps via `common.mk` v3.2;
-   `data-plane` / `open-webui-service` bespoke), so a sequencer can chain them; `data-plane` gets
+   `data-plane` bespoke), so a sequencer can chain them; `data-plane` gets
    `PROFILE=$(DATA_PROFILE)`. The state tier has a second selector, `$(DATA_UP)`: production `up`
    delegates it to data-plane's plain `up`, which publishes no ports, so direct database access goes
    through data-plane's recorded target (`make qdrant-shell`). The loopback-only admin port
@@ -98,8 +98,7 @@ drive compose directly. Keep this split:
    their detached `up-dev` to publish host ports — data-plane's `up-dev` already publishes the admin
    port among others — while inference stays pinned to production `up`. `bundle`/`load` cover every image-bearing member — the `APP_DIRS` apps +
    `vllm-service` + `data-plane` (which `bundle` runs at `PROFILE=$(DATA_PROFILE)`) +
-   `open-webui-service` (via `OPENWEBUI_DIR`; its bundle is bespoke but yields the same kind of
-   tarball) + `obs-plane` (via `OBS_DIR`; bespoke, data-plane pattern) + `workbench` (via
+   `obs-plane` (via `OBS_DIR`; bespoke, data-plane pattern) + `workbench` (via
    `WORKBENCH_DIR`; `common.mk`, both images built locally). Delegation does not
    preclude gating: `bundle` decides *whether* to invoke each member's `make bundle` via
    `scripts/bundle-exists.sh` (skip the rebuild when the member's `.<slug>-version` file matches
@@ -109,9 +108,7 @@ drive compose directly. Keep this split:
    `make -n` (which still executes every recipe line mentioning `$(MAKE)`; the Makefile's
    `BUNDLE_EXISTS` passes `BUNDLE_EXISTS_DRY_RUN=1`). The check
    reads only the version file and git state — never tarball filenames, which stay the member's
-   business. Every app-tier loop (`setup`/`up`/`down`/`ps`/`logs`) iterates
-   `$(APP_DIRS) $(OPENWEBUI_DIR)`, so `open-webui-service` is a full lifecycle member, not
-   bundle/load-only.
+   business. Every app-tier loop (`setup`/`up`/`down`/`ps`/`logs`) iterates `$(APP_DIRS)`.
 2. **`ps`/`logs`: drive compose directly** via the helper
    `compose = docker compose --env-file $(INFRA_ROOT)/$(1)/.env -f $(INFRA_ROOT)/$(1)/docker/compose.yaml`.
    There is no uniform `ps` target, and `make logs` follows with `-f` (can't be chained by a
@@ -153,7 +150,7 @@ are driven directly.
 ## Cross-repo contract (not visible from this repo alone)
 
 The Makefile assumes every member listed in
-`VLLM_DIR` / `DATA_DIR` / `OBS_DIR` / `WORKBENCH_DIR` / `EDGE_DIR` / `APP_DIRS` / `OPENWEBUI_DIR`:
+`VLLM_DIR` / `DATA_DIR` / `OBS_DIR` / `WORKBENCH_DIR` / `EDGE_DIR` / `APP_DIRS`:
 
 - lives at `$(INFRA_ROOT)/<dir>/`,
 - has `.env` and `docker/compose.yaml` (used by the `compose` helper above),
@@ -167,33 +164,22 @@ The Makefile assumes every member listed in
   label; read alone, an overlay falls back to the directory name `docker`, which other projects
   could share, so it is skipped.
 
-Four members honor that same `network`/`volumes`/`down`/`bundle` contract with a **bespoke
-Makefile** rather than `common.mk`: `data-plane`, `obs-plane`, `edge-plane`, and
-`open-webui-service`. Only `docint`, `Nextext`, `translator`, `ghostwriter`, `vllm-service` and `workbench`
-`include make/common.mk`. Delegation here must therefore never assume a `common.mk`-only
-target exists on a member.
+Three members honor that same `network`/`volumes`/`down`/`bundle` contract with a **bespoke
+Makefile** rather than `common.mk`: `data-plane`, `obs-plane` and `edge-plane`. Only `docint`,
+`Nextext`, `translator`, `ghostwriter`, `vllm-service` and `workbench` `include make/common.mk`.
+Delegation here must therefore never assume a `common.mk`-only target exists on a member.
 
 Every member's `.env.example` is read by the `.env` sync and follows one shared format:
 `docs/superpowers/specs/2026-11-08-env-example-format-design.md` (the standard) and
 `docs/runbooks/env-sync.md` (the author-facing side). A member checks its example with
 `python3 -B ../deploy/scripts/check_env_examples.py .`.
 
-`open-webui-service` is kept in its **own variable** (`OPENWEBUI_DIR`) rather than `APP_DIRS`
-because it is a distinct member — the upstream chat UI, a pulled image with a bespoke Makefile.
-But it *is* a full lifecycle member: every app-tier loop (`setup`/`up`/`down`/`ps`/`logs`) plus
-`bundle`/`load` iterates `$(APP_DIRS) $(OPENWEBUI_DIR)`. This became possible once its volume target
-was renamed from the singular `volume` to the plural `volumes`, so it now satisfies the contract
-above; keep that name aligned on the open-webui side or `setup` (`make network volumes`) breaks. It
-comes up in the app tier (it attaches only to `inference-net`). Set `OPENWEBUI_DIR` empty to drop it
-from the federation entirely.
-
 ## Configuration
 
 All host-specific knobs live in `federation.env` (gitignored; copy from `federation.env.example`).
 The Makefile `-include`s it. To change which apps run, where member repos live, or the data-plane
 profile, **edit `federation.env`, not the Makefile**: `INFRA_ROOT`, `GIT_REMOTE`, `VLLM_DIR`, `DATA_DIR`,
-`APP_DIRS`, `OPENWEBUI_DIR` (the upstream UI — a full lifecycle member, appended to every app-tier
-loop + `bundle`/`load`), `OBS_DIR` (the observability plane; set empty to disable),
+`APP_DIRS`, `OBS_DIR` (the observability plane; set empty to disable),
 `WORKBENCH_DIR` (the shared tool tier, `workbench`; set empty to disable),
 `EDGE_DIR` (the edge gateway — Caddy + Authelia, `edge-plane`; set empty to disable),
 `DATA_PROFILE` (`cpu`|`cuda`), and optional `WAIT_TIMEOUT` / `WAIT_PROBE_IMAGE` / `BUNDLE_FORCE` /

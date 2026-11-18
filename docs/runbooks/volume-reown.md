@@ -39,9 +39,8 @@ instead of two). The `huggingface-cache` chown is the long pole: time it.
    populated from the image's directory content — root-owned — on its
    *first mount*. If you pre-chown an empty volume and then start the
    container, the copy re-clobbers the ownership. For fresh volumes:
-   start once, let it fail, chown, start again (open-webui is the known
-   case; the app repos' volumes have no image content and don't hit
-   this).
+   start once, let it fail, chown, start again (the app repos' volumes
+   have no image content and don't hit this).
 6. Delete the snapshots only after the post-upgrade soak.
 
 ## Per-repo volume table
@@ -54,7 +53,6 @@ instead of two). The `huggingface-cache` chown is the long pole: time it.
 | docint | `pipeline-storage` | `10001:10001` | new in docint ≥1.4.0 — `make volumes` creates it; chown right after creation |
 | vllm-service | `huggingface-cache` | `10001:10001` | ⚠ transferred model weights on airgap hosts — **snapshot first, time the chown** |
 | Nextext | `spacy-cache` | `10001:10001` | pre-seeded language resources |
-| open-webui-service | `open-webui-data` | `10001:10001` | ⚠ user chats; fresh-volume trap applies (rule 5) |
 | obs-plane | `alloy-data` | `473:473` | handled by `make volumes` (re-run once); positions only |
 | obs-plane | `prometheus-data`, `loki-data`, `grafana-data` | — | no change — services keep their image-default users |
 | obs-plane | `audit-verifier-state` | `65534:65534` | handled by `make volumes` (re-run once); the verifier's chain heads and bindings |
@@ -74,7 +72,7 @@ Bring the stack up (`make up` in `deploy/`) and confirm, per tier:
 
 - every health gate passes (the bring-up enforces this);
 - one write per re-owned volume actually lands: a docint upload, a
-  Nextext job, an open-webui chat, a model load in vllm-service
+  Nextext job, a model load in vllm-service
   (`/health` on each backend);
 - `docker compose exec <svc> id` reports uid `10001` (or the documented
   image-internal user) — not `0`.
