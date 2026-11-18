@@ -2,7 +2,7 @@
 
 The full release ritual for any image-bundling member repo (`docint`,
 `Nextext`, `translator`, `ghostwriter`, `vllm-service`, `workbench`, `data-plane`,
-`obs-plane`, `open-webui-service`, `edge-plane`). The one-paragraph summary
+`obs-plane`, `edge-plane`). The one-paragraph summary
 lives in the [README](../../README.md#releasing); this is the step-by-step.
 
 `deploy` itself is versioned the same way: a one-line `VERSION` file read by the
@@ -12,7 +12,7 @@ same `release-tag` workflow, minting the tag on merge to `main`.
 
 1. In a `release/vX.Y.Z` branch, bump the member's declared version — `pyproject.toml`
    `[project].version` (the Python apps, `vllm-service` and `workbench`) or the
-   one-line `VERSION` file (`data-plane`, `open-webui-service`) — and, for the
+   one-line `VERSION` file (`data-plane`) — and, for the
    Python repos, run `uv lock` to sync the lockfile. PR → CI → merge to `main`.
 2. On merge, the shared `release-tag` workflow (`nos-tromo/.github`, pinned by
    commit SHA in `.github/workflows/release-tag.yml`) reads the

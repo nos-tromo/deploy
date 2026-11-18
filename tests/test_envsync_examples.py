@@ -26,7 +26,6 @@ def _members() -> List[str]:
         "OBS_DIR",
         "WORKBENCH_DIR",
         "EDGE_DIR",
-        "OPENWEBUI_DIR",
     ):
         found = re.search(rf"^{var}\s*\?=\s*(\S+)", makefile, re.M)
         if found and found.group(1) not in names:

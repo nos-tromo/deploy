@@ -138,7 +138,7 @@ copy_project() {
         echo -e "  ${GREEN}✓${NC} Makefile copied."
         # Vendored make includes: the Makefile does `include make/common.mk`;
         # without make/ every make target fails on the airgap side.
-        # (data-plane/obs-plane/edge-plane/open-webui-service have standalone
+        # (data-plane/obs-plane/edge-plane have standalone
         # Makefiles without make/ — then nothing is copied here.)
         if [ -d "$source_dir/make" ]; then
             cp -r "$source_dir/make" "$project_dest/"
@@ -198,14 +198,6 @@ copy_project "$INFRA_ROOT/ghostwriter" ghostwriter \
 copy_project "$INFRA_ROOT/workbench" workbench \
     "$INFRA_ROOT/workbench/.workbench-version" \
     "$INFRA_ROOT/workbench/.env.example"
-
-# open-webui-service: the retention sidecar mounts retention/ and VERSION from
-# the repo; without them it does not start on the airgap side.
-copy_project "$INFRA_ROOT/open-webui-service" open-webui-service \
-    "$INFRA_ROOT/open-webui-service/.env.example" \
-    "$INFRA_ROOT/open-webui-service/nginx" \
-    "$INFRA_ROOT/open-webui-service/retention" \
-    "$INFRA_ROOT/open-webui-service/VERSION"
 
 # data-plane: admin-audit mounts audit/ and VERSION from the repo, and the
 # make targets that open, back up or restore the stores run the host-side

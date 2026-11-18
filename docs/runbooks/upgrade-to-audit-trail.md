@@ -6,14 +6,15 @@ maintenance window. The transfer itself follows the
 [README](../../README.md#airgap-flow) and
 [airgap-transfer.md](airgap-transfer.md); this runbook adds what the jump
 across the audit-trail releases needs on top. The same window also runs
-[retire-chorus.md](retire-chorus.md), at the steps named below: the current
-releases no longer carry what it removes.
+[retire-chorus.md](retire-chorus.md), at the steps named below, and, on a host
+that ran Open WebUI, [retire-open-webui.md](retire-open-webui.md): the current
+releases no longer carry what they remove.
 
 ## What moves
 
 The release each member ran before the audit trail, and the release this
 runbook targets. Check what a host actually runs in each member's
-`.<slug>-version` file (open-webui-service: `.open-webui-version`).
+`.<slug>-version` file.
 
 | Member | Before | Target |
 |---|---|---|
@@ -24,7 +25,6 @@ runbook targets. Check what a host actually runs in each member's
 | docint | v2.6.0 | v2.12.0 |
 | Nextext | v1.12.12 | v1.17.0 |
 | translator | v1.5.11 | v1.8.1 |
-| open-webui-service | v0.4.4 | v0.11.0 |
 | deploy | v0.3.5 | v0.7.0 |
 
 Upgrade every member in the same window. `make up` starts the gateway last,
@@ -40,9 +40,7 @@ v2.10+).
    `make bundle`, which leave every member on its release tag; then
    data-plane's older tarballs go.
 2. `scripts/copy-bundles.sh <dest>` into an empty `<dest>`, right after,
-   before any member leaves its tag. From deploy v0.5.2 on it also ships
-   open-webui-service's `retention/` and `VERSION`, which the retention
-   sidecar mounts.
+   before any member leaves its tag.
 3. Download the `age` package for the host's distribution
    (`apt-get download age`, `dnf download age`): backups now encrypt with it,
    and it is not part of any bundle. The same goes for `python3`, 3.9 or newer,
@@ -62,9 +60,8 @@ v2.10+).
      hold Qdrant's collections and Neo4j's dump; C4 deletes Neo4j's volumes
      and then this dump, the last copy of its data
      ([retire-chorus.md](retire-chorus.md), steps B3 and B4).
-   - A copy of the volumes `sessions-storage` (docint) and `open-webui-data`
-     (Open WebUI v0.13.0 migrates its database on first start): the way back
-     for those two apps.
+   - A copy of the volume `sessions-storage` (docint): the way back for that
+     app.
 2. **Generate the secrets.** `openssl rand -hex 32`, once per value: every
    value its own, at least 32 characters.
 
@@ -73,11 +70,9 @@ v2.10+).
    | `DOCINT_EDGE_SECRET` | yes | docint `.env`, same name |
    | `NEXTEXT_EDGE_SECRET` | yes | Nextext `.env` |
    | `TRANSLATOR_EDGE_SECRET` | yes | translator `.env` |
-   | `OPEN_WEBUI_EDGE_SECRET` | yes | open-webui-service `.env` |
    | `AUDIT_EDGE_SECRET` (required; no quotes, `$` or spaces) | yes | obs-plane `.env` — obs-plane does not start without it |
    | `GRAFANA_EDGE_SECRET` (optional) | yes | obs-plane `.env` |
    | docint's service token | — | Nextext `NEXTEXT_SERVICE_TOKENS=docint=<token>`, docint `NEXTEXT_API_KEY=<token>` |
-   | Open WebUI's user token secret | — | open-webui-service `OPEN_WEBUI_FORWARD_JWT_SECRET`, vllm-service `AUDIT_OPENWEBUI_JWT_SECRET` |
    | `QDRANT_API_KEY` (now required by data-plane) | — | data-plane and docint; keep the existing value if the host has one |
 
 3. **Backup encryption.** Create an age key pair offline and put the public
@@ -148,8 +143,8 @@ v2.10+).
   a case reference or reason in their purpose bar; `/audit/` opens for
   the `audit` group only. A request that bypasses the gateway gets `401`.
 - What retention will delete, after the 30-day grace that starts now: docint
-  `make retention-report` (and the Dashboard card), open-webui-service
-  `make retention-dry-run`, Nextext `make cli-clean LEGACY=1 DRY=1`.
+  `make retention-report` (and the Dashboard card), Nextext
+  `make cli-clean LEGACY=1 DRY=1`.
 - A test backup: `make backup REASON="upgrade check"` in data-plane writes
   `*.age` files.
 - The checks in [retire-chorus.md](retire-chorus.md#c-checks).
@@ -163,16 +158,13 @@ v2.10+).
   proven themselves; until then they are a safety copy of Qdrant's data.
 - Nextext: remove CLI leftovers from before the upgrade with
   `make cli-clean LEGACY=1`; CLI inputs go to `/tmp/nextext-cli/` from now on.
-- open-webui-service: vectors of uploads from before the upgrade stay in its
-  vector store until an admin runs *Reset vector storage*.
 
 ## What users notice
 
 - Logins need a second factor.
 - docint and Nextext show a purpose bar; requests that read or hand out data
   need a case reference or reason.
-- docint shows what is deleted when; Open WebUI shows a banner with its
-  retention period, and uploads, knowledge bases and notes are off.
+- docint shows what is deleted when.
 - translator needs a login.
 
 ## Going back
@@ -183,7 +175,5 @@ chorus, which [retire-chorus.md](retire-chorus.md) removes with their data. Olde
 data-plane would try to pull the neo4j image, and older deploy waits on
 `neo4j:7687` and runs `make` in chorus' checkout. deploy v0.6.0 itself works,
 but has no `make env`. Within those 30 days the
-other members' images and `.env` can be reverted, with two limits:
-
-- Open WebUI needs its volume copy from B1 (database migration).
-- What reached the audit trail stays there.
+other members' images and `.env` can be reverted, with one limit: what reached
+the audit trail stays there.

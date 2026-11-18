@@ -21,9 +21,9 @@
 # latest annotated tag reachable from HEAD on a clean tree — exactly what the
 # member's `make bundle` would build. Every image-bearing member writes that
 # record from the vendored bundle-lib.sh (`bundle_version` -> `.<slug>-version`,
-# gitignored), open-webui-service (`.open-webui-version`) and obs-plane
-# (`.obs-plane-version`) included — obs-plane's tracked plain `VERSION` file is
-# a source version, not the bundle record, and is not what is read here.
+# gitignored), obs-plane (`.obs-plane-version`) included — obs-plane's tracked
+# plain `VERSION` file is a source version, not the bundle record, and is not
+# what is read here.
 #
 # Switching on the skip path keeps the repo files that copy-bundles.sh ships
 # beside the tarballs on the same tag as the images, without a rebuild. It is
