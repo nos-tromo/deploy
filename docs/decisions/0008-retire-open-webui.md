@@ -52,7 +52,7 @@ verifiable. Everything it holds can be deleted.
   source. A host rolls out obs-plane v0.16.0 only after its Open WebUI is
   stopped, or the verifier reports the sidecar as an unlisted source.
 - workbench has two callers, docint and Ghostwriter. On a host, workbench
-  v0.4.0 starts only with a key of one of them.
+  v0.5.0 starts only with a key of one of them.
 - ADR 0002 lapses and 0005 loses its first caller. ADRs 0003, 0006 and 0007
   keep their text; where they name Open WebUI, they describe the federation at
   the time they were written.

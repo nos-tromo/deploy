@@ -2,7 +2,7 @@
 
 A one-time procedure for every federation host that has open-webui-service,
 in the maintenance window of the upgrade to deploy v0.13.0, edge-plane v0.18.0,
-workbench v0.4.0, vllm-service v0.12.0 and obs-plane v0.16.0. Why:
+workbench v0.5.0, vllm-service v0.12.0 and obs-plane v0.16.0. Why:
 [ADR 0008](../decisions/0008-retire-open-webui.md). What Open WebUI holds is
 deleted, not migrated. The transfer itself follows the
 [README](../../README.md#airgap-flow) and
@@ -14,7 +14,7 @@ Commands run from `deploy/`. `..` stands for `INFRA_ROOT`; use its path if
 
 Do step 1 before obs-plane v0.16.0 rolls out: from then on its verifier lists
 no Open WebUI source, and a sidecar still running is reported as an
-`unlisted_source`. Do step 5 before workbench v0.4.0 starts.
+`unlisted_source`. Do step 5 before workbench v0.5.0 starts.
 
 1. **Stop Open WebUI and delete its volume**, in its own checkout, before the
    new deploy files come in: from v0.13.0 on `make down` no longer reaches it.
@@ -61,7 +61,7 @@ no Open WebUI source, and a sidecar still running is reported as an
    With the rules locked (`-e 2`, host-audit.md step 3), the change applies at
    the next reboot instead. A transfer set made before v0.13.0 still holds the
    checkout: build the next one into an empty `<dest>`.
-5. **Give workbench a key that remains.** workbench v0.4.0 starts only with the
+5. **Give workbench a key that remains.** workbench v0.5.0 starts only with the
    key of a remaining caller, `DOCINT_WORKBENCH_KEY` or
    `GHOSTWRITER_WORKBENCH_KEY`. Where workbench's `.env` holds only
    `OPEN_WEBUI_WORKBENCH_KEY`, run `make env ENV_GENERATE=1`: it generates
