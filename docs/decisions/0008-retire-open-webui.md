@@ -49,8 +49,13 @@ verifiable. Everything it holds can be deleted.
 - The federation has twelve repositories.
 - edge-plane publishes `:443` and `:80` only.
 - ADR 0003 continues to apply without Open WebUI's retention sidecar as a
-  source. A host rolls out obs-plane v0.16.0 only after its Open WebUI is
-  stopped, or the verifier reports the sidecar as an unlisted source.
+  source. Its records stay in the trail until `AUDIT_RETENTION` (one year by
+  default) deletes them. The verifier no longer lists the source, so the daily
+  anchor of the day Open WebUI stops, and `make audit-verify` over any range
+  before it, report those records as `unlisted_source`: expected, and
+  harmless. A host rolls out obs-plane v0.16.0 only after its Open WebUI is
+  stopped; otherwise a running sidecar is reported the same way and its audit
+  lines go to the ops Loki, which admins can read.
 - workbench has two callers, docint and Ghostwriter. On a host, workbench
   v0.5.0 starts only with a key of one of them.
 - ADR 0002 lapses and 0005 loses its first caller. ADRs 0003, 0006 and 0007
@@ -58,4 +63,5 @@ verifiable. Everything it holds can be deleted.
   the time they were written.
 - The repository and its pull requests stay on GitHub, archived, so the links
   keep working.
-- Open WebUI's data on the hosts is deleted, with no way back.
+- Open WebUI's data on the hosts is deleted, with no way back, apart from
+  those records.
