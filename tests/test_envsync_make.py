@@ -6,13 +6,30 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
 
 from envsync_helpers import ROOT
 
 from envsync import example
 
 MAKEFILE = ROOT / "Makefile"
+
+
+@contextmanager
+def deploy_copy() -> Iterator[Path]:
+    """A throwaway deploy/ with the Makefile and scripts/, and no member beside it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        deploy = Path(tmp) / "deploy"
+        deploy.mkdir()
+        shutil.copy(MAKEFILE, deploy / "Makefile")
+        shutil.copytree(
+            ROOT / "scripts",
+            deploy / "scripts",
+            ignore=shutil.ignore_patterns("__pycache__"),
+        )
+        yield deploy
 
 
 def _table_rows():
@@ -27,15 +44,7 @@ def _table_rows():
 
 class MakeTargetsTest(unittest.TestCase):
     def make_n(self, target: str, *overrides: str) -> str:
-        with tempfile.TemporaryDirectory() as tmp:
-            deploy = Path(tmp) / "deploy"
-            deploy.mkdir()
-            shutil.copy(MAKEFILE, deploy / "Makefile")
-            shutil.copytree(
-                ROOT / "scripts",
-                deploy / "scripts",
-                ignore=shutil.ignore_patterns("__pycache__"),
-            )
+        with deploy_copy() as deploy:
             # -i: the members are not on disk; run past each failed sub-make
             done = subprocess.run(
                 ["make", "-n", "-i", target, *overrides],
@@ -46,15 +55,7 @@ class MakeTargetsTest(unittest.TestCase):
         return done.stdout + done.stderr
 
     def test_dry_run_executes_nothing(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            deploy = Path(tmp) / "deploy"
-            deploy.mkdir()
-            shutil.copy(MAKEFILE, deploy / "Makefile")
-            shutil.copytree(
-                ROOT / "scripts",
-                deploy / "scripts",
-                ignore=shutil.ignore_patterns("__pycache__"),
-            )
+        with deploy_copy() as deploy:
             for target in ("env", "env-check"):
                 done = subprocess.run(
                     ["make", "-n", target],
@@ -67,15 +68,7 @@ class MakeTargetsTest(unittest.TestCase):
             self.assertFalse((deploy / ".env-sync").exists())
 
     def test_the_ghostwriter_is_in_every_app_loop(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            deploy = Path(tmp) / "deploy"
-            deploy.mkdir()
-            shutil.copy(MAKEFILE, deploy / "Makefile")
-            shutil.copytree(
-                ROOT / "scripts",
-                deploy / "scripts",
-                ignore=shutil.ignore_patterns("__pycache__"),
-            )
+        with deploy_copy() as deploy:
             for target, needle in (
                 ("ps", "translator ghostwriter; do"),
                 ("env", "../ghostwriter"),
@@ -92,6 +85,8 @@ class MakeTargetsTest(unittest.TestCase):
     def test_a_leftover_openwebui_dir_is_inert(self) -> None:
         """A federation.env that still sets OPENWEBUI_DIR changes nothing: no target names the retired member."""
         out = self.make_n("up", "OPENWEBUI_DIR=open-webui-service")
+        self.assertIn("env_sync.py --check", out)
+        self.assertIn("translator ghostwriter; do", out)
         self.assertNotIn("open-webui-service", out)
 
     def test_up_runs_env_check_first(self) -> None:

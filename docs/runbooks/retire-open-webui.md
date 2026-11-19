@@ -36,12 +36,13 @@ Do step 7 before workbench v0.5.0 starts, that is before `make up` in step 9.
    `OPENWEBUI_DIR=` in `federation.env`, so the old files' `make down`,
    `make up` and the rest skip the stopped member.
 2. **Delete every copy of `open-webui-data`**, on the host and every copy off
-   it: the snapshot taken under [volume-reown.md](volume-reown.md) rule 2 and
-   the copy kept under [upgrade-to-audit-trail.md](upgrade-to-audit-trail.md)
-   B1, wherever they went:
+   it: the snapshot [volume-reown.md](volume-reown.md) rule 2 writes as
+   `/srv/backups/<vol>.tgz`, and the copy kept under
+   [upgrade-to-audit-trail.md](upgrade-to-audit-trail.md) B1 before v0.13.0,
+   wherever they went. The snapshot is root's:
 
    ```bash
-   rm -f /srv/backups/open-webui-data.tgz
+   sudo rm -f /srv/backups/open-webui-data.tgz
    ```
 3. **Remove the images**, but not with `make prune`: Open WebUI is no longer a
    member once the new deploy files are in, so it cannot reach them. The loop
@@ -108,16 +109,21 @@ Do step 7 before workbench v0.5.0 starts, that is before `make up` in step 9.
    obs-plane's `.env`, where it is set. Then this prints nothing:
 
    ```bash
-   grep -s -n -i -E '^[^#]*open[-_]?webui' ../edge-plane/.env ../vllm-service/.env ../workbench/.env ../obs-plane/.env
+   grep -s -n -i -E '^[^#]*open[-_ ]?webui' ../edge-plane/.env ../vllm-service/.env ../workbench/.env ../obs-plane/.env
    ```
 9. **Bring in the new releases.**
    - Replace deploy's and the members' files with the transfer set. Leave every
-     `.env`, edge-plane's `authelia/users.yml` and `certs/`, and data-plane's
-     `backup/` as they are.
+     `.env`, deploy's `federation.env` and `.env-sync/`, edge-plane's
+     `authelia/users.yml` and `certs/`, the texts step 6 wrote into its
+     `info/` (not the `*.example.md` templates) and its `announcements/`, and
+     data-plane's `backup/` as they are.
    - Take `OPENWEBUI_DIR` out of `federation.env`, where it is set. deploy
      v0.13.0 ignores it, so a leftover does no harm.
    - `make load`, `make env`, `make setup`, `make up`. Steps 2 to 8 work before
      or after the files come in; step 7 only before `make up`.
+   - On a host that both builds and runs the federation there is no transfer
+     set and no `make load`: `make pull` brings the files, then `make env`,
+     `make bundle` builds the images, then `make setup` and `make up`.
 
 ## Checks
 
@@ -126,13 +132,13 @@ Each prints nothing:
 ```bash
 docker ps -a --format '{{.Names}}' | grep -i open-webui
 docker volume ls -q | grep -x open-webui-data
-ls /srv/backups/open-webui-data.tgz 2>/dev/null   # and any copy off the host
+sudo ls /srv/backups/open-webui-data.tgz 2>/dev/null   # and any copy off the host
 docker image ls -q ghcr.io/open-webui/open-webui
 docker image ls -q python:3.15.0-alpine3.24
 docker ps --format '{{.Ports}}' | grep 8443   # after step 9
 ss -ltn | grep -E ':8443\s'
 ls ../open-webui-service 2>/dev/null
-grep -s -l -i -E 'open ?webui|8443' ../edge-plane/info/*.md ../edge-plane/announcements/*.md
+grep -s -l -i -E 'open[-_ ]?webui|8443' ../edge-plane/info/*.md ../edge-plane/announcements/*.md
 sudo auditctl -l | grep -F /open-webui-service/   # with locked rules, only after the reboot
 ```
 
@@ -142,5 +148,5 @@ Where workbench runs, this prints 1 or more:
 grep -c -E '^(DOCINT|GHOSTWRITER)_WORKBENCH_KEY=.+' ../workbench/.env
 ```
 
-An image step 3 kept for a container still shows: after step 1 that container
-is not Open WebUI's.
+Where step 3 kept an image because a container uses it, `docker image ls`
+still lists it. That container is not Open WebUI's: step 1 removed those.
