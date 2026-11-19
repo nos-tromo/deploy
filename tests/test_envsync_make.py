@@ -82,13 +82,6 @@ class MakeTargetsTest(unittest.TestCase):
                 self.assertEqual(done.returncode, 0, done.stderr)
                 self.assertIn(needle, done.stdout)
 
-    def test_a_leftover_openwebui_dir_is_inert(self) -> None:
-        """A federation.env that still sets OPENWEBUI_DIR changes nothing: no target names the retired member."""
-        out = self.make_n("up", "OPENWEBUI_DIR=open-webui-service")
-        self.assertIn("env_sync.py --check", out)
-        self.assertIn("translator ghostwriter; do", out)
-        self.assertNotIn("open-webui-service", out)
-
     def test_up_runs_env_check_first(self) -> None:
         done = subprocess.run(
             ["make", "-pq", "help"], cwd=ROOT, capture_output=True, text=True

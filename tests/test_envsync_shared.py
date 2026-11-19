@@ -37,24 +37,24 @@ QDRANT = (
 HOST = (
     "edge-host  edge-plane          EDGE_HOST  source\n"
     "edge-host  obs-plane           EDGE_HOST\n"
-    "edge-host  open-webui-service  EDGE_HOST\n"
+    "edge-host  sample-app-service  EDGE_HOST\n"
 )
 ROUTER = (
     "router-key  vllm-service        OPENAI_API_KEY  source\n"
     "router-key  docint              OPENAI_API_KEY\n"
     "router-key  Nextext             OPENAI_API_KEY\n"
     "router-key  translator          OPENAI_API_KEY\n"
-    "router-key  open-webui-service  OPENAI_API_KEY\n"
+    "router-key  sample-app-service  OPENAI_API_KEY\n"
     "router-key  ghostwriter         OPENAI_API_KEY\n"
 )
 PERIOD = (
     "workbench-period  workbench           WORKBENCH_RETENTION_DAYS  source\n"
-    "workbench-period  open-webui-service  WORKBENCH_RETENTION_DAYS\n"
+    "workbench-period  sample-app-service  WORKBENCH_RETENTION_DAYS\n"
     "workbench-period  ghostwriter         WORKBENCH_RETENTION_DAYS\n"
 )
 WORKBENCH_KEY = (
-    "workbench-key  workbench           OPEN_WEBUI_WORKBENCH_KEY  gen\n"
-    "workbench-key  open-webui-service  OPEN_WEBUI_WORKBENCH_KEY  gen\n"
+    "workbench-key  workbench           SAMPLE_APP_WORKBENCH_KEY  gen\n"
+    "workbench-key  sample-app-service  SAMPLE_APP_WORKBENCH_KEY  gen\n"
 )
 DOCINT_KEY = (
     "workbench-docint-key  workbench  DOCINT_WORKBENCH_KEY  gen\n"
@@ -654,9 +654,9 @@ class FillTests(SharedCase):
             "edge-plane", "EDGE_HOST=127.0.0.1\n", "EDGE_HOST=gw.example.invalid\n"
         )
         self.member("obs-plane", "EDGE_HOST=127.0.0.1\n", "EDGE_HOST=127.0.0.1\n")
-        self.member("open-webui-service", "EDGE_HOST=127.0.0.1\n", None)
+        self.member("sample-app-service", "EDGE_HOST=127.0.0.1\n", None)
         self.assertEqual(self.apply(), [])
-        for name in ("obs-plane", "open-webui-service"):
+        for name in ("obs-plane", "sample-app-service"):
             with self.subTest(name):
                 self.assertEqual(
                     self.plan(name).entries["EDGE_HOST"],
@@ -677,7 +677,7 @@ class FillTests(SharedCase):
         self.member("vllm-service", key, key)
         self.member("docint", key, key)
         self.member(
-            "open-webui-service",
+            "sample-app-service",
             "OPENAI_API_KEY=sk-1234567890\n",
             "OPENAI_API_KEY=sk-1234567890\n",
         )
@@ -698,7 +698,7 @@ class FillTests(SharedCase):
             "sk-no-key-required",
             "filled",
         )
-        for name in ("open-webui-service", "translator", "ghostwriter"):
+        for name in ("sample-app-service", "translator", "ghostwriter"):
             with self.subTest(name):
                 self.assertEqual(self.plan(name).entries["OPENAI_API_KEY"], filled)
                 self.assertEqual(
@@ -718,7 +718,7 @@ class FillTests(SharedCase):
         # commented line is unset on both sides, the source included.
         example = "# WORKBENCH_RETENTION_DAYS=7\n"
         key = "WORKBENCH_RETENTION_DAYS"
-        members = ("workbench", "open-webui-service", "ghostwriter")
+        members = ("workbench", "sample-app-service", "ghostwriter")
         with self.subTest("all commented: silent"):
             self.start(PERIOD)
             for member in members:
@@ -730,7 +730,7 @@ class FillTests(SharedCase):
                 self.assertEqual(self.text(name), example)
         for name, setter in (
             ("the source set", "workbench"),
-            ("only open-webui-service set", "open-webui-service"),
+            ("only sample-app-service set", "sample-app-service"),
             ("only ghostwriter set", "ghostwriter"),
         ):
             with self.subTest(name):
@@ -801,7 +801,7 @@ class FillTests(SharedCase):
         self.start(
             "audit-edge    edge-plane          AUDIT_EDGE_SECRET    gen\n"
             "audit-edge    obs-plane           AUDIT_EDGE_SECRET    gen\n"
-            "audit-edge    open-webui-service  AUDIT_EDGE_SECRET    gen\n"
+            "audit-edge    sample-app-service  AUDIT_EDGE_SECRET    gen\n"
             "grafana-edge  edge-plane          GRAFANA_EDGE_SECRET  gen\n"
             "grafana-edge  obs-plane           GRAFANA_EDGE_SECRET  gen\n"
             "grafana-edge  docint              GRAFANA_EDGE_SECRET  gen\n"
@@ -1159,10 +1159,10 @@ class WorkbenchDocintKeyTests(SharedCase):
         for name, key in (
             (
                 "workbench",
-                "OPEN_WEBUI_WORKBENCH_KEY=\nDOCINT_WORKBENCH_KEY=\n"
+                "SAMPLE_APP_WORKBENCH_KEY=\nDOCINT_WORKBENCH_KEY=\n"
                 "GHOSTWRITER_WORKBENCH_KEY=\n",
             ),
-            ("open-webui-service", "OPEN_WEBUI_WORKBENCH_KEY=\n"),
+            ("sample-app-service", "SAMPLE_APP_WORKBENCH_KEY=\n"),
             ("docint", "WORKBENCH_API_KEY=\n"),
             ("ghostwriter", "WORKBENCH_API_KEY=\n"),
         ):
@@ -1171,8 +1171,8 @@ class WorkbenchDocintKeyTests(SharedCase):
             self.apply(True, Tokens("a" * 64, "b" * 64, "c" * 64)), []
         )
         for name, key, value in (
-            ("workbench", "OPEN_WEBUI_WORKBENCH_KEY", "a" * 64),
-            ("open-webui-service", "OPEN_WEBUI_WORKBENCH_KEY", "a" * 64),
+            ("workbench", "SAMPLE_APP_WORKBENCH_KEY", "a" * 64),
+            ("sample-app-service", "SAMPLE_APP_WORKBENCH_KEY", "a" * 64),
             ("workbench", "DOCINT_WORKBENCH_KEY", "b" * 64),
             ("docint", "WORKBENCH_API_KEY", "b" * 64),
             ("workbench", "GHOSTWRITER_WORKBENCH_KEY", "c" * 64),
@@ -1183,7 +1183,7 @@ class WorkbenchDocintKeyTests(SharedCase):
                 self.assertEqual((entry.value, entry.origin), (value, "generated"))
         # workbench refuses to start when two callers hold one key
         callers = (
-            "OPEN_WEBUI_WORKBENCH_KEY",
+            "SAMPLE_APP_WORKBENCH_KEY",
             "DOCINT_WORKBENCH_KEY",
             "GHOSTWRITER_WORKBENCH_KEY",
         )

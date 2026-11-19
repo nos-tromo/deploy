@@ -32,7 +32,7 @@ audit-edge  edge-plane          AUDIT_EDGE_SECRET   gen
 audit-edge  obs-plane           AUDIT_EDGE_SECRET   gen
 edge-host   edge-plane          EDGE_HOST           source
 edge-host   obs-plane           EDGE_HOST
-edge-host   open-webui-service  EDGE_HOST
+edge-host   sample-app-service  EDGE_HOST
 jwt         obs-plane           GRAFANA_JWT_SECRET  gen
 jwt         vllm-service        AUDIT_JWT_SECRET    gen
 """
@@ -479,7 +479,7 @@ class TagRuleTests(unittest.TestCase):
         host = "# [required] [shared: edge-plane]\nEDGE_HOST=\n"
         text = mutate(VALID, "\nAUDIT_EDGE_SECRET=\n", "\nAUDIT_EDGE_SECRET=\n" + host)
         self.assertEqual(found(text), set())
-        wide = host.replace("edge-plane]", "edge-plane, open-webui-service]")
+        wide = host.replace("edge-plane]", "edge-plane, sample-app-service]")
         text = mutate(VALID, "\nAUDIT_EDGE_SECRET=\n", "\nAUDIT_EDGE_SECRET=\n" + wide)
         self.assertIn(("T5", "EDGE_HOST"), found(text))
 
@@ -487,12 +487,12 @@ class TagRuleTests(unittest.TestCase):
         edge = HEADER.replace("# obs-plane —", "# edge-plane —")
         edge += banner("Required")
         good = edge + (
-            "# [required] [shared: obs-plane, open-webui-service]\nEDGE_HOST=\n"
+            "# [required] [shared: obs-plane, sample-app-service]\nEDGE_HOST=\n"
             "# [required] [secret] [shared: obs-plane]\nAUDIT_EDGE_SECRET=\n"
         )
         self.assertEqual(check(good, "edge-plane", groups=GROUPS), [])
         swapped = good.replace(
-            "obs-plane, open-webui-service", "open-webui-service, obs-plane"
+            "obs-plane, sample-app-service", "sample-app-service, obs-plane"
         )
         self.assertIn(("T5", "EDGE_HOST"), found(swapped, "edge-plane"))
 
