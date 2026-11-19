@@ -43,17 +43,6 @@ def _table_rows():
 
 
 class MakeTargetsTest(unittest.TestCase):
-    def make_n(self, target: str, *overrides: str) -> str:
-        with deploy_copy() as deploy:
-            # -i: the members are not on disk; run past each failed sub-make
-            done = subprocess.run(
-                ["make", "-n", "-i", target, *overrides],
-                cwd=deploy,
-                capture_output=True,
-                text=True,
-            )
-        return done.stdout + done.stderr
-
     def test_dry_run_executes_nothing(self) -> None:
         with deploy_copy() as deploy:
             for target in ("env", "env-check"):
