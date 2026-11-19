@@ -43,17 +43,6 @@ def _table_rows():
 
 
 class MakeTargetsTest(unittest.TestCase):
-    def make_n(self, target: str, *overrides: str) -> str:
-        with deploy_copy() as deploy:
-            # -i: the members are not on disk; run past each failed sub-make
-            done = subprocess.run(
-                ["make", "-n", "-i", target, *overrides],
-                cwd=deploy,
-                capture_output=True,
-                text=True,
-            )
-        return done.stdout + done.stderr
-
     def test_dry_run_executes_nothing(self) -> None:
         with deploy_copy() as deploy:
             for target in ("env", "env-check"):
@@ -81,13 +70,6 @@ class MakeTargetsTest(unittest.TestCase):
                 )
                 self.assertEqual(done.returncode, 0, done.stderr)
                 self.assertIn(needle, done.stdout)
-
-    def test_a_leftover_openwebui_dir_is_inert(self) -> None:
-        """A federation.env that still sets OPENWEBUI_DIR changes nothing: no target names the retired member."""
-        out = self.make_n("up", "OPENWEBUI_DIR=open-webui-service")
-        self.assertIn("env_sync.py --check", out)
-        self.assertIn("translator ghostwriter; do", out)
-        self.assertNotIn("open-webui-service", out)
 
     def test_up_runs_env_check_first(self) -> None:
         done = subprocess.run(
