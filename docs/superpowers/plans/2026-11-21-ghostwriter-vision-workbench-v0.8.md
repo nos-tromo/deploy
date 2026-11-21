@@ -23,7 +23,7 @@ These are the lead's calls (stage 2). The owner may correct any of them before e
   - xlsx/xlsm/ods: LibreOffice paginates them by print area, and `view_file` keeps saying spreadsheets are not shown;
   - doc/ppt/rtf: the readers refuse them with "save it as";
   - odp: it has no text reader and is no Ghostwriter attachment type.
-- **D2 Wire:** a new kind `office`, plus `unit: Literal["page", "slide"]` (default `"page"`) on `RenderFacts` and on `Manifest`. pptx and potx are `slide`; docx, dotx and odt are `page`. *(plan)* Ghostwriter 0.3.0 never prepares an Office file (`ghostwriter/upload.py:67`) and reads `view_file` answers by `shown` alone, so it is unaffected. 0.4.0 reads `office` and `unit`.
+- **D2 Wire:** a new kind `office`, plus `unit: Literal["page", "slide"]` (default `"page"`) on `RenderFacts` and on `Manifest`. pptx and potx are `slide`; docx, dotx and odt are `page`. *(plan)* Ghostwriter 0.3.0 and 0.4.0 never prepare an Office file (`ghostwriter/upload.py:67`) and reads `view_file` answers by `shown` alone, so they are unaffected. 0.5.0 reads `office` and `unit`.
 - **D3 Convert once, render many:**
   - `convert_office` is a runner of its own (`RUNNERS`, `jobs.TOOLS`). It forks a child for LibreOfficeKit, one conversion per job process, and writes `converted.pdf`: a derived file, role `pdf`, `application/pdf`, signature `%PDF-`, at most `CONVERTED_MAX_BYTES = 32 MiB`, with no width or height.
   - `prepare_file` draws the pages from that PDF. Prepare means: convert when there is no `pdf` row, then draw. On-demand renders reuse the `pdf` row, and a row that is gone is converted again under the source lock.
@@ -93,7 +93,7 @@ These are the lead's calls (stage 2). The owner may correct any of them before e
 4. **A slide master with layouts but no slides** (a `.potx` from `make_master(examples=0)`). Expect `422 unsupported_format: the deck has no slides…` at once, with no fork, and `view_file` passing the refusal on. Tests in Tasks 3 and 5.
 5. **A file that hangs or crashes LibreOffice.** Expect the child killed and reaped at the budget, `read_timeout` (or `unreadable_file` for a crash), and no process of the slot left. Tests in Tasks 1 and 3.
 
-## Contract for Ghostwriter (what Ghostwriter v0.4.0 consumes)
+## Contract for Ghostwriter (what Ghostwriter v0.5.0 consumes)
 
 Everything in v0.7.0's Contract holds; this adds to it.
 
@@ -587,7 +587,7 @@ Its comment says that the profile is root's and read-only, like the font cache, 
 - [ ] **Step 3: Version.** Run `uv lock`, then `uv run pytest tests/test_version.py -q`. Expected: PASS.
 - [ ] **Step 4: Gates.** Run `make verify && make test`, then `make test-executor-root` and `make test-isolation`. Expected: each green. Paste the summary lines and Task 1's image size into the PR.
 - [ ] **Step 5: Commit** `docs: Office conversion in the design record, the sandbox and the licences`, then `chore(release): 0.8.0`.
-- [ ] **Step 6: Push and PR.** `git push -u origin feat/vision-stage2`. Open a PR to `main` with this **Operators** line: "0.8.0 shows the pages and slides of Word, PowerPoint and OpenDocument text files, converting each once with LibreOfficeKit in the executor. The executor image grows by about 515 MB (LibreOffice nogui and fonts). No setting changes. Ghostwriter 0.3.0 is unaffected; 0.4.0 prepares Office attachments and needs this release for their pages." Confirm that CI ran on the last commit.
+- [ ] **Step 6: Push and PR.** `git push -u origin feat/vision-stage2`. Open a PR to `main` with this **Operators** line: "0.8.0 shows the pages and slides of Word, PowerPoint and OpenDocument text files, converting each once with LibreOfficeKit in the executor. The executor image grows by about 515 MB (LibreOffice nogui and fonts). No setting changes. Ghostwriter 0.3.0 and 0.4.0 are unaffected; 0.5.0 prepares Office attachments and needs this release for their pages." Confirm that CI ran on the last commit.
 
 ---
 
