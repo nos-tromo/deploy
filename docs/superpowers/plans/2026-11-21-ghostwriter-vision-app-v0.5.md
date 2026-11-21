@@ -374,7 +374,7 @@ yield f"\r\n--{boundary}--\r\n".encode()
 **Interfaces:**
 - Consumes: Tasks 2–4.
 - Produces:
-  - `PrepareJob.kind: Literal["document", "image", "media"]`; `PrepareJob.size: int | None = None`, the last field; a requeued job has none.
+  - `PrepareJob.kind: Literal["document", "image", "media"]`; `PrepareJob.size: int | None = None`, the last field, after v0.4.0's `background`; a requeued job has none. A clip is never `background`: Send waits for its transcript, for without it the model has nothing to read.
   - The constants (`Final`):
     - `MEDIA_SLOTS = 2`, `NEXTEXT_RECIPIENT = "nextext:transcribe"`, `NEXTEXT_OPERATION = "chat.nextext"`;
     - `POLL_S = 2.0`, `POLL_SLOW_S = 5.0`, `POLL_SLOW_AFTER_S = 60.0`, `START_WAIT_S = 120.0`.
