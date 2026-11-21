@@ -17,7 +17,7 @@ Line numbers below are v0.7.0's; v0.8 shifts some, so find each by its name.
 
 **Tech Stack:** Python 3.12, FastAPI, pydantic, SQLite; executor: Pillow and the stdlib (`zipfile`, `json`); tests: pytest. Synthetic artifacts are built at test time.
 
-**Spec:** `deploy/docs/superpowers/specs/2026-11-20-ghostwriter-vision-design.md` (§2 anti-goals, §5.3, §7.2 Media, REST and MCP, §8 stage 3, §10 check 7) and `deploy/docs/decisions/0009-ghostwriter-sees-images-and-media.md`. The consumer is `2026-11-21-ghostwriter-vision-app-v0.5.md`.
+**Spec:** `deploy/docs/superpowers/specs/2026-11-20-ghostwriter-vision-design.md` (§2 anti-goals, §5.3, §7.2 Media, REST and MCP, §8 stage 3, §10 check 7) and `deploy/docs/decisions/0009-ghostwriter-sees-images-and-media.md`. The consumer is `2026-11-21-ghostwriter-vision-app-v0.6.md`.
 
 Every path below is relative to the `workbench` repo root unless it starts with `deploy/`.
 
@@ -86,7 +86,7 @@ Calls made in this plan:
 4. **A blind caller** (no `X-Accept-Images`) reading a clip. Expect the transcript text, no image block, and no `view_file` in its listing. Test in Task 7.
 5. **A 4K clip's keyframes.** Expect each frame 1280 × 720 under 768 KiB, and the whole set within the 64 MiB cap beside both artifacts. Tests in Tasks 4 and 5.
 
-## Contract for Ghostwriter (what the v0.5 plan consumes)
+## Contract for Ghostwriter (what the v0.6 plan consumes)
 
 Headers on every route as before: `Authorization: Bearer <GHOSTWRITER_WORKBENCH_KEY>`, `X-User-Id`, `X-Session-Id`, `X-Audit-Purpose`, `X-Request-ID`. Media is served by a workbench whose discovery names version 0.9.0 or later.
 
@@ -557,7 +557,7 @@ The frames:
 - [ ] **Step 4: Gates.** `make verify && make test`, then `make test-executor-root` and `make test-isolation`. Expected: each green; paste the summary lines into the PR.
 - [ ] **Step 5: Commit** `docs: clips, their artifacts and their frames in the design record and the references`, then `chore(release): 0.9.0`.
 - [ ] **Step 6: Push and PR.** `git push -u origin feat/vision-stage3`; a PR to `main`.
-  - **Operators** line: "0.9.0 adds `POST /files/derived` (Ghostwriter's caller only) and prepares video and audio from Nextext's artifacts. No new variable. Ghostwriter 0.5.0 uses it; older callers see no change but a sentence on clips in `read_document`'s description."
+  - **Operators** line: "0.9.0 adds `POST /files/derived` (Ghostwriter's caller only) and prepares video and audio from Nextext's artifacts. No new variable. Ghostwriter 0.6.0 uses it; older callers see no change but a sentence on clips in `read_document`'s description."
   - Confirm CI ran on the last commit.
 
 ---

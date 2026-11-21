@@ -8,7 +8,7 @@
 
 **Tech Stack:** deploy: Python stdlib (3.9 floor, CI matrix 3.9 and 3.12), `unittest`. Nextext, vllm-service: Markdown and `.env.example`.
 
-**Spec:** `deploy/docs/superpowers/specs/2026-11-20-ghostwriter-vision-design.md` (§5.3, §7.5, §8 stage 3) and `deploy/docs/decisions/0009-ghostwriter-sees-images-and-media.md` (Consequences). Sibling plans: `2026-11-21-ghostwriter-vision-workbench-v0.9.md`, `2026-11-21-ghostwriter-vision-app-v0.5.md`.
+**Spec:** `deploy/docs/superpowers/specs/2026-11-20-ghostwriter-vision-design.md` (§5.3, §7.5, §8 stage 3) and `deploy/docs/decisions/0009-ghostwriter-sees-images-and-media.md` (Consequences). Sibling plans: `2026-11-21-ghostwriter-vision-workbench-v0.9.md`, `2026-11-21-ghostwriter-vision-app-v0.6.md`.
 
 Every path is relative to the repo its task names: `deploy/` (Tasks 1–4), `Nextext/` (Task 5), `vllm-service/` (Task 6).
 
@@ -23,7 +23,7 @@ Calls made in this plan:
 - A list item that is neither `name=token` nor a placeholder (for example `NEXTEXT_SERVICE_TOKENS=SENTINEL-x`) makes the list unreadable for every entry row, as today: a conflict when the single key is set, `unset_everywhere` otherwise, never filled. The rule change covers only a missing or placeholder entry.
 - A list whose every item is a placeholder counts as unset and is rewritten whole, as today. Dropping a placeholder item is not dropping an entry.
 - In the table, one `(member, key)` may appear on several rows only when every one of them carries `entry=` with a different name.
-- PR order: deploy first, then Nextext; vllm-service may go at any time. Until Nextext's PR merges, deploy's local sibling check reports T5 on Nextext's old tag. Until Ghostwriter 0.5.0, whose example has no `NEXTEXT_API_KEY`, the new group is skipped with a `table` warning.
+- PR order: deploy first, then Nextext; vllm-service may go at any time. Until Nextext's PR merges, deploy's local sibling check reports T5 on Nextext's old tag. Until Ghostwriter 0.6.0, whose example has no `NEXTEXT_API_KEY`, the new group is skipped with a `table` warning.
 - Versions: deploy `VERSION` 0.14.0, Nextext 1.20.1, vllm-service 0.12.2 (docs releases, as vllm-service v0.11.1 was).
 
 ## Global Constraints
@@ -180,7 +180,7 @@ def _merged(current, name, token, placeholders):
   - `python3 -B scripts/check_env_examples.py ../Nextext ../ghostwriter`. Expected before the Nextext PR merges: exactly `T5 NEXTEXT_SERVICE_TOKENS` on Nextext. Paste that line into the PR.
 - [ ] **Step 7: Commit** `feat(envsync): Ghostwriter's Nextext token is shared; release v0.14.0`
 - [ ] **Step 8: Push and PR** `git push -u origin feat/ghostwriter-media-seam`.
-  - **Operators** line: "0.14.0 changes env-sync's list rule: an `entry=` row now appends its own item to a list that holds others, which it never did before. With Ghostwriter 0.5.0 on the host, `make env ENV_GENERATE=1` adds `ghostwriter=<token>` to Nextext's `NEXTEXT_SERVICE_TOKENS`."
+  - **Operators** line: "0.14.0 changes env-sync's list rule: an `entry=` row now appends its own item to a list that holds others, which it never did before. With Ghostwriter 0.6.0 on the host, `make env ENV_GENERATE=1` adds `ghostwriter=<token>` to Nextext's `NEXTEXT_SERVICE_TOKENS`."
   - Confirm CI ran on the last commit, both Python versions.
 
 ### Task 5 (Nextext): The Ghostwriter entry and the queue, documented
