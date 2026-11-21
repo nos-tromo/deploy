@@ -206,8 +206,8 @@ new table needs only `CREATE TABLE IF NOT EXISTS`.
 - Tool images (`view_file`, `read_document`) go into one synthetic user message after the round's tool messages, with a
   legend naming the call and saying it is not the user speaking. `tool_steps` store only the text and
   `[N images were shown]`.
-- **Budget:** an image counts by `GHOSTWRITER_IMAGE_TOKENS` (unset: one token per 32×32 pixels; a number: a fixed cost,
-  280 for gemma), never by characters. Over budget, the current turn's oldest tool images go first (a note takes their
+- **Budget:** an image counts by `GHOSTWRITER_IMAGE_CONTEXT_TOKENS` (unset: one token per 32×32 pixels; a number: a
+  fixed cost, 280 for gemma), never by characters. Over budget, the current turn's oldest tool images go first (a note takes their
   place), then the existing clearing of tool results and arguments. Earlier turns are replayed newest first with their
   attached images while the budget and `GHOSTWRITER_MAX_IMAGES` (default 8) allow; otherwise a note says `view_file`
   shows them again.

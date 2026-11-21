@@ -30,7 +30,7 @@ Every path below is relative to the `ghostwriter` repo root unless it starts wit
 - Nothing is fetched at runtime. Inference goes only to `OPENAI_API_BASE` (the Ollama probe uses the same host).
 - Vendored files are never edited here: `ghostwriter/utils/audit_*.py`, `make/common.mk`, `scripts/bundle-lib.sh`, `frontend/eslint.config.js`, the `[tool.ruff]`/`[tool.pyrefly]` sections.
 - Test data is invented (`tests/fakes.py` conventions, `TINY_JPEG`/`TINY_PNG`, names such as `harbour-photo.jpg`, `quay-scan.pdf`). No absolute local path in any committed file or message.
-- Spec values: image suffixes `.png .jpg .jpeg .webp .gif .bmp .tif .tiff .heic .heif` (never `.svg`); `GHOSTWRITER_MAX_IMAGES` 8; `GHOSTWRITER_IMAGE_TOKENS` unset = `ceil(w/32)*ceil(h/32)` per image, a number = that per image (280 documented for gemma); with a fixed cost, pages and images whose long side > 1024 go as 2 strips; tool images ≤ 8 and ≤ 3 MiB per answer, each ≤ 1 MiB; a rendition < 768 KiB; long-poll `wait` ≤ 20 s; processor semaphore 2.
+- Spec values: image suffixes `.png .jpg .jpeg .webp .gif .bmp .tif .tiff .heic .heif` (never `.svg`); `GHOSTWRITER_MAX_IMAGES` 8; `GHOSTWRITER_IMAGE_CONTEXT_TOKENS` unset = `ceil(w/32)*ceil(h/32)` per image, a number = that per image (280 documented for gemma); with a fixed cost, pages and images whose long side > 1024 go as 2 strips; tool images ≤ 8 and ≤ 3 MiB per answer, each ≤ 1 MiB; a rendition < 768 KiB; long-poll `wait` ≤ 20 s; processor semaphore 2.
 - UI strings in `en.ts` and `de.ts` (German "Sie"); `i18n.test.ts` keeps parity.
 - Commit messages conventional (`feat(store): …`), no real data.
 
@@ -51,7 +51,7 @@ Every path below is relative to the `ghostwriter` repo root unless it starts wit
 - Test: `tests/test_config.py`, `tests/test_scaffold.py`
 
 **Interfaces:**
-- Produces: `Settings.vision: bool`, `Settings.max_images: int`, `Settings.image_tokens: int | None`; `VISION_ENV = "GHOSTWRITER_VISION"`, `MAX_IMAGES_ENV = "GHOSTWRITER_MAX_IMAGES"`, `IMAGE_TOKENS_ENV = "GHOSTWRITER_IMAGE_TOKENS"`, `MAX_IMAGES_LIMIT: Final = 32`, `IMAGE_TOKENS_LIMIT: Final = 10_000`.
+- Produces: `Settings.vision: bool`, `Settings.max_images: int`, `Settings.image_tokens: int | None`; `VISION_ENV = "GHOSTWRITER_VISION"`, `MAX_IMAGES_ENV = "GHOSTWRITER_MAX_IMAGES"`, `IMAGE_TOKENS_ENV = "GHOSTWRITER_IMAGE_CONTEXT_TOKENS"`, `MAX_IMAGES_LIMIT: Final = 32`, `IMAGE_TOKENS_LIMIT: Final = 10_000`.
 - `make_settings` sets `vision=False` unless overridden, so every existing test keeps v0.2.0 behaviour; vision tests pass `vision=True`. Update its docstring.
 
 - [ ] **Step 0: Branch.** `git fetch origin && git switch main && git pull --ff-only && git switch -c feat/vision-stage1`.
@@ -59,9 +59,9 @@ Every path below is relative to the `ghostwriter` repo root unless it starts wit
   - `test_defaults_match_the_contract` gains `(s.vision, s.max_images, s.image_tokens) == (True, 8, None)`.
   - `test_vision_is_on_or_off`: `"off"` → False, `"ON"` → True; `"maybe"` raises `ValueError` matching `GHOSTWRITER_VISION must be on or off.`
   - `test_max_images_is_a_whole_number_from_1_to_32`: `"4"` → 4; `"0"`, `"33"`, `"x"` raise `GHOSTWRITER_MAX_IMAGES must be a whole number from 1 to 32.`
-  - `test_image_tokens_is_unset_or_a_fixed_cost`: unset → None, `"280"` → 280; `"0"`, `"10001"`, `"many"` raise `GHOSTWRITER_IMAGE_TOKENS must be a whole number of tokens from 1 to 10000, or unset.`
-  - `test_compose_matches_the_contract` gains `GHOSTWRITER_VISION: ${GHOSTWRITER_VISION:-on}`, `GHOSTWRITER_MAX_IMAGES: ${GHOSTWRITER_MAX_IMAGES:-8}` and `GHOSTWRITER_IMAGE_TOKENS: ${GHOSTWRITER_IMAGE_TOKENS:-}` in the backend block.
-  - `test_env_example_documents_vision`: the lines `# GHOSTWRITER_VISION=on`, `# GHOSTWRITER_MAX_IMAGES=8`, `# GHOSTWRITER_IMAGE_TOKENS=` are present (the < 80 check already runs).
+  - `test_image_tokens_is_unset_or_a_fixed_cost`: unset → None, `"280"` → 280; `"0"`, `"10001"`, `"many"` raise `GHOSTWRITER_IMAGE_CONTEXT_TOKENS must be a whole number of tokens from 1 to 10000, or unset.`
+  - `test_compose_matches_the_contract` gains `GHOSTWRITER_VISION: ${GHOSTWRITER_VISION:-on}`, `GHOSTWRITER_MAX_IMAGES: ${GHOSTWRITER_MAX_IMAGES:-8}` and `GHOSTWRITER_IMAGE_CONTEXT_TOKENS: ${GHOSTWRITER_IMAGE_CONTEXT_TOKENS:-}` in the backend block.
+  - `test_env_example_documents_vision`: the lines `# GHOSTWRITER_VISION=on`, `# GHOSTWRITER_MAX_IMAGES=8`, `# GHOSTWRITER_IMAGE_CONTEXT_TOKENS=` are present (the < 80 check already runs).
 - [ ] **Step 2: Run** `uv run pytest tests/test_config.py tests/test_scaffold.py -q`. Expected: the new asserts FAIL.
 - [ ] **Step 3: Implement** `_vision`, `_max_images`, `_image_tokens` (shape of `_speech_input` and `_context_tokens`). `.env.example` text, verbatim:
 
@@ -78,11 +78,11 @@ Every path below is relative to the `ghostwriter` repo root unless it starts wit
 # Tokens one image costs the model. Unset: one per 32x32 pixels (Qwen). A
 # number: a fixed cost per image (280 for gemma); pages then go as two
 # strips.
-# GHOSTWRITER_IMAGE_TOKENS=
+# GHOSTWRITER_IMAGE_CONTEXT_TOKENS=
 ```
   `docs/configuration.md`: three rows after `GHOSTWRITER_CONTEXT_TOKENS`, saying the same, and that `GHOSTWRITER_MAX_IMAGES` must not exceed `CHAT_LIMIT_MM_PER_PROMPT`.
 - [ ] **Step 4: Run** `uv run pytest -q` and `python3 -B ../deploy/scripts/check_env_examples.py .`. Expected: PASS; the env check clean.
-- [ ] **Step 5: Commit** `feat(config): GHOSTWRITER_VISION, GHOSTWRITER_MAX_IMAGES and GHOSTWRITER_IMAGE_TOKENS`
+- [ ] **Step 5: Commit** `feat(config): GHOSTWRITER_VISION, GHOSTWRITER_MAX_IMAGES and GHOSTWRITER_IMAGE_CONTEXT_TOKENS`
 
 ### Task 2: Attachments get a kind, a status and a manifest (schema 2)
 
@@ -609,7 +609,7 @@ The turn, as the loop now runs it:
 - [ ] **Step 2: Version.** Bump to `0.3.0`, `uv lock`, then `uv run pytest tests/test_version.py tests/test_api_meta.py -q`. Expected: PASS.
 - [ ] **Step 3: Gates.** `make verify && make test`. Expected: green; paste the summary lines into the PR.
 - [ ] **Step 4: Commit** `docs: pictures, prepared attachments and the image budget` and `chore(release): 0.3.0`.
-- [ ] **Step 5: Push and PR.** `git push -u origin feat/vision-stage1`; a PR to `main` with an **Operators** line: "0.3.0 sends pictures to the chat model. It needs workbench 0.7.0 with `view_file` listed; without it, nothing changes. Keep vllm-service's `CHAT_LIMIT_MM_PER_PROMPT` ≥ `GHOSTWRITER_MAX_IMAGES` (8). For gemma set `GHOSTWRITER_IMAGE_TOKENS=280`." Confirm CI ran on the last commit. Merging is the owner's call.
+- [ ] **Step 5: Push and PR.** `git push -u origin feat/vision-stage1`; a PR to `main` with an **Operators** line: "0.3.0 sends pictures to the chat model. It needs workbench 0.7.0 with `view_file` listed; without it, nothing changes. Keep vllm-service's `CHAT_LIMIT_MM_PER_PROMPT` ≥ `GHOSTWRITER_MAX_IMAGES` (8). For gemma set `GHOSTWRITER_IMAGE_CONTEXT_TOKENS=280`." Confirm CI ran on the last commit. Merging is the owner's call.
 
 ---
 
