@@ -39,7 +39,9 @@ Every path below is relative to the `workbench` repo root unless it starts with 
 
 Headers on every route: `Authorization: Bearer <GHOSTWRITER_WORKBENCH_KEY>`, `X-User-Id`, `X-Session-Id`, `X-Audit-Purpose`, `X-Request-ID`.
 
-**`POST /files/prepare?path=<virtual path>`**, no body. Idempotent: when the renders exist it answers from the rows, with no job and no event. `200`:
+**Amended after the final review (rulings R15, R16):** the MCP door lists `view_file` and attaches images (`read_document` pages and pictures) only to a call that carries `X-Accept-Images: 1`; without it Ghostwriter's key is answered as in v0.6.0 (no `view_file`, no images, the v0.6.0 `read_document` text), so an older Ghostwriter next to v0.7.0 is never told it sees images it drops. `POST /files/prepare` also takes `strips` (1–3, default 1): with `k > 1` on a picture it makes the picture's `k` strips on the prepare gate as well.
+
+**`POST /files/prepare?path=<virtual path>[&strips=<k>]`**, no body. Idempotent: when the renders exist it answers from the rows, with no job and no event. `200`:
 
 ```json
 {"path": "/workspace/chat-1/scan.pdf", "kind": "pdf", "total": 24, "pages_without_text": [3, 7],

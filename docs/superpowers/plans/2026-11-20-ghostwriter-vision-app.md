@@ -26,6 +26,7 @@ Every path below is relative to the `ghostwriter` repo root unless it starts wit
 - Logs hold ids, counts, statuses and tokens (loguru `{}` placeholders); never a file name, a label, text, a data URL or image bytes.
 - No file bytes stored: no spool, no copy in SQLite. Image bytes live in memory for one message (`ImageBank`). Data URLs exist only in the list handed to `ModelClient.stream`, never in a log, the store, `compact`, `tool_steps` or the audit.
 - Every file lookup is by `(owner, chat_id, id)`; every workbench call carries that chat's `X-Session-Id` (`CallFor`).
+- workbench v0.7.0 lists `view_file` and attaches images only to an MCP call that carries `X-Accept-Images: 1`. The discovery call (`system_call`) always sends it; a turn's calls send it exactly when `Vision.images_offered` is true. Without it workbench answers as v0.6.0 did (no `view_file`, no images, the old `read_document` text).
 - Nothing is fetched at runtime. Inference goes only to `OPENAI_API_BASE` (the Ollama probe uses the same host).
 - Vendored files are never edited here: `ghostwriter/utils/audit_*.py`, `make/common.mk`, `scripts/bundle-lib.sh`, `frontend/eslint.config.js`, the `[tool.ruff]`/`[tool.pyrefly]` sections.
 - Test data is invented (`tests/fakes.py` conventions, `TINY_JPEG`/`TINY_PNG`, names such as `harbour-photo.jpg`, `quay-scan.pdf`). No absolute local path in any committed file or message.
@@ -151,7 +152,7 @@ Every path below is relative to the `ghostwriter` repo root unless it starts wit
   - `@dataclass(frozen=True) class ToolImage`: `label: str`, `width: int`, `height: int`, `mime: str`, `data: bytes = field(repr=False)`.
   - `ToolResult.images: tuple[ToolImage, ...] = ()`.
   - `@dataclass(frozen=True) class Rendition`: `n`, `width`, `height`, `mime`. `@dataclass(frozen=True) class Manifest`: `kind: Literal["image", "pdf", "none"]`, `total: int`, `pages_without_text: tuple[int, ...]`, `renditions: tuple[Rendition, ...]`, `frames: int | None`; `as_stored(self) -> dict[str, Any]` (the five stored keys).
-  - `async def WorkbenchClient.prepare(self, *, call: CallFor, path: str) -> Manifest`: `POST /files/prepare?path=`, no body, `PREPARE_TIMEOUT_S`. A path outside the chat's folder is `WorkbenchNotFound` unsent; 404 `WorkbenchNotFound`; 507 `StorageFull`; 422 `WorkbenchUnavailable(<token>)`, the token being the `detail` text before its first `:` when it matches `_TOKEN` (`unreadable_file`, `unsupported_format`, `read_timeout`), else `http:422`; other statuses `http:<status>`; a malformed manifest `bad_answer`.
+  - `async def WorkbenchClient.prepare(self, *, call: CallFor, path: str, strips: int = 1) -> Manifest`: `POST /files/prepare?path=` (and `&strips=k` only when `k > 1`: workbench then also makes a picture's strips on its prepare gate), no body, `PREPARE_TIMEOUT_S`. A path outside the chat's folder is `WorkbenchNotFound` unsent; 404 `WorkbenchNotFound`; 507 `StorageFull`; 422 `WorkbenchUnavailable(<token>)`, the token being the `detail` text before its first `:` when it matches `_TOKEN` (`unreadable_file`, `unsupported_format`, `read_timeout`), else `http:422`; other statuses `http:<status>`; a malformed manifest `bad_answer`.
   - `view(self, *, call, path, rendition: int | None = None, strips: int = 1, strip: int | None = None)`: the parameters go only with `rendition`; `strip` only when `strips > 1`.
   - `@dataclass(frozen=True) class RenditionRequest`: `path: str`, `n: int = 1`, `strips: int = 1`, `strip: int = 1`.
   - `def WorkbenchClient.fetch_renditions(self, wanted: Sequence[RenditionRequest], *, call: CallFor) -> list[tuple[str, bytes] | None]`: synchronous (the turn's thread), never raises. One `_detached` exchange within `RENDITION_TIMEOUT_S`, one `AsyncClient`, all requests at once in an anyio task group. An answer counts only if it is 200, `image/jpeg` or `image/png`, under `MAX_RENDITION_BYTES` (read as a stream, cut past it) and has its signature; otherwise `None`. One log line with counts.
@@ -196,7 +197,8 @@ Every path below is relative to the `ghostwriter` repo root unless it starts wit
   - `attachment_type(name, *, images: bool = False) -> str | None`; `attachment_kind(name) -> Literal["document", "image"]`; `needs_prepare(name) -> bool`.
 - `vision.py`:
   - `VIEW_TOOL: Final = "view_file"`, `PROBE_TIMEOUT_S: Final = 5.0`.
-  - `def system_call() -> CallFor`: `CallFor("ghostwriter:system", "capability", forward_headers(RequestContext(SYSTEM_ACTOR, None, uuid4().hex)))`. workbench reads no principal on discovery.
+  - `def system_call() -> CallFor`: `CallFor("ghostwriter:system", "capability", forward_headers(RequestContext(SYSTEM_ACTOR, None, uuid4().hex)) | {"X-Accept-Images": "1"})`. workbench reads no principal on discovery; the header asks what it would offer a caller that takes images.
+  - `ACCEPT_IMAGES: Final = {"X-Accept-Images": "1"}`: merged into a turn's `CallFor` headers exactly when `images_offered` is true (Task 7 builds the turn's call with it); test that a turn with vision off sends no such header.
   - `class Vision`:
     - `__init__(self, settings: Settings)`; `model_sees: bool` starts as `settings.vision`; `probed: threading.Event` is set when a probe ended (tests wait on it).
     - `def images_offered(self, workbench: WorkbenchClient | None) -> bool`: `model_sees`, a workbench, and `VIEW_TOOL` in `workbench.discover(call=system_call())`. Discovery is the cached, single-flight one, so it blocks at most once per cache window; call it from a thread.
@@ -256,7 +258,7 @@ finally: probed.set()
   - A job, under `asyncio.Semaphore(PREPARE_SLOTS)`:
     1. `store.mark_files(chat_id)`. `ChatNotFound` ends it quietly.
     2. Record the hand-over: `op.child("disclose", "chat.attachment", target=attachment [id], recipient=PREPARE_RECIPIENT, criteria={"kind": kind})`. With `op=None` it is the primary of `system_operation(emitter, "disclose", "chat.attachment")`, container the chat, criteria `{"kind", "requeued": True}`. An `AuditWriteError` sends nothing and settles as a failure with token `audit`.
-    3. `workbench.prepare(...)`; `http:503` or `timeout` is tried once more after `PREPARE_RETRY_S`.
+    3. `workbench.prepare(...)`; `http:503` or `timeout` is tried once more after `PREPARE_RETRY_S`. For an image whose manifest gives `strips_for_image(width, height, fixed=settings.image_tokens is not None) == 2`, `prepare(..., strips=2)` follows once (idempotent), so the first turn finds the strips made and runs no job on the user's turn; its failure leaves the image `ready` (the turn makes the strips on demand).
     4. Success: `settle_attachment(ready, manifest.as_stored())`. Failure: an `error` child `{"reason": token}`, then an image is `failed` (failure = the token) and a document `ready` without a manifest (its text still reads).
     5. A cancel settles nothing.
     Store and audit calls run in `anyio.to_thread.run_sync`. Logs carry the attachment id, kind and token only.

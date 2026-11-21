@@ -247,8 +247,10 @@ Media is offered only while `NEXTEXT_API_BASE` and `NEXTEXT_API_KEY` are set and
 
 1. deploy: this spec and ADR 0009. infra-ui: the tile, lightbox and icons, released.
 2. **Stage 1, images and PDFs.** workbench v0.7.0 (derived files, prepare for images and PDF, the routes, `view_file`,
-   `read_document` images), then Ghostwriter (kinds, processing, the turn, the UI). Ghostwriter detects the capability,
-   so the order is safe.
+   `read_document` images), then Ghostwriter (kinds, processing, the turn, the UI). Both orders are safe: Ghostwriter
+   detects the capability (workbench lists `view_file`), and workbench shows images only to a call that carries
+   `X-Accept-Images: 1`, which Ghostwriter v0.3.0 sends while it offers images. An older Ghostwriter next to
+   workbench v0.7.0 is told and shown exactly what v0.6.0 told and showed it.
 3. **Stage 2, Office designs.** workbench v0.8.0 (LibreOfficeKit, fonts). Ghostwriter needs no change.
 4. **Stage 3, video and audio.** S3 on the staging host; deploy's env-sync; Nextext and vllm-service docs; workbench
    `/files/derived` and media prepare; Ghostwriter's Nextext client.
