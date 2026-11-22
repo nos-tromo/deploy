@@ -229,12 +229,39 @@ def _entry_token(value: str, name: str, placeholders: Set[str]) -> Optional[str]
     return None
 
 
+def _unreadable(value: str, placeholders: Set[str]) -> bool:
+    """Some item of the list has no '=' and is not a placeholder: the list is
+    not a name=token list, and no entry row reads or rewrites it."""
+    return any(
+        "=" not in item and not _placeholder(item.strip(), placeholders)
+        for item in value.split(",")
+    )
+
+
+def _merged(
+    current: Optional[str], name: str, token: str, placeholders: Set[str]
+) -> str:
+    """The list with this row's item set: written anew when nothing in the list
+    is real, the row's placeholder item replaced where it stands, else the item
+    appended. The other items are kept verbatim, in their order."""
+    mine = f"{name}={token}"
+    if current is None or _list_unset(current, placeholders):
+        return mine
+    items = current.split(",")
+    for i, item in enumerate(items):
+        # Only a placeholder item can be this row's here: a real one is read.
+        if item.partition("=")[0].strip() == name:
+            items[i] = mine
+            return ",".join(items)
+    return ",".join(items + [mine])
+
+
 @dataclass
 class _Side:
     row: Row
     file: SharedFile
     is_set: bool
-    value: Optional[str]  # None on a set side: a list without a real entry item
+    value: Optional[str]  # None on a set side: a list that cannot be read
 
 
 class _Pass:
@@ -277,9 +304,9 @@ class _Pass:
         sides = [self.read(row, placeholders) for row in rows]
         held = [side for side in sides if side.is_set]
         if held:
-            self.reconcile(sides, held)
+            self.reconcile(sides, held, placeholders)
         elif group.rows[0].gen:
-            self.nothing_set(sides)
+            self.nothing_set(sides, placeholders)
 
     def present(self, group: Group) -> List[Row]:
         """The rows of members on this host whose example documents the key."""
@@ -331,11 +358,16 @@ class _Pass:
             return _Side(row, shared, False, None)
         if not row.source and _list_unset(entry.value, placeholders):
             return _Side(row, shared, False, None)
-        return _Side(
-            row, shared, True, _entry_token(entry.value, row.entry, placeholders)
-        )
+        if _unreadable(entry.value, placeholders):
+            return _Side(row, shared, True, None)
+        # The other entries of the list are not this row's: only its own item
+        # says whether it is set.
+        token = _entry_token(entry.value, row.entry, placeholders)
+        return _Side(row, shared, token is not None, token)
 
-    def reconcile(self, sides: List[_Side], held: List[_Side]) -> None:
+    def reconcile(
+        self, sides: List[_Side], held: List[_Side], placeholders: Set[str]
+    ) -> None:
         ref = next((side for side in held if side.row.source), held[0])
         value = ref.value
         differs = [side for side in held if side is not ref and side.value != value]
@@ -347,20 +379,20 @@ class _Pass:
             self.found["conflict"].append(Event("conflict", items, "error"))
             return
         if value is None:
-            # Only lists without the entry are set: nothing disagrees, and a
-            # list that is set is never filled, so nothing is generated.
+            # A list that cannot be read is set for every entry row but holds
+            # no token: nothing disagrees, and it is never filled.
             self.unset_everywhere(sides)
             return
         for side in sides:
             if not side.is_set:
-                self.fill(side, value, "filled", ref.row.member)
+                self.fill(side, value, "filled", ref.row.member, placeholders)
 
-    def nothing_set(self, sides: List[_Side]) -> None:
+    def nothing_set(self, sides: List[_Side], placeholders: Set[str]) -> None:
         kept = [side for side in sides if side.row.key in side.file.plan.unset]
         if self.generate and not kept:
             value = self.token()
             for side in sides:
-                self.fill(side, value, "generated", None)
+                self.fill(side, value, "generated", None, placeholders)
             return
         if self.generate:
             for side in kept:
@@ -377,10 +409,23 @@ class _Pass:
             )
         )
 
-    def fill(self, side: _Side, value: str, origin: str, source: Optional[str]) -> None:
+    def fill(
+        self,
+        side: _Side,
+        value: str,
+        origin: str,
+        source: Optional[str],
+        placeholders: Set[str],
+    ) -> None:
         row, plan = side.row, side.file.plan
-        target = f"{row.entry}={value}" if row.entry is not None else value
         entry = plan.entries.get(row.key)
+        if row.entry is None:
+            target = value
+        else:
+            # Read now, not when the group was read: an earlier group of this
+            # run may have put its own item in the list.
+            current = entry.value if entry is not None else None
+            target = _merged(current, row.entry, value, placeholders)
         if entry is not None and entry.value == target:
             return
         if row.key in plan.unset:
