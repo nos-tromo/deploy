@@ -144,6 +144,21 @@ class TableTests(unittest.TestCase):
                 "g  alpha  A_KEY\ng  beta  A_KEY\nh  alpha  A_KEY\nh  gamma  A_KEY\n",
                 3,
             ),
+            "a list key twice, one row without entry": (
+                "g  alpha  A_KEY  gen\ng  beta  L_KEY  gen  entry=alpha\n"
+                "h  gamma  C_KEY  gen\nh  beta  L_KEY  gen\n",
+                4,
+            ),
+            "the same entry twice": (
+                "g  alpha  A_KEY  gen\ng  beta  L_KEY  gen  entry=alpha\n"
+                "h  gamma  C_KEY  gen\nh  beta  L_KEY  gen  entry=alpha\n",
+                4,
+            ),
+            "two entries of one list in one group": (
+                "g  alpha  A_KEY  gen\ng  beta  L_KEY  gen  entry=alpha\n"
+                "g  beta  L_KEY  gen  entry=gamma\n",
+                3,
+            ),
             "flag nope": ("g  alpha  A_KEY  nope\ng  beta  A_KEY\n", 1),
             "key bad-key": ("g  alpha  bad-key\ng  beta  A_KEY\n", 1),
             "bad group name": ("G  alpha  A_KEY\nG  beta  A_KEY\n", 1),
@@ -159,6 +174,22 @@ class TableTests(unittest.TestCase):
                 self.assertTrue(
                     message.startswith(f"env-sync.conf line {lineno}: "), message
                 )
+
+    def test_a_list_key_holds_one_entry_per_group(self) -> None:
+        groups = load_table(
+            "g  alpha  A_KEY  gen\ng  beta  L_KEY  gen  entry=alpha\n"
+            "h  gamma  C_KEY  gen\nh  beta  L_KEY  gen  entry=gamma\n"
+        )
+        self.assertEqual([group.name for group in groups], ["g", "h"])
+        self.assertEqual(
+            [
+                (group.name, row.entry)
+                for group in groups
+                for row in group.rows
+                if (row.member, row.key) == ("beta", "L_KEY")
+            ],
+            [("g", "alpha"), ("h", "gamma")],
+        )
 
     def test_table_rows(self) -> None:
         text = (

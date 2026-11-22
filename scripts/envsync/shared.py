@@ -85,23 +85,38 @@ def _row(lineno: int, fields: List[str]) -> Row:
     return Row(name, member, key, source, gen, entry, lineno)
 
 
+def _clash(row: Row, earlier: List[Row]) -> Optional[Row]:
+    """The first earlier row of this member and key that this row may not
+    share it with. A list key may be on several rows only when each carries
+    its own entry= name and stands in its own group; any other key is on one."""
+    for other in earlier:
+        if (
+            row.entry is None
+            or other.entry is None
+            or other.entry == row.entry
+            or other.group == row.group
+        ):
+            return other
+    return None
+
+
 def load_table(text: str) -> List[Group]:
     """Parse and validate env-sync.conf; raises TableError naming the line."""
     groups: Dict[str, Group] = {}
-    seen: Dict[Tuple[str, str], Row] = {}
+    seen: Dict[Tuple[str, str], List[Row]] = {}
     for lineno, raw in enumerate(text.split("\n"), start=1):
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
         row = _row(lineno, line.split())
-        earlier = seen.get((row.member, row.key))
+        earlier = _clash(row, seen.setdefault((row.member, row.key), []))
         if earlier is not None:
             raise TableError(
                 lineno,
                 f"{row.member} {row.key} is already in group {earlier.group} "
                 f"(line {earlier.lineno})",
             )
-        seen[(row.member, row.key)] = row
+        seen[(row.member, row.key)].append(row)
         groups.setdefault(row.group, Group(row.group, [])).rows.append(row)
     for group in groups.values():
         rows = group.rows
