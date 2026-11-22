@@ -21,6 +21,8 @@ _ENTRY = re.compile(r"^entry=([A-Za-z0-9._-]+)$")
 _PLACEHOLDER = re.compile(r"<[^>]*>")
 _QUOTED = re.compile(r"'[^']*'|\"(?:\\.|[^\"\\])*\"")
 _FILE_KINDS = ("filled", "generated", "kept_unset", "unsafe")
+# What a generated token looks like to the safe-value check: 64 hex digits.
+_GENERATED = "0" * 64
 _REPLACED_KINDS = ("added", "held", "differs")
 
 
@@ -82,6 +84,10 @@ def _row(lineno: int, fields: List[str]) -> Row:
             raise TableError(
                 lineno, "unknown or repeated flag (source, gen, entry=NAME)"
             )
+    if source and entry is not None:
+        # An entry row owns one item of a list, not the key: it cannot be the
+        # authority for it.
+        raise TableError(lineno, "source cannot be combined with entry=NAME")
     return Row(name, member, key, source, gen, entry, lineno)
 
 
@@ -256,6 +262,19 @@ def _merged(
     return ",".join(items + [mine])
 
 
+def _twin(
+    current: Optional[str], name: str, token: str, placeholders: Set[str]
+) -> Optional[str]:
+    """The name of another item of the list that already holds this token."""
+    if current is None or _list_unset(current, placeholders):
+        return None
+    for item in current.split(","):
+        other, sep, held = item.partition("=")
+        if sep and other.strip() != name and held.strip() == token:
+            return other.strip()
+    return None
+
+
 @dataclass
 class _Side:
     row: Row
@@ -389,7 +408,8 @@ class _Pass:
 
     def nothing_set(self, sides: List[_Side], placeholders: Set[str]) -> None:
         kept = [side for side in sides if side.row.key in side.file.plan.unset]
-        if self.generate and not kept:
+        unsafe = self.unsafe_lists(sides, placeholders) if self.generate else []
+        if self.generate and not kept and not unsafe:
             value = self.token()
             for side in sides:
                 self.fill(side, value, "generated", None, placeholders)
@@ -397,7 +417,26 @@ class _Pass:
         if self.generate:
             for side in kept:
                 self.note(side.row.member, "kept_unset", side.row.key)
+            for side in unsafe:
+                self.note(side.row.member, "unsafe", side.row.key)
         self.unset_everywhere(sides)
+
+    def unsafe_lists(self, sides: List[_Side], placeholders: Set[str]) -> List[_Side]:
+        """The entry rows whose list cannot take a generated item as it stands
+        (another item holds a character outside the safe set). Asked before a
+        token is drawn: a group is generated into every member or none, never a
+        key whose list does not hold the same token."""
+        found: List[_Side] = []
+        for side in sides:
+            row = side.row
+            if row.entry is None:
+                continue
+            entry = side.file.plan.entries.get(row.key)
+            current = entry.value if entry is not None else None
+            target = _merged(current, row.entry, _GENERATED, placeholders)
+            if not SAFE_VALUE.fullmatch(target):
+                found.append(side)
+        return found
 
     def unset_everywhere(self, sides: List[_Side]) -> None:
         members = list(dict.fromkeys(side.row.member for side in sides))
@@ -419,6 +458,7 @@ class _Pass:
     ) -> None:
         row, plan = side.row, side.file.plan
         entry = plan.entries.get(row.key)
+        current: Optional[str] = None
         if row.entry is None:
             target = value
         else:
@@ -431,6 +471,18 @@ class _Pass:
         if row.key in plan.unset:
             self.note(row.member, "kept_unset", row.key)
             return
+        if row.entry is not None:
+            twin = _twin(current, row.entry, value, placeholders)
+            if twin is not None:
+                # Two callers on one token: Nextext refuses to start with it.
+                self.found["conflict"].append(
+                    Event(
+                        "conflict",
+                        [f"{row.key}: {row.entry}'s token equals {twin}'s"],
+                        "error",
+                    )
+                )
+                return
         if not SAFE_VALUE.fullmatch(target) or (row.entry is not None and "," in value):
             self.note(row.member, "unsafe", row.key)
             return

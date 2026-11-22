@@ -76,8 +76,11 @@ in [userns-remap.md](userns-remap.md#known-interactions).
 Ghostwriter starts without Nextext. Video and audio are offered once its probe
 of Nextext's `/health` passes and workbench is 0.9.0 or later. Clips queue
 behind docint's ingest at `NEXTEXT_JOB_CONCURRENCY=1`. The token Ghostwriter
-calls Nextext with is the second entry of Nextext's `NEXTEXT_SERVICE_TOKENS`
-([Identity](#identity-edge-secrets-and-second-factors)); `make env` writes it.
+calls Nextext with is Ghostwriter's own `ghostwriter=` entry of Nextext's
+`NEXTEXT_SERVICE_TOKENS`
+([Identity](#identity-edge-secrets-and-second-factors)); `make env` fills it
+from Ghostwriter's `NEXTEXT_API_KEY`, and `make env ENV_GENERATE=1` generates
+both when neither is set.
 
 ## Retention periods
 

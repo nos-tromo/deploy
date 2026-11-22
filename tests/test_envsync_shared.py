@@ -172,6 +172,10 @@ class TableTests(unittest.TestCase):
             "no key": ("g  alpha  A_KEY\ng  beta\n", 2),
             "empty entry name": ("g  alpha  A_KEY  entry=\ng  beta  A_KEY\n", 1),
             "repeated flag": ("g  alpha  A_KEY  gen  gen\ng  beta  A_KEY  gen\n", 1),
+            "source on an entry row": (
+                "g  alpha  A_KEY\ng  beta  L_KEY  source  entry=alpha\n",
+                2,
+            ),
         }
         for name, (text, lineno) in cases.items():
             with self.subTest(name):
@@ -1248,6 +1252,32 @@ class TwoEntryTests(SharedCase):
         )
         self.assertEqual(items(docint, "filled"), ["NEXTEXT_API_KEY (from Nextext)"])
 
+        # The upgrade: docint's key and its item are both set, Ghostwriter's
+        # key is new. Only Ghostwriter's item is added, and the next run over
+        # the written files changes nothing.
+        self.hosts(
+            "NEXTEXT_API_KEY=SENTINEL-d\n",
+            "NEXTEXT_API_KEY=SENTINEL-g\n",
+            "NEXTEXT_SERVICE_TOKENS=docint=SENTINEL-d\n",
+        )
+        self.assertEqual(self.apply(), [])
+        nextext = self.plan("Nextext")
+        self.assertEqual(
+            nextext.entries["NEXTEXT_SERVICE_TOKENS"].raw,
+            "NEXTEXT_SERVICE_TOKENS=docint=SENTINEL-d,ghostwriter=SENTINEL-g",
+        )
+        self.assertEqual(
+            items(nextext, "filled"), ["NEXTEXT_SERVICE_TOKENS (from ghostwriter)"]
+        )
+        self.assertIsNone(event(self.plan("docint"), "filled"))
+        written = {name: self.text(name) for name in self.files}
+        self.hosts(written["docint"], written["ghostwriter"], written["Nextext"])
+        self.assertEqual(self.apply(), [])
+        for name, shared in self.files.items():
+            with self.subTest(name):
+                self.assertEqual(self.text(name), written[name])
+                self.assertEqual(shared.plan.events, [])
+
     def test_an_unsafe_list_is_not_rewritten(self) -> None:
         self.hosts(
             "NEXTEXT_API_KEY=SENTINEL-d\n",
@@ -1295,6 +1325,67 @@ class TwoEntryTests(SharedCase):
         self.assertEqual(
             self.plan("Nextext").entries["NEXTEXT_SERVICE_TOKENS"].value,
             "docint=" + "a" * 64 + ",ghostwriter=" + "b" * 64,
+        )
+
+    def test_an_unsafe_list_generates_nothing(self) -> None:
+        # A list that is readable but cannot take an item (a space in another
+        # item): the group is generated all or nothing, so the single key does
+        # not get a token the list does not hold. The token stub is never drawn.
+        for name, hosts in {
+            "ghostwriter's group": (
+                "NEXTEXT_API_KEY=SENTINEL-d\n",
+                "OTHER=1\n",
+                "NEXTEXT_SERVICE_TOKENS=docint=SENTINEL-d, other=x\n",
+            ),
+            "docint's group": (
+                "OTHER=1\n",
+                "NEXTEXT_API_KEY=SENTINEL-g\n",
+                "NEXTEXT_SERVICE_TOKENS=ghostwriter=SENTINEL-g, other=x\n",
+            ),
+        }.items():
+            with self.subTest(name):
+                self.hosts(*hosts)
+                before = self.snapshot()
+                unset = "docint" if name.startswith("docint") else "ghostwriter"
+                self.assertEqual(
+                    self.apply(True, no_token),
+                    [unset_everywhere(f"NEXTEXT_API_KEY ({unset}, Nextext)")],
+                )
+                for member, shared in self.files.items():
+                    kinds = {found.kind for found in shared.plan.events}
+                    self.assertFalse(kinds & {"generated", "filled"}, member)
+                self.assertEqual(
+                    items(self.plan("Nextext"), "unsafe"), ["NEXTEXT_SERVICE_TOKENS"]
+                )
+                for member in ("docint", "ghostwriter"):
+                    self.assertEqual(
+                        self.plan(member).entries, before[member][0], member
+                    )
+                self.assertEqual(
+                    self.plan("Nextext").entries, before["Nextext"][0]
+                )
+
+    def test_a_token_another_entry_holds_is_a_conflict(self) -> None:
+        # The operator copied docint's key into Ghostwriter's .env: Nextext
+        # refuses two items with one token, so env-sync does not write it.
+        conflicts = [
+            conflict("NEXTEXT_SERVICE_TOKENS: ghostwriter's token equals docint's")
+        ]
+        self.hosts(
+            "NEXTEXT_API_KEY=SENTINEL-d\n",
+            "NEXTEXT_API_KEY=SENTINEL-d\n",
+            "NEXTEXT_SERVICE_TOKENS=docint=SENTINEL-d\n",
+        )
+        before = self.snapshot()
+        self.assertEqual(self.apply(), conflicts)
+        self.assertEqual(self.snapshot(), before)
+
+        # Nextext without the key: docint's item is written, Ghostwriter's is not.
+        self.hosts("NEXTEXT_API_KEY=SENTINEL-d\n", "NEXTEXT_API_KEY=SENTINEL-d\n", None)
+        self.assertEqual(self.apply(), conflicts)
+        self.assertEqual(
+            self.plan("Nextext").entries["NEXTEXT_SERVICE_TOKENS"].value,
+            "docint=SENTINEL-d",
         )
 
     def test_a_placeholder_list_is_rewritten_whole(self) -> None:
