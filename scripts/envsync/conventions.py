@@ -467,22 +467,26 @@ class _Check:
         return _Tags(names, shared)
 
     def expected_shared(self, key: str) -> Optional[str]:
-        """The [shared: ...] items env-sync.conf gives this member's key: a
-        non-source names the source; the source, or any row of a group
-        without one, names every other row in table order."""
+        """The [shared: ...] items env-sync.conf gives this member's key. In
+        each group that holds it, a non-source names the source; the source,
+        or any row of a group without one, names every other row in table
+        order. A key two groups hold (a list with an entry per caller) names
+        the partners of both, group by group, each once."""
+        partners: List[str] = []
         for group in self.groups:
             mine = [r for r in group.rows if r.member == self.member and r.key == key]
             if not mine:
                 continue
             source = next((r for r in group.rows if r.source), None)
             if source is not None and source is not mine[0]:
-                partners = [source]
+                named = [source]
             else:
-                partners = [r for r in group.rows if r is not mine[0]]
-            return ", ".join(
-                r.member if r.key == key else f"{r.member} {r.key}" for r in partners
-            )
-        return None
+                named = [r for r in group.rows if r is not mine[0]]
+            for r in named:
+                item = r.member if r.key == key else f"{r.member} {r.key}"
+                if item not in partners:
+                    partners.append(item)
+        return ", ".join(partners) if partners else None
 
     # V: values, each line on its own and against the others.
     def value_rules(self) -> None:

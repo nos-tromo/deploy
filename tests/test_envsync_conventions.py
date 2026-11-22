@@ -563,6 +563,43 @@ class TagRuleTests(unittest.TestCase):
             self.assertNotIn(("T5", key), found(good, member, groups=real))
             self.assertIn(("T5", key), found(bad, member, groups=real))
 
+    def test_a_list_key_in_two_groups_names_both_partners(self) -> None:
+        groups = load_table(
+            "nextext-token  docint  NEXTEXT_API_KEY  gen\n"
+            "nextext-token  Nextext  NEXTEXT_SERVICE_TOKENS  gen  entry=docint\n"
+            "nextext-ghostwriter-token  ghostwriter  NEXTEXT_API_KEY  gen\n"
+            "nextext-ghostwriter-token  Nextext  NEXTEXT_SERVICE_TOKENS  gen  "
+            "entry=ghostwriter\n"
+        )
+        anchor = "# DATA_NET=data-net\n"
+
+        def tagged(tag: str, key: str) -> str:
+            block = f"\n# A synthetic key.\n# {tag}\n# {key}=\n"
+            return mutate(VALID, anchor, anchor + block)
+
+        both = "[secret] [shared: docint NEXTEXT_API_KEY, ghostwriter NEXTEXT_API_KEY]"
+        key = "NEXTEXT_SERVICE_TOKENS"
+        good = found(tagged(both, key), "Nextext", groups=groups)
+        self.assertNotIn(("T5", key), good)
+        for bad in (
+            "[secret] [shared: docint NEXTEXT_API_KEY]",
+            "[secret] [shared: ghostwriter NEXTEXT_API_KEY]",
+            "[secret] [shared: ghostwriter NEXTEXT_API_KEY, docint NEXTEXT_API_KEY]",
+            "[secret]",
+        ):
+            with self.subTest(bad=bad):
+                self.assertIn(
+                    ("T5", key), found(tagged(bad, key), "Nextext", groups=groups)
+                )
+        # Each caller names the list alone: its key is in one group.
+        for member in ("docint", "ghostwriter"):
+            with self.subTest(member=member):
+                tag = "[secret] [shared: Nextext NEXTEXT_SERVICE_TOKENS]"
+                text = tagged(tag, "NEXTEXT_API_KEY")
+                self.assertNotIn(
+                    ("T5", "NEXTEXT_API_KEY"), found(text, member, groups=groups)
+                )
+
     def test_t6_dev_tag(self) -> None:
         text = mutate(VALID, "# DATA_NET=data-net", "# [dev]\n# DATA_NET=data-net")
         self.assertIn(("T6", "DATA_NET"), found(text))
