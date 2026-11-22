@@ -204,7 +204,7 @@ Dependabot-bumped.
 | | |
 |---|---|
 | Version / Python | 0.1.0 · `>=3.11,<3.12` (3.11 only) |
-| Backend | FastAPI + Uvicorn, `openai` SDK against the router; workbench is its tool tier (tools over MCP, files over REST); alias `ghostwriter-backend` on `inference-net` and `workbench-net` |
+| Backend | FastAPI + Uvicorn, `openai` SDK against the router; workbench is its tool tier (tools over MCP, files over REST); it also calls Nextext (`nextext-backend` on `inference-net`, service token `service:ghostwriter`) for video and audio; alias `ghostwriter-backend` on `inference-net` and `workbench-net` |
 | Frontend | React 19 SPA on `@infra/ui`; alias `ghostwriter-frontend` on `edge-net`, served under `/ghostwriter/` |
 | State | SQLite on the external `ghostwriter-data` volume; chats kept 90 days |
 

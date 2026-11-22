@@ -211,7 +211,7 @@ den `FROM`-Zeilen Digest-gepinnt und per Dependabot aktualisiert.
 | | |
 |---|---|
 | Version / Python | 0.1.0 · `>=3.11,<3.12` (nur 3.11) |
-| Backend | FastAPI + Uvicorn, `openai`-SDK gegen den Router; workbench ist die Werkzeug-Ebene (Werkzeuge über MCP, Dateien über REST); Alias `ghostwriter-backend` auf `inference-net` und `workbench-net` |
+| Backend | FastAPI + Uvicorn, `openai`-SDK gegen den Router; workbench ist die Werkzeug-Ebene (Werkzeuge über MCP, Dateien über REST); ruft außerdem Nextext auf (`nextext-backend` auf `inference-net`, Service-Token `service:ghostwriter`), für Video und Audio; Alias `ghostwriter-backend` auf `inference-net` und `workbench-net` |
 | Frontend | React-19-SPA auf `@infra/ui`; Alias `ghostwriter-frontend` auf `edge-net`, ausgeliefert unter `/ghostwriter/` |
 | State | SQLite auf dem externen Volume `ghostwriter-data`; Chats werden 90 Tage aufbewahrt |
 

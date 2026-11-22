@@ -90,6 +90,7 @@ GROUP_NAMES = [
     "audit-edge",
     "qdrant-key",
     "nextext-token",
+    "nextext-ghostwriter-token",
     "router-key",
     "workbench-docint-key",
     "workbench-ghostwriter-key",
@@ -223,10 +224,14 @@ class TableTests(unittest.TestCase):
         text = (ROOT / "env-sync.conf").read_text()
         groups = load_table(text)
         self.assertEqual([group.name for group in groups], GROUP_NAMES)
-        rows = {(row.member, row.key): row for group in groups for row in group.rows}
-        self.assertEqual(len(rows), 29)
+        rows = {
+            (row.member, row.key, row.entry): row
+            for group in groups
+            for row in group.rows
+        }
+        self.assertEqual(len(rows), 31)
         self.assertEqual(
-            sorted(key for key, row in rows.items() if row.source),
+            sorted(key[:2] for key, row in rows.items() if row.source),
             [
                 ("edge-plane", "EDGE_HOST"),
                 ("vllm-service", "OPENAI_API_KEY"),
@@ -235,7 +240,7 @@ class TableTests(unittest.TestCase):
         )
         self.assertEqual(
             [(row.member, row.entry) for row in rows.values() if row.entry],
-            [("Nextext", "docint")],
+            [("Nextext", "docint"), ("Nextext", "ghostwriter")],
         )
         self.assertEqual(
             [group.name for group in groups if not group.rows[0].gen],
@@ -281,6 +286,7 @@ class TableTests(unittest.TestCase):
             frozenset(
                 {
                     "GHOSTWRITER_EDGE_SECRET",
+                    "NEXTEXT_API_KEY",
                     "OPENAI_API_KEY",
                     "WORKBENCH_API_KEY",
                     "WORKBENCH_RETENTION_DAYS",
@@ -307,6 +313,13 @@ class TableTests(unittest.TestCase):
                 [
                     ("workbench", "GHOSTWRITER_WORKBENCH_KEY"),
                     ("ghostwriter", "WORKBENCH_API_KEY"),
+                ],
+            ),
+            (
+                "nextext-ghostwriter-token",
+                [
+                    ("ghostwriter", "NEXTEXT_API_KEY"),
+                    ("Nextext", "NEXTEXT_SERVICE_TOKENS"),
                 ],
             ),
         ):

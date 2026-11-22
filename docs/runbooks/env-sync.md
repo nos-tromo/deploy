@@ -62,7 +62,7 @@ headers. A `.env` that exists but has no stored copy fails `env-check` with
 | `generated` | A shared secret generated because of `ENV_GENERATE=1`. | Nothing; it is written to every member of the group. |
 | `followed` | A default you never touched moved with the example (new value). | Nothing. |
 | `unset` (first form) | The example now only comments the key out; your inherited default no longer applies. | Nothing; set it yourself to keep a value. |
-| `unset` (second form) | A shared key is unset in every member (shown as `KEY (members)`). A list (`entry=`) that is set without its entry counts as unset too. | Set it, or run `make env ENV_GENERATE=1`. A list you set is never generated into: add its entry by hand. |
+| `unset` (second form) | A shared key is unset in every member (shown as `KEY (members)`). A list (`entry=`) without a real item for an entry counts as unset for that entry. | Set it, or run `make env ENV_GENERATE=1`, which appends a generated item; a set single key is appended too. |
 | `removed` | The key is gone from the example and your line was its old default; the line is dropped. | Nothing. |
 | `held` | The example's default changed, but the key is secret-like, a retention, a shared key or in `federation.env`. Yours is kept. | Compare with the example and decide. |
 | `renamed` | The example renames a key. Three notes: the value is carried to the new name; the value is not carried (the old line stays at the end of the file with `# [env-sync] renamed to NEW in the example; value not carried`); or both names were set and the new name applies. | When not carried, copy the value by hand if you still want it, then delete the old line. |
@@ -191,9 +191,14 @@ and key. Per group:
 - A group with fewer than two members on this host is skipped.
 - Only values made of `[A-Za-z0-9._~:/@+=,-]` are copied; others are reported
   as `not copied`.
-- `entry=NAME` rows hold a `NAME=token,...` list (Nextext's
-  `NEXTEXT_SERVICE_TOKENS`); only the `docint` entry is shared. A list you set
-  is never appended to.
+- `entry=NAME` rows share one `NAME=token` item of a list (Nextext's
+  `NEXTEXT_SERVICE_TOKENS`, with the `docint` and `ghostwriter` entries, one
+  group each). A row owns its own item only. A missing item is appended, a
+  placeholder item is replaced where it stands, and the other items are never
+  changed, reordered or dropped. A list whose every item is a placeholder is
+  written anew. A list with an item that is not `name=token` is left alone: a
+  conflict when the other side is set. Before deploy 0.14.0 a set list was
+  never appended to.
 
 The `router-key` group rests on an assumption that holds on these hosts: every
 app reaches inference only through `vllm-router`, so vllm-service's
