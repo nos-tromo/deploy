@@ -95,6 +95,11 @@ GROUP_NAMES = [
     "workbench-docint-key",
     "workbench-ghostwriter-key",
     "workbench-period",
+    "text-model",
+    "chat-context",
+    "embed-model",
+    "rerank-model",
+    "whisper-model",
 ]
 
 
@@ -176,6 +181,41 @@ class TableTests(unittest.TestCase):
                 "g  alpha  A_KEY\ng  beta  L_KEY  source  entry=alpha\n",
                 2,
             ),
+            "two leads": ("g  alpha  A_KEY  lead\ng  beta  A_KEY  lead\n", 2),
+            "a lead and a source": (
+                "g  alpha  A_KEY  lead\ng  beta  A_KEY  source\n",
+                2,
+            ),
+            "lead with source on one row": (
+                "g  alpha  A_KEY  lead  source\ng  beta  A_KEY\n",
+                1,
+            ),
+            "lead with gen": ("g  alpha  A_KEY  lead  gen\ng  beta  A_KEY  gen\n", 1),
+            "lead on an entry row": (
+                "g  alpha  A_KEY\ng  beta  L_KEY  lead  entry=alpha\n",
+                2,
+            ),
+            "via on the lead": (
+                "g  alpha  A_KEY  lead  via=B_BASE\ng  beta  A_KEY\n",
+                1,
+            ),
+            "via on the source": (
+                "g  alpha  A_KEY  source  via=B_BASE\ng  beta  A_KEY\n",
+                1,
+            ),
+            "via without a lead or source": (
+                "g  alpha  A_KEY\ng  beta  A_KEY  via=B_BASE\n",
+                2,
+            ),
+            "empty via": ("g  alpha  A_KEY  lead\ng  beta  A_KEY  via=\n", 2),
+            "via with a bad key": (
+                "g  alpha  A_KEY  lead\ng  beta  A_KEY  via=B_BASE,bad-key\n",
+                2,
+            ),
+            "repeated via": (
+                "g  alpha  A_KEY  lead\ng  beta  A_KEY  via=B_BASE  via=C_BASE\n",
+                2,
+            ),
         }
         for name, (text, lineno) in cases.items():
             with self.subTest(name):
@@ -224,6 +264,31 @@ class TableTests(unittest.TestCase):
         )
         self.assertEqual(load_table("# only a comment\n\n"), [])
 
+    def test_lead_and_via_rows(self) -> None:
+        self.assertEqual(
+            load_table("g  alpha  A_KEY  lead\ng  beta  B_KEY  via=B_BASE,C_BASE\n"),
+            [
+                Group(
+                    "g",
+                    [
+                        Row("g", "alpha", "A_KEY", True, False, None, 1, lead=True),
+                        Row(
+                            "g",
+                            "beta",
+                            "B_KEY",
+                            False,
+                            False,
+                            None,
+                            2,
+                            via=("B_BASE", "C_BASE"),
+                        ),
+                    ],
+                )
+            ],
+        )
+        source = load_table("g  alpha  A_KEY  source\ng  beta  A_KEY  via=B_BASE\n")
+        self.assertEqual(source[0].rows[1].via, ("B_BASE",))
+
     def test_real_table_loads(self) -> None:
         text = (ROOT / "env-sync.conf").read_text()
         groups = load_table(text)
@@ -233,22 +298,52 @@ class TableTests(unittest.TestCase):
             for group in groups
             for row in group.rows
         }
-        self.assertEqual(len(rows), 31)
+        self.assertEqual(len(rows), 48)
         self.assertEqual(
             sorted(key[:2] for key, row in rows.items() if row.source),
             [
                 ("edge-plane", "EDGE_HOST"),
+                ("vllm-service", "CHAT_MAX_MODEL_LEN"),
+                ("vllm-service", "EMBED_MODEL"),
                 ("vllm-service", "OPENAI_API_KEY"),
+                ("vllm-service", "RERANK_MODEL"),
+                ("vllm-service", "TEXT_MODEL"),
+                ("vllm-service", "WHISPER_MODEL"),
                 ("workbench", "WORKBENCH_RETENTION_DAYS"),
             ],
         )
+        self.assertEqual(
+            [group.name for group in groups if any(r.lead for r in group.rows)],
+            GROUP_NAMES[-5:],
+        )
+        self.assertTrue(
+            all(
+                row.member == "vllm-service"
+                for group in groups
+                for row in group.rows
+                if row.lead
+            )
+        )
+        via = {key[:2]: row.via for key, row in rows.items() if row.via}
+        self.assertEqual(len(via), 14)
+        self.assertEqual(
+            via[("docint", "SPARSE_MODEL")], ("SPARSE_API_BASE", "OPENAI_API_BASE")
+        )
+        self.assertEqual(
+            via[("Nextext", "WHISPER_MODEL")], ("WHISPER_API_BASE", "OPENAI_API_BASE")
+        )
+        # A key that also authenticates other router-bound endpoints stays linked
+        # whatever its chat endpoint is.
+        self.assertNotIn(("docint", "OPENAI_API_KEY"), via)
+        self.assertNotIn(("Nextext", "OPENAI_API_KEY"), via)
+        self.assertEqual(via[("translator", "OPENAI_API_KEY")], ("OPENAI_API_BASE",))
         self.assertEqual(
             [(row.member, row.entry) for row in rows.values() if row.entry],
             [("Nextext", "docint"), ("Nextext", "ghostwriter")],
         )
         self.assertEqual(
             [group.name for group in groups if not group.rows[0].gen],
-            ["edge-host", "router-key", "workbench-period"],
+            ["edge-host", "router-key", "workbench-period"] + GROUP_NAMES[-5:],
         )
         first = next(
             lineno
@@ -272,6 +367,12 @@ class TableTests(unittest.TestCase):
                     "NEXTEXT_API_KEY",
                     "OPENAI_API_KEY",
                     "WORKBENCH_API_KEY",
+                    "TEXT_MODEL",
+                    "VISION_MODEL",
+                    "OPENAI_CTX_WINDOW",
+                    "EMBED_MODEL",
+                    "SPARSE_MODEL",
+                    "RERANK_MODEL",
                 }
             ),
         )
@@ -294,6 +395,9 @@ class TableTests(unittest.TestCase):
                     "OPENAI_API_KEY",
                     "WORKBENCH_API_KEY",
                     "WORKBENCH_RETENTION_DAYS",
+                    "TEXT_MODEL",
+                    "WHISPER_MODEL",
+                    "GHOSTWRITER_CONTEXT_TOKENS",
                 }
             ),
         )
@@ -1814,6 +1918,276 @@ class RoundTripTests(SharedCase):
                     {entry.origin for entry in shared.plan.entries.values()}, {"kept"}
                 )
                 self.assertEqual(shared.plan.events, [])
+
+
+LINK = (
+    "text-model  vllm-service  TEXT_MODEL    lead\n"
+    "text-model  docint        TEXT_MODEL    via=OPENAI_API_BASE\n"
+    "text-model  docint        VISION_MODEL  via=OPENAI_API_BASE\n"
+    "text-model  ghostwriter   TEXT_MODEL    via=OPENAI_API_BASE\n"
+)
+ROUTER_BASE = "# OPENAI_API_BASE=http://vllm-router:4000/v1\n"
+OLLAMA = "OPENAI_API_BASE=http://ollama:11434/v1\n"
+LEAD_EXAMPLE = "# TEXT_MODEL=example-org/chat-a\n"
+DOCINT_EXAMPLE = (
+    ROUTER_BASE + "# TEXT_MODEL=example-org/small\n# VISION_MODEL=example-org/small\n"
+)
+GHOSTWRITER_EXAMPLE = ROUTER_BASE + "# TEXT_MODEL=example-org/chat-a\n"
+
+
+def linked(key: str, value: str) -> Entry:
+    return Entry(key, f"{key}={value}", value, "linked")
+
+
+class LinkTests(SharedCase):
+    """A lead row's value, or its example's default, is written into every
+    other row whose endpoint is the router."""
+
+    def link(self, lead_env: Optional[str], docint_env: str, ghostwriter_env: str) -> None:
+        self.start(LINK)
+        if lead_env is not None:
+            self.member("vllm-service", LEAD_EXAMPLE, lead_env)
+        self.member("docint", DOCINT_EXAMPLE, docint_env)
+        self.member("ghostwriter", GHOSTWRITER_EXAMPLE, ghostwriter_env)
+
+    def test_the_lead_default_reaches_a_follower_that_differs(self) -> None:
+        self.link("", "", "")
+        self.assertEqual(self.apply(), [])
+        docint = self.plan("docint")
+        self.assertEqual(
+            docint.entries["TEXT_MODEL"], linked("TEXT_MODEL", "example-org/chat-a")
+        )
+        self.assertEqual(
+            docint.entries["VISION_MODEL"],
+            linked("VISION_MODEL", "example-org/chat-a"),
+        )
+        self.assertEqual(
+            items(docint, "linked"),
+            ["TEXT_MODEL (from vllm-service)", "VISION_MODEL (from vllm-service)"],
+        )
+        self.assertEqual(
+            self.text("docint"),
+            ROUTER_BASE
+            + "TEXT_MODEL=example-org/chat-a\nVISION_MODEL=example-org/chat-a\n",
+        )
+        # ghostwriter's own default already is the lead's: nothing to write.
+        self.assertNotIn("TEXT_MODEL", self.plan("ghostwriter").entries)
+        self.assertEqual(self.plan("ghostwriter").events, [])
+        self.assertEqual(self.plan("vllm-service").events, [])
+
+    def test_a_second_run_changes_nothing(self) -> None:
+        self.link("", "", "")
+        self.apply()
+        first = self.text("docint")
+        self.start(LINK)
+        self.member("vllm-service", LEAD_EXAMPLE, "", base=LEAD_EXAMPLE)
+        self.member("docint", DOCINT_EXAMPLE, first, base=DOCINT_EXAMPLE)
+        self.member("ghostwriter", GHOSTWRITER_EXAMPLE, "", base=GHOSTWRITER_EXAMPLE)
+        self.assertEqual(self.apply(), [])
+        self.assertEqual(self.text("docint"), first)
+        for name in self.files:
+            self.assertEqual(self.plan(name).events, [], name)
+
+    def test_an_active_lead_value_replaces_what_the_followers_hold(self) -> None:
+        self.link(
+            "TEXT_MODEL=SENTINEL-chat-b\n",
+            "TEXT_MODEL=SENTINEL-old\nVISION_MODEL=SENTINEL-old\n",
+            "",
+        )
+        self.assertEqual(self.apply(), [])
+        for name, key in (
+            ("docint", "TEXT_MODEL"),
+            ("docint", "VISION_MODEL"),
+            ("ghostwriter", "TEXT_MODEL"),
+        ):
+            with self.subTest(name=name, key=key):
+                self.assertEqual(
+                    self.plan(name).entries[key], linked(key, "SENTINEL-chat-b")
+                )
+        self.assertEqual(
+            items(self.plan("ghostwriter"), "linked"),
+            ["TEXT_MODEL (from vllm-service)"],
+        )
+        self.assertEqual(
+            self.plan("vllm-service").entries["TEXT_MODEL"].origin, "kept"
+        )
+
+    def test_an_empty_follower_line_is_replaced(self) -> None:
+        self.link("", "TEXT_MODEL=\nVISION_MODEL=example-org/chat-a\n", "TEXT_MODEL=\n")
+        self.assertEqual(self.apply(), [])
+        self.assertEqual(items(self.plan("docint"), "linked"), ["TEXT_MODEL (from vllm-service)"])
+        self.assertEqual(
+            items(self.plan("ghostwriter"), "linked"), ["TEXT_MODEL (from vllm-service)"]
+        )
+
+    def test_nothing_flows_back_into_the_lead(self) -> None:
+        self.start(LINK)
+        self.member("vllm-service", "# TEXT_MODEL=\n", "")
+        self.member(
+            "docint", DOCINT_EXAMPLE, "TEXT_MODEL=SENTINEL-x\nVISION_MODEL=SENTINEL-x\n"
+        )
+        self.member("ghostwriter", GHOSTWRITER_EXAMPLE, "")
+        self.assertEqual(
+            self.apply(), [Event("lead_unset", ["TEXT_MODEL (vllm-service)"], "warn")]
+        )
+        self.assertNotIn("TEXT_MODEL", self.plan("vllm-service").entries)
+        self.assertEqual(self.plan("docint").entries["TEXT_MODEL"].origin, "kept")
+        self.assertNotIn("TEXT_MODEL", self.plan("ghostwriter").entries)
+
+    def test_the_group_waits_for_the_lead(self) -> None:
+        self.link(None, "TEXT_MODEL=SENTINEL-a\n", "TEXT_MODEL=SENTINEL-b\n")
+        self.assertEqual(self.apply(), [])
+        for name in ("docint", "ghostwriter"):
+            self.assertEqual(self.plan(name).entries["TEXT_MODEL"].origin, "kept")
+            self.assertEqual(self.plan(name).events, [])
+
+    def test_a_follower_on_another_endpoint_is_left_alone(self) -> None:
+        self.link(
+            "",
+            OLLAMA + "TEXT_MODEL=SENTINEL-local\n",
+            "OPENAI_API_BASE=http://vllm-router:4000/v1\nTEXT_MODEL=SENTINEL-old\n",
+        )
+        self.assertEqual(self.apply(), [])
+        docint = self.plan("docint")
+        self.assertEqual(docint.entries["TEXT_MODEL"].origin, "kept")
+        self.assertNotIn("VISION_MODEL", docint.entries)
+        self.assertEqual(items(docint, "not_linked"), ["TEXT_MODEL", "VISION_MODEL"])
+        self.assertIsNone(event(docint, "linked"))
+        self.assertEqual(
+            self.plan("ghostwriter").entries["TEXT_MODEL"],
+            linked("TEXT_MODEL", "example-org/chat-a"),
+        )
+
+    def test_the_endpoint_chain_takes_the_first_key_with_a_value(self) -> None:
+        table = (
+            "embed-model  vllm-service  EMBED_MODEL  lead\n"
+            "embed-model  docint        EMBED_MODEL  via=EMBED_API_BASE,OPENAI_API_BASE\n"
+        )
+        example = ROUTER_BASE + "# EMBED_API_BASE=\n# EMBED_MODEL=example-org/embed-small\n"
+        router = "http://vllm-router:4000/v1"
+        for env, is_linked in (
+            ("", True),
+            (OLLAMA, False),
+            (OLLAMA + f"EMBED_API_BASE={router}\n", True),
+            ("EMBED_API_BASE=http://embed-only:8000/v1\n", False),
+            ("EMBED_API_BASE=\n", True),
+        ):
+            with self.subTest(env=env):
+                self.start(table)
+                self.member("vllm-service", "# EMBED_MODEL=example-org/embed\n", "")
+                self.member("docint", example, env)
+                self.assertEqual(self.apply(), [])
+                docint = self.plan("docint")
+                if is_linked:
+                    self.assertEqual(
+                        docint.entries["EMBED_MODEL"],
+                        linked("EMBED_MODEL", "example-org/embed"),
+                    )
+                else:
+                    self.assertNotIn("EMBED_MODEL", docint.entries)
+                    self.assertEqual(items(docint, "not_linked"), ["EMBED_MODEL"])
+
+    def test_a_reference_to_the_lead_value_stays(self) -> None:
+        table = (
+            "embed-model  vllm-service  EMBED_MODEL   lead\n"
+            "embed-model  docint        EMBED_MODEL   via=OPENAI_API_BASE\n"
+            "embed-model  docint        SPARSE_MODEL  via=OPENAI_API_BASE\n"
+        )
+        example = (
+            ROUTER_BASE
+            + "# EMBED_MODEL=example-org/embed\n# SPARSE_MODEL=example-org/embed\n"
+        )
+        for held, is_linked in (("example-org/embed", False), ("example-org/old", True)):
+            with self.subTest(held=held):
+                self.start(table)
+                self.member("vllm-service", "# EMBED_MODEL=example-org/embed\n", "")
+                env = f"EMBED_MODEL={held}\nSPARSE_MODEL=${{EMBED_MODEL}}\n"
+                self.member("docint", example, env)
+                self.assertEqual(self.apply(), [])
+                docint = self.plan("docint")
+                self.assertEqual(docint.entries["SPARSE_MODEL"].origin, "kept")
+                self.assertEqual(
+                    self.text("docint"),
+                    ROUTER_BASE
+                    + "EMBED_MODEL=example-org/embed\nSPARSE_MODEL=${EMBED_MODEL}\n",
+                )
+                self.assertEqual(
+                    items(docint, "linked"),
+                    ["EMBED_MODEL (from vllm-service)"] if is_linked else None,
+                )
+
+    def test_a_source_group_leaves_out_a_member_off_the_router(self) -> None:
+        self.start(
+            "router-key  vllm-service  OPENAI_API_KEY  source\n"
+            "router-key  translator    OPENAI_API_KEY  via=OPENAI_API_BASE\n"
+            "router-key  ghostwriter   OPENAI_API_KEY  via=OPENAI_API_BASE\n"
+        )
+        app = ROUTER_BASE + "# OPENAI_API_KEY=\n"
+        self.member("vllm-service", "OPENAI_API_KEY=\n", "OPENAI_API_KEY=SENTINEL-router\n")
+        self.member("translator", app, OLLAMA + "OPENAI_API_KEY=SENTINEL-ollama\n")
+        self.member("ghostwriter", app, "")
+        self.assertEqual(self.apply(), [])
+        translator = self.plan("translator")
+        self.assertEqual(translator.entries["OPENAI_API_KEY"].origin, "kept")
+        self.assertEqual(items(translator, "not_linked"), ["OPENAI_API_KEY"])
+        self.assertEqual(
+            self.plan("ghostwriter").entries["OPENAI_API_KEY"].origin, "filled"
+        )
+        # Off the router, a lone app never fills the source either.
+        self.start(
+            "router-key  vllm-service  OPENAI_API_KEY  source\n"
+            "router-key  translator    OPENAI_API_KEY  via=OPENAI_API_BASE\n"
+        )
+        self.member("vllm-service", "OPENAI_API_KEY=\n", "OPENAI_API_KEY=\n")
+        self.member("translator", app, OLLAMA + "OPENAI_API_KEY=SENTINEL-ollama\n")
+        self.assertEqual(self.apply(), [])
+        self.assertNotEqual(
+            self.plan("vllm-service").entries["OPENAI_API_KEY"].origin, "filled"
+        )
+
+    def test_an_undocumented_endpoint_key_is_a_table_warning(self) -> None:
+        self.start(LINK)
+        self.member("vllm-service", LEAD_EXAMPLE, "")
+        self.member(
+            "docint",
+            "# TEXT_MODEL=example-org/small\n# VISION_MODEL=example-org/small\n",
+            "",
+        )
+        self.assertEqual(
+            self.apply(),
+            [
+                Event(
+                    "table",
+                    ["env-sync.conf: OPENAI_API_BASE is not in docint's example"],
+                    "warn",
+                )
+            ],
+        )
+        self.assertEqual(
+            items(self.plan("docint"), "not_linked"), ["TEXT_MODEL", "VISION_MODEL"]
+        )
+
+    def test_an_unsafe_lead_value_is_not_copied(self) -> None:
+        self.link('TEXT_MODEL="SENTINEL chat"\n', "", "")
+        self.assertEqual(self.apply(), [])
+        self.assertEqual(
+            items(self.plan("docint"), "unsafe"), ["TEXT_MODEL", "VISION_MODEL"]
+        )
+        self.assertNotIn("TEXT_MODEL", self.plan("docint").entries)
+
+    def test_a_key_commented_on_purpose_stays_commented(self) -> None:
+        self.start(
+            "text-model  vllm-service  TEXT_MODEL  lead\n"
+            "text-model  Nextext       TEXT_MODEL  via=OPENAI_API_BASE\n"
+        )
+        self.member("vllm-service", LEAD_EXAMPLE, "")
+        self.member("Nextext", ROUTER_BASE + "TEXT_MODEL=\n", "# TEXT_MODEL=\n")
+        self.assertEqual(self.apply(), [])
+        nextext = self.plan("Nextext")
+        self.assertIn("TEXT_MODEL", nextext.unset)
+        self.assertNotIn("TEXT_MODEL", nextext.entries)
+        self.assertIn("TEXT_MODEL", items(nextext, "kept_unset") or [])
+        self.assertIsNone(event(nextext, "linked"))
 
 
 if __name__ == "__main__":

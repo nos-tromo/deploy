@@ -99,7 +99,7 @@ MESSAGES: Dict[str, str] = {
     "M3": "federation.env.example has no active line",
     "M4": "the value shown equals the Makefile's ?= default (empty when it has none)",
     "M5": "federation.env.example has one section, deploy",
-    "X2": "rows of one env-sync.conf group agree on [required]",
+    "X2": "rows of one env-sync.conf group without a lead agree on [required]",
     "X3": "a compose default equals the value shown; ${K:?} means [required]",
     "X5": "a variable compose interpolates is documented here, *_VERSION aside",
 }
@@ -668,6 +668,10 @@ def _group_required(
     }
     found: List[Tuple[str, Finding]] = []
     for group in groups:
+        if any(row.lead for row in group.rows):
+            # The lead always holds a value, its own or its example's default,
+            # and writes it into every row: a row may well require it.
+            continue
         rows = []
         for row in group.rows:
             entries = settings.get(row.member, {}).get(row.key)
@@ -687,7 +691,8 @@ def check_group_required(
     examples: Dict[str, str], groups: Sequence[Group]
 ) -> List[Finding]:
     """X2: the migrated examples in one group agree on [required]; a row
-    that differs from the source (else the first row) is reported."""
+    that differs from the source (else the first row) is reported. A group
+    with a lead is exempt."""
     return [f for _, f in _group_required(examples, groups)]
 
 
