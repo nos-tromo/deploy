@@ -1,6 +1,7 @@
 """Values several members must share (env-sync.conf): checked across the planned
 files, filled into the unset side, reported as conflicts, generated only on
-request. Events carry key and member names only, never a value."""
+request. A lead row's value is written into every other row of its group whose
+endpoint is the router. Events carry key and member names only, never a value."""
 
 from __future__ import annotations
 
@@ -8,9 +9,10 @@ import re
 import secrets
 from dataclasses import dataclass
 from typing import Callable, Dict, FrozenSet, List, Optional, Set, Tuple
+from urllib.parse import urlsplit
 
 from .dotenv import KEY, Line, parse_line
-from .example import Example
+from .example import Example, is_prose
 from .plan import Entry, Event, FilePlan
 
 SAFE_VALUE = re.compile(r"^[A-Za-z0-9._~:/@+=,-]+$")
@@ -18,12 +20,16 @@ SAFE_VALUE = re.compile(r"^[A-Za-z0-9._~:/@+=,-]+$")
 _GROUP = re.compile(r"^[a-z0-9-]+$")
 _KEY = re.compile(rf"^{KEY}$")
 _ENTRY = re.compile(r"^entry=([A-Za-z0-9._-]+)$")
+_VIA = re.compile(r"^via=(.*)$")
+_SUBST = re.compile(rf"\$\$|\$\{{({KEY})\}}|\$({KEY})")
 _PLACEHOLDER = re.compile(r"<[^>]*>")
 _QUOTED = re.compile(r"'[^']*'|\"(?:\\.|[^\"\\])*\"")
-_FILE_KINDS = ("filled", "generated", "kept_unset", "unsafe")
+_FILE_KINDS = ("filled", "generated", "linked", "not_linked", "kept_unset", "unsafe")
 # What a generated token looks like to the safe-value check: 64 hex digits.
 _GENERATED = "0" * 64
 _REPLACED_KINDS = ("added", "held", "differs")
+# The alias the federation's router answers to on inference-net.
+ROUTER_HOST = "vllm-router"
 
 
 class TableError(Exception):
@@ -44,6 +50,11 @@ class Row:
     gen: bool
     entry: Optional[str]
     lineno: int
+    # The source whose value, or its example's default, every row of the group
+    # whose endpoint is the router takes, replacing what it holds.
+    lead: bool = False
+    # The keys naming this row's endpoint, the first one with a value counting.
+    via: Tuple[str, ...] = ()
 
 
 @dataclass
@@ -70,25 +81,38 @@ def _row(lineno: int, fields: List[str]) -> Row:
         raise TableError(lineno, "a group name uses only a-z, 0-9 and '-'")
     if not _KEY.match(key):
         raise TableError(lineno, "bad key")
-    source = gen = False
+    source = gen = lead = False
     entry: Optional[str] = None
+    via: Optional[Tuple[str, ...]] = None
     for flag in flags:
         match = _ENTRY.match(flag)
+        endpoint = _VIA.match(flag)
         if flag == "source" and not source:
             source = True
         elif flag == "gen" and not gen:
             gen = True
+        elif flag == "lead" and not lead:
+            lead = True
         elif match and entry is None:
             entry = match.group(1)
+        elif endpoint and via is None:
+            via = tuple(endpoint.group(1).split(","))
+            if not all(_KEY.match(item) for item in via):
+                raise TableError(lineno, "via= takes KEY[,KEY ...]")
         else:
             raise TableError(
-                lineno, "unknown or repeated flag (source, gen, entry=NAME)"
+                lineno,
+                "unknown or repeated flag (source, lead, gen, entry=NAME, via=KEYS)",
             )
-    if source and entry is not None:
+    if (source or lead) and entry is not None:
         # An entry row owns one item of a list, not the key: it cannot be the
         # authority for it.
-        raise TableError(lineno, "source cannot be combined with entry=NAME")
-    return Row(name, member, key, source, gen, entry, lineno)
+        raise TableError(lineno, "source or lead cannot be combined with entry=NAME")
+    if lead and (source or gen):
+        raise TableError(lineno, "lead is a source of its own, never generated")
+    if via is not None and (source or lead):
+        raise TableError(lineno, "via= belongs on a row that follows the source")
+    return Row(name, member, key, source or lead, gen, entry, lineno, lead, via or ())
 
 
 def _clash(row: Row, earlier: List[Row]) -> Optional[Row]:
@@ -138,6 +162,12 @@ def load_table(text: str) -> List[Group]:
             raise TableError(
                 odd.lineno, f"group {group.name}: gen must be on every row or none"
             )
+        if not sources:
+            stray = next((row for row in rows if row.via), None)
+            if stray is not None:
+                raise TableError(
+                    stray.lineno, f"group {group.name}: via= needs a source or lead"
+                )
     return list(groups.values())
 
 
@@ -275,6 +305,60 @@ def _twin(
     return None
 
 
+def shown_default(example: Example, key: str) -> str:
+    """The value the example shows for a key: its active line, else its one
+    commented setting line (the real default, by the example format); empty
+    when it shows none."""
+    line = example.active().get(key)
+    if line is not None:
+        return line.value or ""
+    for cand in example.candidates(key):
+        if cand.value and not is_prose(cand.value):
+            return cand.value
+    return ""
+
+
+def _resolve(value: str, plan: FilePlan, depth: int = 0) -> str:
+    """The value with each ${NAME} / $NAME the file sets put in, as compose
+    reads the .env; an unknown name reads as empty."""
+
+    def put(match: "re.Match[str]") -> str:
+        name = match.group(1) or match.group(2)
+        if name is None:
+            return "$"
+        entry = plan.entries.get(name)
+        if entry is None or depth >= 8:
+            return ""
+        return _resolve(entry.value, plan, depth + 1)
+
+    return _SUBST.sub(put, value)
+
+
+def _set_value(shared: SharedFile, key: str) -> str:
+    """What the member reads for a key: its non-empty line, resolved, else the
+    example's default."""
+    entry = shared.plan.entries.get(key)
+    if entry is not None and entry.value != "":
+        return _resolve(entry.value, shared.plan)
+    return shown_default(shared.example, key)
+
+
+def _held_value(shared: SharedFile, key: str) -> str:
+    """What a follower holds: its line, resolved, even when empty; without a
+    line, the example's default."""
+    entry = shared.plan.entries.get(key)
+    if entry is not None:
+        return _resolve(entry.value, shared.plan)
+    return shown_default(shared.example, key)
+
+
+def _host(url: str) -> Optional[str]:
+    try:
+        return urlsplit(url).hostname
+    except ValueError:
+        return None
+
+
 @dataclass
 class _Side:
     row: Row
@@ -302,6 +386,7 @@ class _Pass:
         self.found: Dict[str, List[Event]] = {
             "conflict": [],
             "unset_everywhere": [],
+            "lead_unset": [],
             "table": [],
         }
         self.notes: Dict[str, Dict[str, List[str]]] = {
@@ -312,11 +397,17 @@ class _Pass:
         return (
             self.found["conflict"]
             + self.found["unset_everywhere"]
+            + self.found["lead_unset"]
             + self.found["table"]
         )
 
     def group(self, group: Group) -> None:
         rows = self.present(group)
+        lead = next((row for row in group.rows if row.lead), None)
+        if lead is not None:
+            self.led(lead, rows)
+            return
+        rows = [row for row in rows if self.on_router(row)]
         if len(rows) < 2:
             return
         placeholders = self.placeholders(rows)
@@ -335,16 +426,59 @@ class _Pass:
             if shared is None:
                 continue
             if row.key not in shared.example.documented():
-                self.found["table"].append(
-                    Event(
-                        "table",
-                        [f"env-sync.conf: {row.key} is not in {row.member}'s example"],
-                        "warn",
-                    )
+                self.table_warning(
+                    f"env-sync.conf: {row.key} is not in {row.member}'s example"
                 )
                 continue
             rows.append(row)
         return rows
+
+    def on_router(self, row: Row) -> bool:
+        """Whether this row's endpoint is the router: always for a row without
+        via=; else the first via= key with a value names it. A row off the
+        router is left out of its group and noted as not linked."""
+        if not row.via:
+            return True
+        shared = self.files[row.member]
+        documented = shared.example.documented()
+        endpoint = ""
+        for key in row.via:
+            if key not in documented:
+                self.table_warning(f"env-sync.conf: {key} is not in {row.member}'s example")
+                endpoint = ""
+                break
+            endpoint = _set_value(shared, key)
+            if endpoint:
+                break
+        if endpoint and _host(endpoint) == ROUTER_HOST:
+            return True
+        self.note(row.member, "not_linked", row.key)
+        return False
+
+    def table_warning(self, item: str) -> None:
+        if not any(item in found.items for found in self.found["table"]):
+            self.found["table"].append(Event("table", [item], "warn"))
+
+    def led(self, lead: Row, rows: List[Row]) -> None:
+        """A lead group: the lead's value, or its example's default, replaces
+        what each row on the router holds. Nothing flows back to the lead, and
+        nothing moves without it on this host."""
+        if lead not in rows:
+            return
+        followers = [row for row in rows if row is not lead and self.on_router(row)]
+        if not followers:
+            return
+        value = _set_value(self.files[lead.member], lead.key)
+        if value == "":
+            self.found["lead_unset"].append(
+                Event("lead_unset", [f"{lead.key} ({lead.member})"], "warn")
+            )
+            return
+        for row in followers:
+            shared = self.files[row.member]
+            if _held_value(shared, row.key) == value:
+                continue
+            self.fill(_Side(row, shared, False, None), value, "linked", lead.member, set())
 
     def placeholders(self, rows: List[Row]) -> Set[str]:
         """The placeholder values of every member with a row here (current,

@@ -507,6 +507,30 @@ class TagRuleTests(unittest.TestCase):
         text = mutate(VALID, "# --- metrics ---\n\n", "# --- metrics ---\n\n" + short)
         self.assertIn(("T5", "GRAFANA_JWT_SECRET"), found(text))
 
+    def test_t5_model_link_tags(self) -> None:
+        real = load_table((ROOT / "env-sync.conf").read_text())
+        for member, key, tag in (
+            (
+                "vllm-service",
+                "TEXT_MODEL",
+                "[shared: docint, docint VISION_MODEL, Nextext, translator, "
+                "ghostwriter]",
+            ),
+            ("docint", "VISION_MODEL", "[shared: vllm-service TEXT_MODEL]"),
+            ("translator", "TEXT_MODEL", "[shared: vllm-service]"),
+            (
+                "ghostwriter",
+                "GHOSTWRITER_CONTEXT_TOKENS",
+                "[shared: vllm-service CHAT_MAX_MODEL_LEN]",
+            ),
+        ):
+            block = f"# A synthetic model.\n# {tag}\n# {key}=example-org/m\n"
+            anchor = "# DATA_NET=data-net\n"
+            text = mutate(VALID, anchor, anchor + "\n" + block)
+            self.assertNotIn(("T5", key), found(text, member, groups=real))
+            wrong = mutate(text, f"# {tag}\n", "")
+            self.assertIn(("T5", key), found(wrong, member, groups=real))
+
     def test_t5_workbench_docint_key_tags(self) -> None:
         real = load_table((ROOT / "env-sync.conf").read_text())
         for member, key, tag in (
@@ -879,6 +903,19 @@ class GroupRequiredTests(unittest.TestCase):
                     real,
                 )
                 self.assertEqual([(f.rule, f.key) for f in got], expected)
+
+    def test_a_lead_group_need_not_agree_on_required(self) -> None:
+        real = load_table((ROOT / "env-sync.conf").read_text())
+        got = check_group_required(
+            {
+                "vllm-service": sibling(
+                    "vllm-service", "# TEXT_MODEL=example-org/chat-a\n"
+                ),
+                "Nextext": sibling("Nextext", "# [required]\nTEXT_MODEL=\n"),
+            },
+            real,
+        )
+        self.assertEqual(got, [])
 
     def test_unmigrated_and_absent_members_are_skipped(self) -> None:
         required = sibling("edge-plane", self.REQUIRED)

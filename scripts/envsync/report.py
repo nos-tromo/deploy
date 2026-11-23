@@ -14,6 +14,8 @@ LABEL: Dict[str, str] = {
     "added": "added",
     "filled": "filled",
     "generated": "generated",
+    "linked": "linked",
+    "not_linked": "not linked",
     "followed": "followed",
     "unset_now": "unset",
     "removed": "removed",
@@ -32,6 +34,7 @@ LABEL: Dict[str, str] = {
     "state": "state",
     "conflict": "conflict",
     "unset_everywhere": "unset",
+    "lead_unset": "unset",
     "unsafe": "not copied",
     "table": "table",
 }
@@ -48,6 +51,8 @@ SUFFIX: Dict[str, str] = {
     "readable": " (readable by every user; chmod 600)",
     "mode": " (other users' access removed when a shared secret is written)",
     "unset_everywhere": " (unset in every member; ENV_GENERATE=1 generates one)",
+    "not_linked": " (its endpoint is not vllm-router; left as it is)",
+    "lead_unset": " (no value and no default in the example; nothing linked)",
     "unsafe": " (characters outside the safe set; set it by hand)",
 }
 

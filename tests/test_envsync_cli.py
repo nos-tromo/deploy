@@ -973,5 +973,56 @@ class ReportTests(unittest.TestCase):
         )
 
 
+
+class LinkCheckTests(CliCase):
+    LINK = (
+        "text-model  vllm-service  TEXT_MODEL  lead\n"
+        "text-model  ghostwriter   TEXT_MODEL  via=OPENAI_API_BASE\n"
+    )
+
+    def test_a_changed_lead_fails_the_check_until_make_env(self) -> None:
+        self.table.write_text(self.LINK, encoding="utf-8")
+        vllm = make_member(
+            self.infra, "vllm-service", "# TEXT_MODEL=example-org/chat-a\n", ""
+        )
+        app = make_member(
+            self.infra,
+            "ghostwriter",
+            "# OPENAI_API_BASE=http://vllm-router:4000/v1\n"
+            "# TEXT_MODEL=example-org/chat-a\n",
+            "",
+        )
+        self.assertExit(self.sync(vllm, app), 0)
+        self.assertExit(self.sync("--check", vllm, app), 0)
+        (vllm / ".env").write_text("TEXT_MODEL=SENTINEL-chat-b\n", encoding="utf-8")
+        proc = self.sync("--check", vllm, app)
+        self.assertExit(proc, 1)
+        self.assertIn(header("ghostwriter/.env", "would write") + "\n", proc.stdout)
+        self.assertIn("   linked     TEXT_MODEL (from vllm-service)\n", proc.stdout)
+        self.assertExit(self.sync(vllm, app), 0)
+        self.assertIn(
+            "TEXT_MODEL=SENTINEL-chat-b\n", (app / ".env").read_text(encoding="utf-8")
+        )
+        self.assertExit(self.sync("--check", vllm, app), 0)
+
+    def test_a_member_off_the_router_passes_the_check(self) -> None:
+        self.table.write_text(self.LINK, encoding="utf-8")
+        vllm = make_member(
+            self.infra, "vllm-service", "# TEXT_MODEL=example-org/chat-a\n", ""
+        )
+        app = make_member(
+            self.infra,
+            "ghostwriter",
+            "# OPENAI_API_BASE=http://vllm-router:4000/v1\n"
+            "# TEXT_MODEL=example-org/chat-a\n",
+            "OPENAI_API_BASE=http://ollama:11434/v1\nTEXT_MODEL=SENTINEL-local\n",
+        )
+        self.assertExit(self.sync(vllm, app), 0)
+        proc = self.sync("--check", vllm, app)
+        self.assertExit(proc, 0)
+        self.assertEqual(proc.stdout, "env: 2 files in sync\n")
+        self.assertIn("TEXT_MODEL=SENTINEL-local\n", (app / ".env").read_text())
+
+
 if __name__ == "__main__":
     unittest.main()
