@@ -203,7 +203,7 @@ den `FROM`-Zeilen Digest-gepinnt und per Dependabot aktualisiert.
 | | |
 |---|---|
 | Version / Python | 1.1.0 · `>=3.11,<3.12` (nur 3.11) |
-| Backend | FastAPI + Uvicorn, `openai`-SDK gegen ein instruction-getuntes Modell der Gemma-Klasse (env-gewählt via `TEXT_MODEL`, keine lokalen Gewichte), langcodes/langdetect/pycountry |
+| Backend | FastAPI + Uvicorn, `openai`-SDK gegen ein instruction-getuntes Chat-Modell (`TEXT_MODEL`, am Router das von vllm-service; keine lokalen Gewichte), langcodes/langdetect/pycountry |
 | Frontend | Minimale React-19-SPA (nur TanStack Query) |
 
 ### `ghostwriter` — Chat-Assistent

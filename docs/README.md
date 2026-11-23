@@ -63,6 +63,8 @@ and [runbooks/backups.md](runbooks/backups.md). The `.env` sync is
 its operating side is [runbooks/env-sync.md](runbooks/env-sync.md). The shared
 `.env.example` format is
 [superpowers/specs/2026-11-08-env-example-format-design.md](superpowers/specs/2026-11-08-env-example-format-design.md).
+How vllm-service decides the router's models and chat context in every app is
+[superpowers/specs/2026-11-23-model-link-design.md](superpowers/specs/2026-11-23-model-link-design.md).
 
 ## Who this is for
 

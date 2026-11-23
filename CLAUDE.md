@@ -230,7 +230,9 @@ Invariants of the `.env` sync — keep them in any edit: example values equal th
 defaults; nothing is written under `make -n` or by `env-check`; values are never printed (a value
 shows only when it comes from an example and the key is not secret-like); nothing is ever created
 in a member directory except its `.env` (state, backups and the atomic-write temp file live in the
-gitignored `.env-sync/`); the planner never changes a value the operator set. Tests use synthetic
+gitignored `.env-sync/`); the planner never changes a value the operator set, the one exception
+being a `lead` group (a router model id or the chat context, which vllm-service decides for every
+app whose `via=` endpoint is the router; `docs/runbooks/env-sync.md` § Linked values). Tests use synthetic
 fixtures only, secrets written as `SENTINEL-...` and asserted absent from all output.
 
 `make -n ps` is the key trick: it dry-runs the `$(call compose,…)` helper and prints the exact

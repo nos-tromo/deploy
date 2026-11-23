@@ -196,7 +196,7 @@ Dependabot-bumped.
 | | |
 |---|---|
 | Version / Python | 1.1.0 · `>=3.11,<3.12` (3.11 only) |
-| Backend | FastAPI + Uvicorn, `openai` SDK against an instruction-tuned Gemma-class model (env-selected via `TEXT_MODEL`, no local weights), langcodes/langdetect/pycountry |
+| Backend | FastAPI + Uvicorn, `openai` SDK against an instruction-tuned chat model (`TEXT_MODEL`, vllm-service's on the router; no local weights), langcodes/langdetect/pycountry |
 | Frontend | Minimal React 19 SPA (TanStack Query only) |
 
 ### `ghostwriter` — chat assistant

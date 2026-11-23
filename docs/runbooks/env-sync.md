@@ -59,10 +59,13 @@ headers. A `.env` that exists but has no stored copy fails `env-check` with
 |---|---|---|
 | `added` | Keys new in the example, written with the example's default. | Check any that need a real value. |
 | `filled` | A shared key that was unset, copied from the member that holds the value. | Nothing. |
+| `linked` | A key vllm-service leads (a model id, the chat context), set to vllm-service's value because it held another; shown as `KEY (from vllm-service)`. | Nothing. |
+| `not linked` | A key vllm-service leads, left as it is because this app's endpoint for it is not `vllm-router`. | Nothing; see [Linked values](#linked-values). |
 | `generated` | A shared secret generated because of `ENV_GENERATE=1`. | Nothing; it is written to every member of the group. A group whose list cannot take the new item (see `not copied`) generates nothing, and shows as `unset`. |
 | `followed` | A default you never touched moved with the example (new value). | Nothing. |
 | `unset` (first form) | The example now only comments the key out; your inherited default no longer applies. | Nothing; set it yourself to keep a value. |
 | `unset` (second form) | A shared key is unset in every member (shown as `KEY (members)`). A list (`entry=`) without a real item for an entry counts as unset for that entry. | Set it, or run `make env ENV_GENERATE=1`, which appends a generated item; a set single key is appended too. |
+| `unset` (third form) | A key vllm-service leads has no value there and no default in its example (shown as `KEY (vllm-service)`); nothing is linked. | Set it in vllm-service's `.env`. |
 | `removed` | The key is gone from the example and your line was its old default; the line is dropped. | Nothing. |
 | `held` | The example's default changed, but the key is secret-like, a retention, a shared key or in `federation.env`. Yours is kept. | Compare with the example and decide. |
 | `renamed` | The example renames a key. Three notes: the value is carried to the new name; the value is not carried (the old line stays at the end of the file with `# [env-sync] renamed to NEW in the example; value not carried`); or both names were set and the new name applies. | When not carried, copy the value by hand if you still want it, then delete the old line. |
@@ -202,12 +205,45 @@ and key. Per group:
   the list is not changed. `source` and `entry=` cannot be on one row. Before
   deploy 0.14.0 a set list was never appended to.
 
-The `router-key` group rests on an assumption that holds on these hosts: every
-app reaches inference only through `vllm-router`, so vllm-service's
-`OPENAI_API_KEY` (LiteLLM's master key) is the source for the apps. If a host
-points an app at another provider, remove that app's `router-key` row from
-`env-sync.conf`. Otherwise the tool reports a conflict for the app's own key,
-or, while that key is unset or a placeholder, writes the router key into it.
+### Linked values
+
+The router accepts in a request's `model` field exactly the ids in
+vllm-service's `.env`, and serves the chat context set there. A `lead` row
+makes vllm-service the authority for such a value: `text-model` (`TEXT_MODEL`,
+also docint's `VISION_MODEL`), `embed-model` (also docint's `SPARSE_MODEL`),
+`rerank-model`, `whisper-model` and `chat-context` (`CHAT_MAX_MODEL_LEN`, as
+docint's `OPENAI_CTX_WINDOW` and Ghostwriter's `GHOSTWRITER_CONTEXT_TOKENS`).
+
+- vllm-service's value is its active line, or else the one `# KEY=value` line
+  of its example, which is the default its compose file applies.
+- Each app row whose endpoint is the router takes that value when it reads
+  another one (`linked`). The app reads its active line, even an empty one, or
+  else its own example's default, and a `${KEY}` reference is resolved first.
+  An app already reading vllm-service's value is left as it is.
+- An app's different value is replaced, not reported as a conflict: over the
+  router it cannot work. This is the one place `make env` changes a value the
+  operator set.
+- Nothing flows back into vllm-service, and the group does nothing while
+  vllm-service is not on the host.
+- Switching a model or the context: set it in vllm-service's `.env` and run
+  `make env`. Until then `env-check`, and so `make up`, fails.
+
+A row with `via=KEYS` counts only while that app's endpoint is the router: the
+first of the keys with a value, the example's default included, must name the
+host `vllm-router` (docint's `EMBED_API_BASE,OPENAI_API_BASE`, for example).
+Otherwise the row is left alone and reported as `not linked`. This applies in
+every group: in a `source` group such a row is neither read, filled nor
+compared. A host whose apps send their chat to Ollama thus keeps their own
+chat models while their Whisper, embedding or reranking still follow the
+router.
+
+The `router-key` group copies vllm-service's `OPENAI_API_KEY` (LiteLLM's master
+key) into the apps. translator's and Ghostwriter's rows carry
+`via=OPENAI_API_BASE`, so an app pointed at another provider keeps its own
+key. docint's and Nextext's rows carry none: their key also signs their other
+router-bound endpoints (docint's embedding and reranking, Nextext's Whisper,
+NER, diarization, VAD and faces), so it stays the router key whatever their
+chat endpoint is.
 
 The `workbench-period` group carries no secret: it copies workbench's file
 period, `WORKBENCH_RETENTION_DAYS`, to Ghostwriter, whose banner names it.
@@ -297,6 +333,10 @@ Member notes follow the header template after a bare `#` line.
   must no longer be a key of the example, a chain must end in a key the example
   has, and no file may reference `${OLD}`.
 - A new or renamed shared key means an edit to deploy's `env-sync.conf`.
+- A key vllm-service leads carries `[shared: vllm-service]` (or
+  `[shared: vllm-service KEY]` when the names differ), and every key its
+  row names in `via=` must be documented in the example, or the row is not
+  linked and `make env` warns (`table`).
 - A rename carries a value only when the previous example had OLD as a setting
   line (`OLD=` or `# OLD=`). OLD named only in prose is not carried: the old line
   stays at the end of the `.env`. Keep the code's fallback for OLD until hosts
