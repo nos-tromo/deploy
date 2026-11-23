@@ -59,10 +59,10 @@ headers. A `.env` that exists but has no stored copy fails `env-check` with
 |---|---|---|
 | `added` | Keys new in the example, written with the example's default. | Check any that need a real value. |
 | `filled` | A shared key that was unset, copied from the member that holds the value. | Nothing. |
-| `generated` | A shared secret generated because of `ENV_GENERATE=1`. | Nothing; it is written to every member of the group. |
+| `generated` | A shared secret generated because of `ENV_GENERATE=1`. | Nothing; it is written to every member of the group. A group whose list cannot take the new item (see `not copied`) generates nothing, and shows as `unset`. |
 | `followed` | A default you never touched moved with the example (new value). | Nothing. |
 | `unset` (first form) | The example now only comments the key out; your inherited default no longer applies. | Nothing; set it yourself to keep a value. |
-| `unset` (second form) | A shared key is unset in every member (shown as `KEY (members)`). A list (`entry=`) that is set without its entry counts as unset too. | Set it, or run `make env ENV_GENERATE=1`. A list you set is never generated into: add its entry by hand. |
+| `unset` (second form) | A shared key is unset in every member (shown as `KEY (members)`). A list (`entry=`) without a real item for an entry counts as unset for that entry. | Set it, or run `make env ENV_GENERATE=1`, which appends a generated item; a set single key is appended too. |
 | `removed` | The key is gone from the example and your line was its old default; the line is dropped. | Nothing. |
 | `held` | The example's default changed, but the key is secret-like, a retention, a shared key or in `federation.env`. Yours is kept. | Compare with the example and decide. |
 | `renamed` | The example renames a key. Three notes: the value is carried to the new name; the value is not carried (the old line stays at the end of the file with `# [env-sync] renamed to NEW in the example; value not carried`); or both names were set and the new name applies. | When not carried, copy the value by hand if you still want it, then delete the old line. |
@@ -75,8 +75,8 @@ headers. A `.env` that exists but has no stored copy fails `env-check` with
 | `readable` | The `.env` is readable by every user (member `.env` files only). | `chmod 600` it. |
 | `mode` | `make env` wrote a shared secret into this file and removed other users' access (group rights are kept). | Nothing, unless another account must read it. |
 | `state` | The stored copy could not be read or saved. | Fix the cause (see [State directory](#keep-the-state-directory)); an unreadable copy counts as never synced. |
-| `conflict` | A shared group holds two different set values. Nothing in the group changes and `env-check` fails. | See [Shared values](#shared-values). |
-| `not copied` | A shared value with characters outside the safe set. | Set it by hand in each member. |
+| `conflict` | A shared group holds two different set values, or a caller's token would equal another caller's in one list (shown as `KEY: ghostwriter's token equals docint's`). Nothing is written for it and `env-check` fails. | See [Shared values](#shared-values). |
+| `not copied` | A shared value with characters outside the safe set. For a list (`entry=`), a character of any other item counts: a space after a comma, say. | Set it by hand in each member; for a list, fix the list. |
 | `table` | `env-sync.conf` names a key the member's example does not know. | Fix `env-sync.conf` or the example. |
 
 ### When a rename carries its value
@@ -191,9 +191,16 @@ and key. Per group:
 - A group with fewer than two members on this host is skipped.
 - Only values made of `[A-Za-z0-9._~:/@+=,-]` are copied; others are reported
   as `not copied`.
-- `entry=NAME` rows hold a `NAME=token,...` list (Nextext's
-  `NEXTEXT_SERVICE_TOKENS`); only the `docint` entry is shared. A list you set
-  is never appended to.
+- `entry=NAME` rows share one `NAME=token` item of a list (Nextext's
+  `NEXTEXT_SERVICE_TOKENS`, with the `docint` and `ghostwriter` entries, one
+  group each). A row owns its own item only. A missing item is appended, a
+  placeholder item is replaced where it stands, and the other items are never
+  changed, reordered or dropped. A list whose every item is a placeholder is
+  written anew. A list with an item that is not `name=token` is left alone: a
+  conflict when the other side is set. A token that another entry already
+  holds is a conflict too (Nextext refuses two callers with one token), and
+  the list is not changed. `source` and `entry=` cannot be on one row. Before
+  deploy 0.14.0 a set list was never appended to.
 
 The `router-key` group rests on an assumption that holds on these hosts: every
 app reaches inference only through `vllm-router`, so vllm-service's

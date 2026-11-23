@@ -71,6 +71,17 @@ A refusing executor stops the bring-up at the workbench tier; its log
 starts, but `/dev/zero` stays writable to jobs, with the consequence described
 in [userns-remap.md](userns-remap.md#known-interactions).
 
+## Ghostwriter and Nextext
+
+Ghostwriter starts without Nextext. Video and audio are offered once its probe
+of Nextext's `/health` passes and workbench is 0.9.0 or later. Clips queue
+behind docint's ingest at `NEXTEXT_JOB_CONCURRENCY=1`. The token Ghostwriter
+calls Nextext with is Ghostwriter's own `ghostwriter=` entry of Nextext's
+`NEXTEXT_SERVICE_TOKENS`
+([Identity](#identity-edge-secrets-and-second-factors)); `make env` fills it
+from Ghostwriter's `NEXTEXT_API_KEY`, and `make env ENV_GENERATE=1` generates
+both when neither is set.
+
 ## Retention periods
 
 Stored data is deleted after the configured retention period, on by default;
@@ -129,11 +140,12 @@ edge-plane's docs:
   obs-plane's two Grafanas work the same way, with the values in obs-plane's
   `.env`: `GRAFANA_EDGE_SECRET` (optional)
   and `AUDIT_EDGE_SECRET` (required: without it the audit-trail viewer
-  refuses every request). The one service-to-service caller, docint →
-  Nextext, uses a token instead: the same value in Nextext's
-  `NEXTEXT_SERVICE_TOKENS` (as `docint=<token>`) and docint's
-  `NEXTEXT_API_KEY`. `make up` starts the gateway last, so an app that
-  enforces its secret never waits on a gateway that does not send it yet.
+  refuses every request). Two service-to-service callers, docint → Nextext
+  and Ghostwriter → Nextext, each use a token instead: the same value in
+  Nextext's `NEXTEXT_SERVICE_TOKENS` (`docint=<token>,ghostwriter=<token>`)
+  and in the caller's `NEXTEXT_API_KEY` (groups `nextext-token` and
+  `nextext-ghostwriter-token`). `make up` starts the gateway last, so an app
+  that enforces its secret never waits on a gateway that does not send it yet.
 - **Second factors.** Logins need a password and a TOTP code, and TOTP is
   provisioned by an admin: `make totp U=<user>` in edge-plane for every
   user, before running with `EDGE_AUTH_POLICY=two_factor` (the default).
